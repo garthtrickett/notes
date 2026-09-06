@@ -51,7 +51,7 @@ nav li { display: flex; gap: 4px; margin-bottom: 4px; }
 .row {
   flex: 1;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   cursor: pointer;
   text-align: left;
@@ -60,7 +60,28 @@ nav li { display: flex; gap: 4px; margin-bottom: 4px; }
 
 .row.open { border-color: var(--accent); color: #fff; }
 .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dot { color: var(--accent); }
+/* Pushed right rather than spaced apart, so a badge can join the row without
+   re-spacing everything already in it. */
+.dot { color: var(--accent); margin-left: auto; }
+.row.folder .path { margin-left: auto; }
+
+/* The digit that reaches this row from the keyboard. Fixed width so the names
+   still line up with each other. */
+.num {
+  flex: none;
+  /* The global kbd rule adds one, and this is the first thing in the row. */
+  margin-left: 0;
+  min-width: 1.3em;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font: 10px ui-monospace, Menlo, monospace;
+  text-align: center;
+  line-height: 1.5;
+  align-self: center;
+}
 .delete { color: var(--muted); }
 
 section { display: flex; }

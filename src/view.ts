@@ -11,8 +11,15 @@
 // every other piece of state. This file has none of its own.
 
 import { html, nothing, type TemplateResult } from "lit-html";
-import { openable, visible, type Model, type Note, type Proposal } from "./model.ts";
-import { buildTree, type TreeNode } from "./tree.ts";
+import {
+  noteTree,
+  openable,
+  visible,
+  type Model,
+  type Note,
+  type Proposal,
+} from "./model.ts";
+import type { TreeNode } from "./tree.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { dataUrlOf } from "./attachments.ts";
@@ -36,12 +43,23 @@ export interface ViewCtx {
   readonly onEditorKind: (kind: EditorKind) => void;
 }
 
-const noteRow = (note: Note, openPath: string | null, propose: Propose) => html`
+// Only the top ten rows carry a digit, because only ten digits exist. Anything
+// deeper or further down is reached by clicking or through the open palette.
+const badge = (index: number | null) =>
+  index === null ? nothing : html`<kbd class="num">${index}</kbd>`;
+
+const noteRow = (
+  note: Note,
+  openPath: string | null,
+  propose: Propose,
+  index: number | null,
+) => html`
   <div class="leaf">
     <button
       class="row ${note.path === openPath ? "open" : ""}"
       @click=${() => propose({ kind: "opened", path: note.path })}
     >
+      ${badge(index)}
       <span class="path">${note.path.slice(note.path.lastIndexOf("/") + 1)}</span>
       ${note.pending
         ? html`<span class="dot" title="Not yet on GitHub">•</span>`
@@ -63,22 +81,33 @@ const treeNodes = (
   propose: Propose,
   depth: number,
 ): TemplateResult[] =>
-  nodes.map((node) => {
+  nodes.map((node, position) => {
+    const index = depth === 0 && position < 10 ? position : null;
     if (node.kind === "note") {
       return html`<li style="--depth:${depth}">
-        ${noteRow(node.note, model.openPath, propose)}
+        ${noteRow(node.note, model.openPath, propose, index)}
       </li>`;
     }
     const open = model.expanded.has(node.path);
     return html`<li style="--depth:${depth}">
-      <button
-        class="row folder"
-        aria-expanded=${open ? "true" : "false"}
-        @click=${() => propose({ kind: "folderToggled", path: node.path })}
-      >
-        <span class="twist">${open ? "▾" : "▸"}</span>
-        <span class="path">${node.name}</span>
-      </button>
+      <div class="leaf">
+        <button
+          class="row folder"
+          aria-expanded=${open ? "true" : "false"}
+          @click=${() => propose({ kind: "folderToggled", path: node.path })}
+        >
+          ${badge(index)}
+          <span class="twist">${open ? "▾" : "▸"}</span>
+          <span class="path">${node.name}</span>
+        </button>
+        <button
+          class="delete"
+          title="Delete ${node.path} and everything in it"
+          @click=${() => propose({ kind: "folderDeleted", path: node.path })}
+        >
+          ×
+        </button>
+      </div>
       ${open
         ? html`<ul>${treeNodes(node.children, model, propose, depth + 1)}</ul>`
         : nothing}
@@ -526,13 +555,11 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
   // The dump lives in its own view, so it does not clutter the note tree.
   // One definition of "is this a note", shared with whatever the model decides
   // to open.
-  const notes = openable(model).sort((a, b) => a.path.localeCompare(b.path));
-
   return html`
     <main>
       <nav>
         ${tabs(model, propose)}
-        <ul>${treeNodes(buildTree(notes), model, propose, 0)}</ul>
+        <ul>${treeNodes(noteTree(model), model, propose, 0)}</ul>
       </nav>
       <section>${editor(model, ctx)}</section>
       ${modal(model, propose, onCapture)}

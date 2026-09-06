@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createModel, present, type Model, type Note } from "./model.ts";
+import { createModel, present, type Model, type Note, noteTree } from "./model.ts";
 
 const note = (
   path: string,
@@ -181,5 +181,76 @@ describe("present — persistence bookkeeping", () => {
     present(m, { kind: "failed", error: { kind: "writeFailed", cause: "disk full" } });
     expect(m.persisting).toBe(false);
     expect(m.error).toContain("Could not save to this device");
+  });
+});
+
+describe("present — folders and number shortcuts", () => {
+  it("deletes every note under a folder", () => {
+    const m = hydrated(
+      note("examples/one.md"),
+      note("examples/deep/two.md"),
+      note("keep.md"),
+    );
+    present(m, { kind: "folderDeleted", path: "examples" });
+    expect([...m.notes.keys()].filter((p) => !m.notes.get(p)?.deleted)).toEqual([
+      "keep.md",
+    ]);
+  });
+
+  it("does not delete a folder whose name is a prefix of another", () => {
+    const m = hydrated(note("ex/one.md"), note("examples/two.md"));
+    present(m, { kind: "folderDeleted", path: "ex" });
+    expect(m.notes.get("examples/two.md")?.deleted).toBeFalsy();
+  });
+
+  it("moves off a note it just deleted with its folder", () => {
+    const m = hydrated(note("examples/one.md"), note("keep.md"));
+    present(m, { kind: "opened", path: "examples/one.md" });
+    present(m, { kind: "folderDeleted", path: "examples" });
+    expect(m.openPath).toBe("keep.md");
+  });
+
+  it("rejects deleting a folder that is not there", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "folderDeleted", path: "ghost" });
+    expect(m.notes.size).toBe(1);
+  });
+
+  it("numbers the top level in the order the tree shows it", () => {
+    // Folders first, then notes, both alphabetical — the tree's rule, not a
+    // second copy of it.
+    const m = hydrated(note("zebra/in.md"), note("apple/in.md"), note("a-note.md"));
+    expect(noteTree(m).map((n) => (n.kind === "folder" ? n.path : n.note.path))).toEqual([
+      "apple",
+      "zebra",
+      "a-note.md",
+    ]);
+  });
+
+  it("opens the note a digit points at, from anywhere", () => {
+    const m = hydrated(note("apple/in.md"), note("a-note.md"));
+    present(m, { kind: "modeChanged", mode: "dump" });
+    present(m, { kind: "jumped", index: 1 });
+    expect(m.openPath).toBe("a-note.md");
+    expect(m.mode).toBe("notes");
+  });
+
+  it("toggles the folder a digit points at, and shows the tree", () => {
+    const m = hydrated(note("apple/in.md"));
+    present(m, { kind: "modeChanged", mode: "dump" });
+    present(m, { kind: "jumped", index: 0 });
+    expect(m.expanded.has("apple")).toBe(true);
+    expect(m.mode).toBe("notes");
+    present(m, { kind: "jumped", index: 0 });
+    expect(m.expanded.has("apple")).toBe(false);
+  });
+
+  it("does nothing for a digit with no row under it", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "modeChanged", mode: "dump" });
+    present(m, { kind: "jumped", index: 7 });
+    // Not an error: an empty slot is empty, not wrong.
+    expect(m.mode).toBe("dump");
+    expect(m.error).toBeNull();
   });
 });

@@ -11,6 +11,7 @@
 import type { SyncError } from "./github.ts";
 import { rewriteLinks } from "./links.ts";
 import { describeProblem, normalizePath, pathProblem, type PathProblem } from "./paths.ts";
+import { buildTree, type TreeNode } from "./tree.ts";
 import { isDumpPath } from "./dump.ts";
 import { isAttachmentPath } from "./attachments.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
@@ -120,6 +121,9 @@ export type Proposal =
   | { readonly kind: "syncFailed"; readonly error: SyncError }
   | { readonly kind: "modeChanged"; readonly mode: Mode }
   | { readonly kind: "folderToggled"; readonly path: string }
+  | { readonly kind: "folderDeleted"; readonly path: string }
+  // Which top-level row, counting from zero, as shown in the tree.
+  | { readonly kind: "jumped"; readonly index: number }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
   | { readonly kind: "resumed" }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
@@ -147,6 +151,12 @@ export const visible = (m: Model): Note[] =>
 // view so there is one answer to "is this a note" (never duplicate rules).
 export const openable = (m: Model): Note[] =>
   visible(m).filter((n) => !isDumpPath(n.path) && !isAttachmentPath(n.path));
+
+// The tree exactly as the notes view draws it. The view renders this and the
+// number shortcuts index into it, so there is one ordering and the badges cannot
+// drift from what the digits do (never duplicate rules).
+export const noteTree = (m: Model): TreeNode[] =>
+  buildTree(openable(m).sort((a, b) => a.path.localeCompare(b.path)));
 
 const firstVisiblePath = (m: Model): string | null =>
   openable(m)[0]?.path ?? null;
@@ -334,6 +344,37 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "modeChanged": {
       m.mode = p.mode;
       return null;
+    }
+
+    case "folderDeleted": {
+      // Everything beneath the folder, attachments included — deleting a folder
+      // deletes what is in it.
+      const prefix = `${p.path}/`;
+      const doomed = visible(m).filter((n) => n.path.startsWith(prefix));
+      if (doomed.length === 0) {
+        return reject(`Cannot delete ${p.path}: no such folder.`);
+      }
+      for (const note of doomed) stopKeeping(m, note, note.path);
+      m.persistBlocked = false;
+      m.expanded.delete(p.path);
+      if (m.openPath !== null && m.openPath.startsWith(prefix)) {
+        m.openPath = firstVisiblePath(m);
+      }
+      return null;
+    }
+
+    case "jumped": {
+      const target = noteTree(m)[p.index];
+      // A digit with nothing in that slot is not a mistake worth reporting, it
+      // is simply an empty row.
+      if (target === undefined) return null;
+      // Pressing the number does what clicking the row does — one rule, and
+      // nothing new to learn.
+      if (target.kind === "note") {
+        return present(m, { kind: "opened", path: target.note.path });
+      }
+      m.mode = "notes";
+      return present(m, { kind: "folderToggled", path: target.path });
     }
 
     case "folderToggled": {

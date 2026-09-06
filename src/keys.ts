@@ -34,6 +34,12 @@ export const keyAction = (
 
   if (isTyping(event.target)) return null;
 
+  // Digits jump to a top-level row, numbered from zero to match the badges in
+  // the tree. Which row that is belongs to the model, which has the tree.
+  if (event.key.length === 1 && event.key >= "0" && event.key <= "9") {
+    return propose({ kind: "jumped", index: Number(event.key) });
+  }
+
   switch (event.key.toLowerCase()) {
     case "n":
       return model.mode === "notes"

@@ -186,3 +186,20 @@ describe("new note and open", () => {
     }
   });
 });
+
+describe("number shortcuts", () => {
+  it("proposes a jump for every digit, zero first", () => {
+    const m = model();
+    for (const digit of "0123456789") {
+      expect(keyAction(press(digit), m)).toEqual({
+        kind: "propose",
+        proposal: { kind: "jumped", index: Number(digit) },
+      });
+    }
+  });
+
+  it("stands down while a field has focus", () => {
+    const search = document.createElement("input");
+    expect(keyAction(at(press("3"), search), model())).toBeNull();
+  });
+});
