@@ -199,6 +199,61 @@ comparator, or resolving a conflict silently reorders the day.
 day carries yesterday's date, which would otherwise read as a bug. Labelling the
 live day "Today" sidesteps it, and is nicer anyway.
 
+### Note identity: the filename is the identity
+
+`[[japanese-grammar]]` resolves to `reference/japanese-grammar.md`. Readable,
+greppable, browsable on github.com, obvious to an agent reading raw files. That
+legibility is the reason files were chosen at all, so it is not traded away to
+avoid a rename bug.
+
+**Rename is an operation, not a filesystem event.** The app finds every note
+containing `[[old-name]]`, rewrites them, and moves the file. Obsidian works this
+way. Two consequences:
+
+- **Links match on basename, not full path.** So *moving* a note between folders
+  breaks nothing and needs no rewrite at all — and moving is far more common than
+  renaming in practice. Only a genuine rename touches other files. If two notes
+  ever share a basename, that link needs a path to disambiguate.
+- **Rename is the first operation that needs the Git Data API.** It writes N
+  files atomically; N separate Contents API calls would leave links broken if one
+  failed halfway. The fallback is accepting transient breakage, but a batched
+  commit is the right shape.
+
+Filenames are lowercase-hyphenated slugs. The UI displays them prettified
+(hyphens to spaces). The mapping is deterministic, so this is a display rule and
+not a hidden identifier — renaming the title *is* renaming the file.
+
+### Attachments: shrink on paste, then commit
+
+Paste a screenshot, the browser canvas-resizes it to ~2000px and re-encodes to
+WebP before upload. A 4 MB screenshot lands at roughly 200 KB. Around 20 lines.
+
+Everything stays self-contained: `git clone` still gets the notes *and* the
+images, and standard `![](attachments/...)` markdown means notes render with
+their images on github.com for free.
+
+`attachments/YYYY-MM-DD-<shorthash>.webp` — date-prefixed so it sorts, hashed so
+it never collides.
+
+At 1,000 images that is ~200 MB accumulated over years. Fine.
+
+**The rule that actually matters: never commit a raw screenshot, not even once.**
+Undoing that means rewriting history. Cap the post-resize size (~1 MB) and refuse
+anything pathological — large animated GIFs, video — rather than letting one
+paste bloat the repo permanently.
+
+Two rejected alternatives, recorded so they are not revisited:
+
+- **Git LFS** is the textbook answer and does not work here. The Contents API
+  does not speak LFS — a browser `PUT` commits raw bytes, not a pointer.
+- **External hosting** (S3, imgur) keeps the repo small but makes notes depend on
+  a service that can rot, and "export is `git clone`" stops being true.
+
+Deleting a note leaves its images orphaned, and git keeps them regardless, so
+cleanup is cosmetic rather than a space saving. Not worth building.
+
+---
+
 ---
 
 ## Deliberately not building
@@ -340,60 +395,6 @@ Stated up front so they aren't surprises later.
 2. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
    find out whether it's actually missed.
 
-### Note identity: the filename is the identity
-
-`[[japanese-grammar]]` resolves to `reference/japanese-grammar.md`. Readable,
-greppable, browsable on github.com, obvious to an agent reading raw files. That
-legibility is the reason files were chosen at all, so it is not traded away to
-avoid a rename bug.
-
-**Rename is an operation, not a filesystem event.** The app finds every note
-containing `[[old-name]]`, rewrites them, and moves the file. Obsidian works this
-way. Two consequences:
-
-- **Links match on basename, not full path.** So *moving* a note between folders
-  breaks nothing and needs no rewrite at all — and moving is far more common than
-  renaming in practice. Only a genuine rename touches other files. If two notes
-  ever share a basename, that link needs a path to disambiguate.
-- **Rename is the first operation that needs the Git Data API.** It writes N
-  files atomically; N separate Contents API calls would leave links broken if one
-  failed halfway. The fallback is accepting transient breakage, but a batched
-  commit is the right shape.
-
-Filenames are lowercase-hyphenated slugs. The UI displays them prettified
-(hyphens to spaces). The mapping is deterministic, so this is a display rule and
-not a hidden identifier — renaming the title *is* renaming the file.
-
-### Attachments: shrink on paste, then commit
-
-Paste a screenshot, the browser canvas-resizes it to ~2000px and re-encodes to
-WebP before upload. A 4 MB screenshot lands at roughly 200 KB. Around 20 lines.
-
-Everything stays self-contained: `git clone` still gets the notes *and* the
-images, and standard `![](attachments/...)` markdown means notes render with
-their images on github.com for free.
-
-`attachments/YYYY-MM-DD-<shorthash>.webp` — date-prefixed so it sorts, hashed so
-it never collides.
-
-At 1,000 images that is ~200 MB accumulated over years. Fine.
-
-**The rule that actually matters: never commit a raw screenshot, not even once.**
-Undoing that means rewriting history. Cap the post-resize size (~1 MB) and refuse
-anything pathological — large animated GIFs, video — rather than letting one
-paste bloat the repo permanently.
-
-Two rejected alternatives, recorded so they are not revisited:
-
-- **Git LFS** is the textbook answer and does not work here. The Contents API
-  does not speak LFS — a browser `PUT` commits raw bytes, not a pointer.
-- **External hosting** (S3, imgur) keeps the repo small but makes notes depend on
-  a service that can rot, and "export is `git clone`" stops being true.
-
-Deleting a note leaves its images orphaned, and git keeps them regardless, so
-cleanup is cosmetic rather than a space saving. Not worth building.
-
----
 
 ## Agent-native
 
