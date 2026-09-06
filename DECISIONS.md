@@ -139,6 +139,43 @@ are timestamped and order-independent, so union-the-lines and sort is usually a
 correct automatic resolution — the one place in this design where auto-merge is
 safe. Worth doing, since this is the file most likely to conflict.
 
+#### It must feel like one file
+
+The storage is many files. The UI is one continuous scroll, oldest to newest,
+with a date header between days — open it and you land at the bottom, in today,
+ready to type. It should read like a single long document.
+
+That illusion has four requirements, and getting them wrong is how the illusion
+turns into a data model.
+
+**One textarea per day, not one textarea over everything.** A single editor
+holding all days would have to parse file boundaries back out of the text on
+save, inferring them from `## 2026-09-06` lines. That is the WYSIWYG round-trip
+trap wearing a different hat — and it breaks the moment a note contains a line
+that looks like a date header. One editor per day keeps each save mapped to
+exactly one file with its own `sha`, so editing an old day can never corrupt
+today.
+
+**Past days render read-only until clicked.** They are settled. This matches
+reality, keeps the scroll cheap to render, and leaves the hot path — typing into
+today — a single focused textarea.
+
+**Date headers are rendered from filenames, never stored in the files.** A file
+must not begin with `## 2026-09-06`; that duplicates its own name. One source of
+truth for the date, clean files for the agent and for `git diff`. (Principle 4:
+never duplicate rules.)
+
+**Lazy load from the manifest.** After a year there are 365 files, and the scroll
+must not fetch them all. The Trees API manifest already lists every path with its
+SHA in one call, so the app knows what exists without reading any of it — the
+manifest *is* the index. Load today plus recent days; fetch older ones as the
+user scrolls up.
+
+**Entries carry a time.** Something like a leading `14:32`. This is not
+decoration: the auto-merge claim above depends on it. Untimestamped free text
+cannot be union-and-sorted back into a correct order, so without per-entry times
+the one safe auto-merge in the design stops working.
+
 ---
 
 ## Deliberately not building
@@ -281,8 +318,12 @@ Stated up front so they aren't surprises later.
    `[[wikilink]]` (Obsidian's long-running pain). Stable ID in frontmatter with
    links by ID survives renames but makes the repo less human-browsable. Git
    tracks renames fine; the link graph doesn't. **Decide before 500 notes.**
-3. Attachment policy — separate dir, size threshold, or don't commit binaries.
-4. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
+3. **When does the day roll over?** Local midnight is the obvious answer and the
+   wrong one for a capture tool — a thought at 01:30 usually belongs to the
+   previous day. A ~04:00 cutoff is common. Whatever it is, it comes from the
+   injected clock (principle 5), not `Date.now()` inline.
+4. Attachment policy — separate dir, size threshold, or don't commit binaries.
+5. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
    find out whether it's actually missed.
 
 ---
