@@ -6,6 +6,7 @@
 
 import { attemptAsync, err, ok, type Result } from "./result.ts";
 import type { Config } from "./config.ts";
+import type { Encoding } from "./model.ts";
 
 export type SyncError =
   | { readonly kind: "offline" }
@@ -21,11 +22,18 @@ export interface RemoteEntry {
 
 export interface Github {
   readonly manifest: () => Promise<Result<RemoteEntry[], SyncError>>;
-  readonly read: (path: string) => Promise<Result<string, SyncError>>;
+  // The encoding decides whether the body is converted or passed through. An
+  // attachment is already base64, and the Contents API wants base64, so
+  // re-encoding it would be wrong twice.
+  readonly read: (
+    path: string,
+    encoding: Encoding,
+  ) => Promise<Result<string, SyncError>>;
   readonly write: (
     path: string,
     body: string,
     baseSha: string | null,
+    encoding: Encoding,
   ) => Promise<Result<string, SyncError>>;
   readonly remove: (
     path: string,
@@ -112,7 +120,7 @@ export const createGithub = (config: Config): Github => {
       return ok(entries);
     },
 
-    read: async (path) => {
+    read: async (path, encoding) => {
       const res = await send(
         `${base}/contents/${encodeURI(path)}?ref=${config.branch}`,
       );
@@ -121,15 +129,16 @@ export const createGithub = (config: Config): Github => {
 
       const body = await json<{ content?: string }>(res.value);
       if (!body.ok) return body;
-      return ok(decode(body.value.content ?? ""));
+      const content = (body.value.content ?? "").replace(/\n/g, "");
+      return ok(encoding === "base64" ? content : decode(content));
     },
 
-    write: async (path, content, baseSha) => {
+    write: async (path, content, baseSha, encoding) => {
       const res = await send(`${base}/contents/${encodeURI(path)}`, {
         method: "PUT",
         body: JSON.stringify({
           message: `notes: ${path}`,
-          content: encode(content),
+          content: encoding === "base64" ? content : encode(content),
           branch: config.branch,
           ...(baseSha === null ? {} : { sha: baseSha }),
         }),

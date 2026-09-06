@@ -9,6 +9,7 @@ const note = (path: string): Note => ({
   pending: false,
   deleted: false,
   dirty: false,
+  encoding: "utf8",
 });
 
 const shape = (nodes: readonly TreeNode[]): unknown =>

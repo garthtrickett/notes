@@ -6,9 +6,11 @@ import { visible, type Model, type Note, type Proposal } from "./model.ts";
 import { buildTree, type TreeNode } from "./tree.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, resolveLink, searchNotes } from "./links.ts";
+import { dataUrlOf, isAttachmentPath } from "./attachments.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 
 type Propose = (p: Proposal) => void;
+export type PasteHandler = (event: ClipboardEvent, path: string) => void;
 
 const noteRow = (note: Note, openPath: string | null, propose: Propose) => html`
   <div class="leaf">
@@ -81,7 +83,7 @@ const newNoteField = (propose: Propose) => {
   `;
 };
 
-const editor = (model: Model, propose: Propose) => {
+const editor = (model: Model, propose: Propose, onPaste: PasteHandler) => {
   const path = model.openPath;
   if (path === null) {
     return html`<p class="empty">No note open.</p>`;
@@ -115,6 +117,7 @@ const editor = (model: Model, propose: Propose) => {
       : html`<textarea
           id="editor"
           spellcheck="false"
+          @paste=${(e: ClipboardEvent) => onPaste(e, path)}
           @input=${(e: Event) =>
             propose({
               kind: "edited",
@@ -130,7 +133,14 @@ const editor = (model: Model, propose: Propose) => {
 // never as a string, so there is no path that injects unfiltered markup.
 const preview = (model: Model, path: string, propose: Propose) => {
   const body = model.notes.get(path)?.body ?? "";
-  const fragment = renderMarkdown(body, document);
+  const fragment = renderMarkdown(body, document, (src) => {
+    // A relative source is an attachment in this vault; anything absolute is
+    // somebody else's problem and left alone.
+    if (/^[a-z]+:/i.test(src) || src.startsWith("//")) return null;
+    const record = model.notes.get(src.replace(/^\.?\//, ""));
+    if (!record || record.deleted || record.encoding !== "base64") return null;
+    return dataUrlOf(record.body, record.path);
+  });
 
   // A wikilink became an ordinary anchor; make it navigate the vault instead of
   // the page, and mark the ones that point at nothing yet.
@@ -340,6 +350,7 @@ export const view = (
   propose: Propose,
   now: () => number,
   onCapture: (text: string) => void,
+  onPaste: PasteHandler,
 ): TemplateResult => {
   if (!model.hydrated) return html`<p class="empty">Loading…</p>`;
 
@@ -357,8 +368,10 @@ export const view = (
   }
 
   // The dump lives in its own view, so it does not clutter the note tree.
+  // Attachments are records, not notes: they sync like everything else but have
+  // no business in the tree, in search, or as something you can open.
   const notes = visible(model)
-    .filter((n) => !isDumpPath(n.path))
+    .filter((n) => !isDumpPath(n.path) && !isAttachmentPath(n.path))
     .sort((a, b) => a.path.localeCompare(b.path));
 
   return html`
@@ -393,7 +406,7 @@ export const view = (
               )}
             </ul>`}
       </nav>
-      <section>${editor(model, propose)}</section>
+      <section>${editor(model, propose, onPaste)}</section>
       ${status(model)}
       ${model.error
         ? html`<p class="error" role="alert">${model.error}</p>`

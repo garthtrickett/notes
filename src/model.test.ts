@@ -13,15 +13,17 @@ const note = (
   pending: false,
   deleted: false,
   dirty,
+  encoding: "utf8" as const,
   ...extra,
 });
 
-const recordOf = ({ path, body, baseSha, pending, deleted }: Note) => ({
+const recordOf = ({ path, body, baseSha, pending, deleted, encoding }: Note) => ({
   path,
   body,
   baseSha,
   pending,
   deleted,
+  encoding,
 });
 
 const hydrated = (...notes: Note[]): Model => {

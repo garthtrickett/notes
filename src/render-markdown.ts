@@ -31,6 +31,11 @@ const FORBIDDEN_TAGS = new Set([
 
 const SAFE_URL = /^(https?:|mailto:|#)/i;
 
+// Attachments render from the local copy as a data URL, so they work offline and
+// in a private repo. Narrowed to images on purpose: allowing `data:` in general
+// would readmit data:text/html and with it the whole class this exists to stop.
+const SAFE_DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp|avif);base64,/i;
+
 // Not DOMPurify, and not claimed to be. It removes the obvious class — script
 // execution and navigation to a javascript: URL — which is the risk that matters
 // when an agent may summarise a web page into a note.
@@ -46,14 +51,23 @@ export const sanitize = (root: ParentNode): void => {
         element.removeAttribute(attr.name);
         continue;
       }
-      if ((name === "href" || name === "src") && !SAFE_URL.test(attr.value.trim())) {
-        element.removeAttribute(attr.name);
-      }
+      if (name !== "href" && name !== "src") continue;
+      const value = attr.value.trim();
+      const allowed =
+        SAFE_URL.test(value) ||
+        (name === "src" && SAFE_DATA_IMAGE.test(value));
+      if (!allowed) element.removeAttribute(attr.name);
     }
   }
 };
 
-export const renderMarkdown = (body: string, doc: Document): DocumentFragment => {
+export type ResolveImage = (src: string) => string | null;
+
+export const renderMarkdown = (
+  body: string,
+  doc: Document,
+  resolveImage: ResolveImage = () => null,
+): DocumentFragment => {
   const html = marked.parse(wikilinksToMarkdown(body), {
     gfm: true,
     async: false,
@@ -61,6 +75,16 @@ export const renderMarkdown = (body: string, doc: Document): DocumentFragment =>
 
   const template = doc.createElement("template");
   template.innerHTML = html;
+
+  // Before sanitising, so the data URL is what gets checked. An unresolved
+  // source is left in place and visibly broken rather than silently dropped.
+  for (const img of [...template.content.querySelectorAll("img")]) {
+    const src = img.getAttribute("src");
+    if (src === null) continue;
+    const resolved = resolveImage(src);
+    if (resolved !== null) img.setAttribute("src", resolved);
+  }
+
   sanitize(template.content);
   return template.content;
 };

@@ -95,7 +95,7 @@ describe("read and write", () => {
     const encoded = Buffer.from(text, "utf8").toString("base64");
     install({ content: encoded });
 
-    const result = await createGithub(config).read("a.md");
+    const result = await createGithub(config).read("a.md", "utf8");
     if (!result.ok) throw new Error("expected ok");
     expect(result.value).toBe(text);
   });
@@ -103,7 +103,7 @@ describe("read and write", () => {
   it("sends the base sha so GitHub can refuse a stale write", async () => {
     const fetchMock = install({ content: { sha: "new" } });
 
-    await createGithub(config).write("a.md", "body", "old-sha");
+    await createGithub(config).write("a.md", "body", "old-sha", "utf8");
 
     const [, init] = fetchMock.calls[0]!;
     const sent = JSON.parse((init as RequestInit).body as string);
@@ -115,7 +115,7 @@ describe("read and write", () => {
   it("omits sha entirely when the note has never existed remotely", async () => {
     const fetchMock = install({ content: { sha: "new" } });
 
-    await createGithub(config).write("a.md", "body", null);
+    await createGithub(config).write("a.md", "body", null, "utf8");
 
     const [, init] = fetchMock.calls[0]!;
     const sent = JSON.parse((init as RequestInit).body as string);
@@ -124,14 +124,14 @@ describe("read and write", () => {
 
   it("turns 409 into a conflict, which is the whole compare-and-swap", async () => {
     install({}, 409);
-    const result = await createGithub(config).write("a.md", "body", "stale");
+    const result = await createGithub(config).write("a.md", "body", "stale", "utf8");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("conflict");
   });
 
   it("treats 422 as a conflict too — the same collision from the other side", async () => {
     install({}, 422);
-    const result = await createGithub(config).write("a.md", "body", null);
+    const result = await createGithub(config).write("a.md", "body", null, "utf8");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("conflict");
   });

@@ -479,12 +479,67 @@ phase hard to review and give it two unrelated gates. Everything in phase 4 is
 
 # Phase 5 — Attachments
 
-Paste an image, get it canvas-resized to ~2000px and re-encoded to WebP before
-it is committed — a 4 MB screenshot at roughly 200 KB.
+**Goal:** paste an image into a note and have it committed as a small WebP,
+rendered from the local copy so it works offline and in a private repo.
 
-Needs a binary record (`encoding: "utf8" | "base64"`), a write path that skips
-the UTF-8 encode because the content is already base64, `attachments/YYYY-MM-DD-<shorthash>.webp`
-naming, and the renderer resolving `![](attachments/…)` against the local copy.
+**The gate:** paste a large screenshot, confirm what lands on GitHub is a WebP
+under a few hundred KB, and confirm the image still renders with the network
+off.
 
-**The rule that matters: never commit a raw screenshot, not even once.** Git
-keeps binaries forever and undoing it means rewriting history.
+## 5.1 An attachment is a record, not a new thing
+
+`NoteRecord` gains `encoding: "utf8" | "base64"`. An attachment is a record whose
+body is base64.
+
+That means persistence, the outbox, `pending`, conflict handling and the retry
+loop all work unchanged — no second sync path, no second store. The cost is
+filtering attachments out of the note tree and search, which is the same
+`isDumpPath` pattern already there.
+
+Binary-ness is decided by extension, not by folder, so an image is still an image
+wherever it sits.
+
+## 5.2 Encoding at the boundary
+
+`github.read` and `github.write` take the encoding. For `utf8` they convert to
+and from base64 as now; for `base64` they pass it straight through, because the
+Contents API wants base64 anyway and re-encoding it would be wrong twice.
+
+## 5.3 Paste
+
+On paste, the first image on the clipboard is:
+
+1. drawn to a canvas, longest edge capped at 2000px
+2. re-encoded as WebP at ~0.85 quality
+3. hashed, giving `attachments/YYYY-MM-DD-<shorthash>.webp`
+4. added as a record, with `![](path)` inserted at the cursor
+
+A 4 MB screenshot lands at roughly 200 KB. **Anything still over 1 MB after that
+is refused** rather than committed — git keeps binaries forever, so one bad paste
+is permanent and only removable by rewriting history.
+
+The date and the hash both come from injected dependencies, so the whole thing is
+testable without a browser.
+
+## 5.4 Rendering
+
+A relative `![](attachments/…)` is resolved against the local record and rendered
+as a `data:` URL. It therefore works offline, and in a private repo, where a raw
+GitHub URL would not.
+
+The sanitizer has to allow those. It allows `data:image/<type>;base64,`
+specifically — **not** `data:` in general, which would readmit `data:text/html`
+and with it the whole class the sanitizer exists to remove.
+
+An unresolved image source is left visibly broken rather than silently dropped.
+
+## 5.5 Tests
+
+- Naming: same bytes give the same path; a different day gives a different one.
+- Over-size refusal, and that nothing is added to the model when it happens.
+- The record round-trips base64 through IndexedDB unchanged.
+- `write` does not double-encode a base64 body; `read` does not decode one.
+- Attachments do not appear in the tree, in search, or as an openable note.
+- A relative image source resolves to a data URL; an unknown one does not.
+- The sanitizer permits `data:image/png;base64,` and still refuses
+  `data:text/html`.

@@ -13,6 +13,7 @@ let clock = NOON;
 const deps = (): Deps => ({
   db: db as IDBDatabase,
   github: null,
+  shrink: async () => new ArrayBuffer(0),
   now: () => clock,
   schedule: (_ms, fire) => void queueMicrotask(fire),
 });
@@ -29,6 +30,7 @@ const note = (path: string, extra: Partial<Note> = {}): Note => ({
   pending: false,
   deleted: false,
   dirty: false,
+  encoding: "utf8" as const,
   ...extra,
 });
 

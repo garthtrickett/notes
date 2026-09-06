@@ -10,6 +10,7 @@ const record = (path: string, body: string): Note => ({
   pending: false,
   deleted: false,
   dirty: false,
+  encoding: "utf8",
 });
 
 let db: IDBDatabase | undefined;
@@ -35,6 +36,7 @@ const theDb = (): IDBDatabase => {
 const localOnly = (): Deps => ({
   db: theDb(),
   github: null,
+  shrink: async () => new ArrayBuffer(0),
   now: () => 1_700_000_000_000,
   schedule: (_ms, fire) => void queueMicrotask(fire),
 });

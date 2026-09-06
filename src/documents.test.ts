@@ -11,6 +11,7 @@ const note = (path: string, body = "", extra: Partial<Note> = {}): Note => ({
   pending: false,
   deleted: false,
   dirty: false,
+  encoding: "utf8" as const,
   ...extra,
 });
 
@@ -20,6 +21,7 @@ let root: HTMLElement;
 const deps = (): Deps => ({
   db: db as IDBDatabase,
   github: null,
+  shrink: async () => new ArrayBuffer(0),
   now: () => 1_700_000_000_000,
   schedule: (_ms, fire) => void queueMicrotask(fire),
 });

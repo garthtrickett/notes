@@ -8,6 +8,7 @@ const rec = (path: string, body: string): NoteRecord => ({
   baseSha: null,
   pending: false,
   deleted: false,
+  encoding: "utf8",
 });
 
 let db: IDBDatabase | undefined;

@@ -5,6 +5,7 @@ import { boot } from "./loop.ts";
 import { createGithub } from "./github.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view.ts";
+import { canvasShrinker } from "./attachments.ts";
 
 const root = document.getElementById("app");
 if (!root) throw new Error("#app is missing from index.html");
@@ -25,6 +26,7 @@ if (config === null) {
   const loop = await boot(
     {
       db: await openDb(),
+      shrink: canvasShrinker,
       github: createGithub(config),
       now: () => Date.now(),
       schedule: (ms, fire) => void setTimeout(fire, ms),

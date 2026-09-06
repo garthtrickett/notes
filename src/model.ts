@@ -22,6 +22,9 @@ export interface NoteRecord {
   readonly pending: boolean;
   // A tombstone: gone locally, remote delete not yet landed.
   readonly deleted: boolean;
+  // base64 means the body is an attachment's bytes rather than text. Everything
+  // else — persistence, the outbox, conflicts, retries — is unchanged by it.
+  readonly encoding: Encoding;
 }
 
 export interface Note extends NoteRecord {
@@ -31,6 +34,7 @@ export interface Note extends NoteRecord {
 }
 
 export type Mode = "notes" | "dump";
+export type Encoding = "utf8" | "base64";
 
 export interface Model {
   notes: Map<string, Note>;
@@ -97,7 +101,14 @@ export type Proposal =
   | { readonly kind: "refresh" }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
   | { readonly kind: "previewToggled" }
-  | { readonly kind: "searched"; readonly query: string };
+  | { readonly kind: "searched"; readonly query: string }
+  | {
+      readonly kind: "attached";
+      readonly path: string;
+      readonly base64: string;
+      readonly into: string;
+      readonly body: string;
+    };
 
 // A tombstone still exists as a record until the remote delete lands, but it is
 // not a note any more and must never be shown or opened.
@@ -135,6 +146,7 @@ export const present = (m: Model, p: Proposal): void => {
         pending: true,
         deleted: false,
         dirty: true,
+        encoding: "utf8",
       });
       m.openPath = p.path;
       m.persistBlocked = false;
@@ -211,6 +223,25 @@ export const present = (m: Model, p: Proposal): void => {
       return;
     }
 
+    case "attached": {
+      const host = m.notes.get(p.into);
+      if (!host || host.deleted) return; // reject: nowhere to put it
+      m.notes.set(p.path, {
+        path: p.path,
+        body: p.base64,
+        baseSha: null,
+        pending: true,
+        deleted: false,
+        dirty: true,
+        encoding: "base64",
+      });
+      // The markdown reference and the bytes land together, so a note never
+      // points at an attachment that was not added.
+      m.notes.set(p.into, { ...host, body: p.body, dirty: true, pending: true });
+      m.persistBlocked = false;
+      return;
+    }
+
     case "previewToggled": {
       m.preview = !m.preview;
       return;
@@ -262,6 +293,7 @@ export const present = (m: Model, p: Proposal): void => {
         pending: true,
         deleted: false,
         dirty: true,
+        encoding: note.encoding,
       });
       if (note.baseSha === null) {
         m.notes.delete(p.from);
@@ -362,6 +394,7 @@ export const present = (m: Model, p: Proposal): void => {
         pending: true,
         deleted: false,
         dirty: true,
+        encoding: "utf8",
       });
       // Drop the local claim on the original; the next pull brings the remote.
       m.notes.set(p.path, {

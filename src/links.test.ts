@@ -16,6 +16,7 @@ const note = (path: string, body = ""): Note => ({
   pending: false,
   deleted: false,
   dirty: false,
+  encoding: "utf8",
 });
 
 const mapOf = (...notes: Note[]) => new Map(notes.map((n) => [n.path, n]));

@@ -4,6 +4,7 @@ import { boot, type Deps, type Loop } from "./loop.ts";
 import { err, ok } from "./result.ts";
 import type { Github, SyncError } from "./github.ts";
 import { pull } from "./actions.ts";
+import type { Note } from "./model.ts";
 
 // A GitHub that lives in a Map. Everything about sync is then testable with no
 // network and no timing.
@@ -19,13 +20,13 @@ const fakeGithub = () => {
       if (failWith) return err(failWith);
       return ok([...files.entries()].map(([path, f]) => ({ path, sha: f.sha })));
     },
-    read: async (path) => {
+    read: async (path, _encoding) => {
       calls.push(`read ${path}`);
       if (failWith) return err(failWith);
       const f = files.get(path);
       return f ? ok(f.body) : err({ kind: "notFound" });
     },
-    write: async (path, body, baseSha) => {
+    write: async (path, body, baseSha, _encoding) => {
       calls.push(`write ${path}`);
       if (failWith) return err(failWith);
       const existing = files.get(path);
@@ -70,6 +71,7 @@ const scheduled: (() => void)[] = [];
 const deps = (): Deps => ({
   db: db as IDBDatabase,
   github: remote.github,
+  shrink: async () => new ArrayBuffer(0),
   now: () => clock,
   // Timers are captured rather than run, so a cooldown is inspected instead of
   // waited for.
@@ -129,7 +131,7 @@ describe("pull", () => {
     remote.put("a.md", "theirs");
     remote.put("b.md", "also theirs");
 
-    const local = new Map([
+    const local = new Map<string, Note>([
       [
         "a.md",
         {
@@ -139,6 +141,7 @@ describe("pull", () => {
           pending: true,
           deleted: false,
           dirty: false,
+          encoding: "utf8",
         },
       ],
     ]);
@@ -205,8 +208,8 @@ describe("a stale manifest", () => {
     remote.files.delete("a.md");
     const stale: typeof remote.github = {
       ...remote.github,
-      read: async (path) =>
-        path === "a.md" ? ok("v1") : remote.github.read(path),
+      read: async (path, encoding) =>
+        path === "a.md" ? ok("v1") : remote.github.read(path, encoding),
     };
 
     const proposal = await pull(stale, first.model.notes);

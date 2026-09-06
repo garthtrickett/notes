@@ -13,6 +13,7 @@ import { view } from "./view.ts";
 
 export interface Deps {
   readonly db: IDBDatabase;
+  readonly shrink: import("./attachments.ts").Shrinker;
   readonly github: Github | null;
   readonly now: () => number;
   // Injected so tests can drive the cooldown without waiting for real seconds.
@@ -29,7 +30,7 @@ const FIRST_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
 
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
-  const { db, github, now, schedule } = deps;
+  const { db, github, now, schedule, shrink } = deps;
   const model = createModel();
   let wakeScheduled = false;
 
@@ -47,8 +48,22 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     for (const p of actions.captureProposals(model.notes, text, now)) propose(p);
   };
 
+  const onPaste = (event: ClipboardEvent, path: string) => {
+    const file = [...(event.clipboardData?.items ?? [])]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .find((f): f is File => f !== null);
+    if (!file) return; // a normal text paste; let the textarea handle it
+
+    event.preventDefault();
+    const note = model.notes.get(path);
+    if (!note) return;
+    const cursor = (event.target as HTMLTextAreaElement).selectionStart ?? note.body.length;
+    idle = actions.attach(file, note, cursor, now, shrink).then(propose);
+  };
+
   const paint = () => {
-    render(view(model, propose, now, capture), root);
+    render(view(model, propose, now, capture, onPaste), root);
 
     // The editor is uncontrolled: its value is set when the open note changes,
     // never on every render. Binding it to model state would fight the cursor,
