@@ -77,6 +77,19 @@ export const keyAction = (
       // then reachable from anywhere — including the dump, which has no button
       // for it.
       return propose({ kind: "modalOpened", modal: { kind: "newNote" } });
+    case "v":
+      return model.mode === "archive"
+        ? null
+        : propose({ kind: "modeChanged", mode: "archive" });
+    case "t":
+      return model.mode === "trash"
+        ? null
+        : propose({ kind: "modeChanged", mode: "trash" });
+    case "h":
+      // History is about a note, so it needs one open and something to show.
+      return model.mode === "notes" && model.openPath !== null
+        ? propose({ kind: "historyOpened", path: model.openPath })
+        : null;
     case "i":
       // Escape leaves the editor so these shortcuts work at all; `i` is the way
       // back in, without reaching for the mouse.

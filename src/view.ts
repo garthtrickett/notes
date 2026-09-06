@@ -11,9 +11,11 @@
 // every other piece of state. This file has none of its own.
 
 import { html, nothing, type TemplateResult } from "lit-html";
-import { ARCHIVE, TRASH } from "./paths.ts";
+import { ARCHIVE, TRASH, dropTarget } from "./paths.ts";
 import {
+  dragLanding,
   filedIn,
+  orphanAttachments,
   noteTree,
   numberedRows,
   openable,
@@ -55,33 +57,30 @@ const DRAG_TYPE = "text/x-note-path";
 
 // The payload says what is being dragged as well as where it came from: a
 // folder move is every note under it, which is a different proposal.
-const dragSource = (path: string, folder: boolean) => (event: DragEvent) => {
-  event.dataTransfer?.setData(DRAG_TYPE, `${folder ? "folder" : "note"}:${path}`);
-  event.dataTransfer?.setData("text/plain", path);
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-  event.stopPropagation();
-};
+const dragSource =
+  (path: string, folder: boolean, propose: Propose) => (event: DragEvent) => {
+    event.dataTransfer?.setData(DRAG_TYPE, `${folder ? "folder" : "note"}:${path}`);
+    event.dataTransfer?.setData("text/plain", path);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    event.stopPropagation();
+    propose({ kind: "dragStarted", from: path, folder });
+  };
 
-// Where a dragged path lands if dropped on `folder` — null when the move would
-// be a no-op or nonsense, which is also what stops a folder being dropped into
-// itself.
-export const dropTarget = (from: string, folder: string | null): string | null => {
-  const name = from.slice(from.lastIndexOf("/") + 1);
-  const to = folder === null ? name : `${folder}/${name}`;
-  if (to === from) return null;
-  // A folder cannot become its own descendant, and a note cannot land inside
-  // itself either.
-  if (folder !== null && (folder === from || folder.startsWith(`${from}/`))) {
-    return null;
-  }
-  return to;
-};
-
-const dropZone = (folder: string | null, propose: Propose) => ({
+const dropZone = (folder: string | null, model: Model, propose: Propose) => ({
   onDragOver: (event: DragEvent) => {
     if (event.dataTransfer?.types.includes(DRAG_TYPE) !== true) return;
     event.preventDefault();
+    // The root zone is the whole sidebar, so a folder's dragover reaches it by
+    // bubbling and immediately overwrote the answer with "root" — the preview
+    // showed the root no matter which folder you were over. The innermost zone
+    // is the one being pointed at.
+    event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
+    // dragover fires continuously. Only say something when the answer changes,
+    // or every frame of a drag becomes a repaint.
+    if (model.drag !== null && model.drag.over !== folder) {
+      propose({ kind: "draggedOver", over: folder });
+    }
   },
   onDrop: (event: DragEvent) => {
     const payload = event.dataTransfer?.getData(DRAG_TYPE) ?? "";
@@ -91,6 +90,7 @@ const dropZone = (folder: string | null, propose: Propose) => ({
     event.preventDefault();
     event.stopPropagation();
     const to = dropTarget(from, folder);
+    propose({ kind: "dragEnded" });
     if (to === null) return;
     propose(
       kind === "folder"
@@ -122,7 +122,8 @@ const noteRow = (
     <button
       class="row ${note.path === openPath ? "open" : ""}"
       draggable="true"
-      @dragstart=${dragSource(note.path, false)}
+      @dragstart=${dragSource(note.path, false, propose)}
+      @dragend=${() => propose({ kind: "dragEnded" })}
       @click=${() => propose({ kind: "opened", path: note.path })}
     >
       ${badge(index)}
@@ -149,27 +150,36 @@ const treeNodes = (
   nodes: readonly TreeNode[],
   model: Model,
   propose: Propose,
-  depth: number,
   badges: Map<string, number>,
 ): TemplateResult[] =>
   nodes.map((node) => {
-    const index =
-      badges.get(node.kind === "folder" ? node.path : node.note.path) ?? null;
+    const path = node.kind === "folder" ? node.path : node.note.path;
+    const index = badges.get(path) ?? null;
+    // The row is being previewed where it would land, not where it is. Drawn as
+    // a question rather than a fact until the mouse comes up.
+    const landing = dragLanding(model);
+    const provisional =
+      landing !== null && (path === landing || path.startsWith(`${landing}/`));
     if (node.kind === "note") {
-      return html`<li style="--depth:${depth}">
+      return html`<li class=${provisional ? "provisional" : nothing}>
         ${noteRow(node.note, model.openPath, propose, index)}
       </li>`;
     }
-    const open = model.expanded.has(node.path);
-    return html`<li style="--depth:${depth}">
+    // A folder opens while something is being dragged into it. Otherwise the row
+    // simply vanishes at the moment you most want to see where it is going.
+    const open =
+      model.expanded.has(node.path) ||
+      (landing !== null && landing.startsWith(`${node.path}/`));
+    return html`<li class=${provisional ? "provisional" : nothing}>
       <div class="leaf">
         <button
           class="row folder"
           aria-expanded=${open ? "true" : "false"}
           draggable="true"
-          @dragstart=${dragSource(node.path, true)}
-          @dragover=${dropZone(node.path, propose).onDragOver}
-          @drop=${dropZone(node.path, propose).onDrop}
+          @dragstart=${dragSource(node.path, true, propose)}
+          @dragend=${() => propose({ kind: "dragEnded" })}
+          @dragover=${dropZone(node.path, model, propose).onDragOver}
+          @drop=${dropZone(node.path, model, propose).onDrop}
           @click=${() => propose({ kind: "folderToggled", path: node.path })}
         >
           ${badge(index)}
@@ -189,7 +199,7 @@ const treeNodes = (
         </button>
       </div>
       ${open
-        ? html`<ul>${treeNodes(node.children, model, propose, depth + 1, badges)}</ul>`
+        ? html`<ul>${treeNodes(node.children, model, propose, badges)}</ul>`
         : nothing}
     </li>`;
   });
@@ -222,10 +232,11 @@ const editor = (model: Model, ctx: ViewCtx) => {
       />
       <button
         class="toggle"
-        title="History of ${path}"
+        title="History of ${path} (H)"
+        aria-keyshortcuts="H"
         @click=${() => propose({ kind: "historyOpened", path })}
       >
-        History
+        History <kbd>H</kbd>
       </button>
       <button
         class="toggle"
@@ -708,17 +719,19 @@ const tabs = (model: Model, propose: Propose) => html`
     </button>
     <button
       class=${model.mode === "archive" ? "on" : ""}
-      title="Archive"
+      title="Archive (V)"
+      aria-keyshortcuts="V"
       @click=${() => propose({ kind: "modeChanged", mode: "archive" })}
     >
-      Archive
+      Archive <kbd>V</kbd>
     </button>
     <button
       class=${model.mode === "trash" ? "on" : ""}
-      title="Deleted notes"
+      title="Deleted notes (T)"
+      aria-keyshortcuts="T"
       @click=${() => propose({ kind: "modeChanged", mode: "trash" })}
     >
-      Trash
+      Trash <kbd>T</kbd>
     </button>
     <button
       class=${model.mode === "settings" ? "on" : ""}
@@ -736,7 +749,10 @@ const tabs = (model: Model, propose: Propose) => html`
 const filedView = (model: Model, propose: Propose, folder: string) => {
   const notes = filedIn(model, folder);
   const trash = folder === TRASH;
-  if (notes.length === 0) {
+  // Unused attachments belong with the bin: it is where you go to get space
+  // back. They are listed rather than collected — see orphanAttachments.
+  const orphans = trash ? orphanAttachments(model) : [];
+  if (notes.length === 0 && orphans.length === 0) {
     return html`<p class="empty">
       ${trash ? "Nothing deleted." : "Nothing archived."}
     </p>`;
@@ -766,6 +782,31 @@ const filedView = (model: Model, propose: Propose, folder: string) => {
             : nothing}
         </li>`,
       )}
+      ${orphans.length === 0
+        ? nothing
+        : html`
+            <li class="filed-heading">
+              Unused images — no note points at these any more
+            </li>
+            ${orphans.map(
+              (note) => html`<li>
+                <span class="path" title=${note.path}>
+                  ${note.path.slice(note.path.lastIndexOf("/") + 1)}
+                </span>
+                <button
+                  class="delete"
+                  title="Delete ${note.path} for good"
+                  @click=${() =>
+                    propose({
+                      kind: "modalOpened",
+                      modal: { kind: "confirmDelete", path: note.path, folder: false },
+                    })}
+                >
+                  ×
+                </button>
+              </li>`,
+            )}
+          `}
     </ul>
   `;
 };
@@ -820,12 +861,12 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
   return html`
     <main>
       <nav
-        @dragover=${dropZone(null, propose).onDragOver}
-        @drop=${dropZone(null, propose).onDrop}
+        @dragover=${dropZone(null, model, propose).onDragOver}
+        @drop=${dropZone(null, model, propose).onDrop}
       >
         ${tabs(model, propose)}
         <ul class="tree">
-          ${treeNodes(noteTree(model), model, propose, 0, badgesFor(model))}
+          ${treeNodes(noteTree(model), model, propose, badgesFor(model))}
         </ul>
       </nav>
       <section>${editor(model, ctx)}</section>

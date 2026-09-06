@@ -168,9 +168,12 @@ section {
 .hint { margin: 0; font-size: 12px; color: var(--muted); }
 
 /* tabs */
-.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+/* Five tabs do not fit across a 280px sidebar, so they wrap rather than
+   overflow it. */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .tabs button {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   font: inherit;
   color: var(--muted);
   background: transparent;
@@ -182,12 +185,27 @@ section {
 .tabs button.on { color: #fff; border-color: var(--accent); }
 
 /* tree */
-nav ul ul { margin: 0; padding: 0; }
 nav li { display: block; margin-bottom: 2px; }
 .leaf { display: flex; gap: 4px; }
-.row { padding-left: calc(8px + var(--depth, 0) * 12px); }
+.row { padding-left: 8px; }
 .row.folder { width: 100%; color: var(--muted); gap: 6px; }
 .twist { font-size: 10px; }
+
+/* Depth is drawn, not implied. Children already live in a nested <ul>, so the
+   guide belongs there: one rule per level, and the step is wide enough to see.
+   Before this a child was 12px in and its folder's name was right-aligned, so
+   there was nothing to line it up against — you could not tell whether a note
+   was inside the folder above it. */
+nav ul ul {
+  margin: 0 0 0 11px;
+  padding: 0 0 0 11px;
+  border-left: 1px solid var(--line);
+}
+
+/* And the folder's own name sits at its indent rather than floating to the far
+   edge, which is what made the relationship invisible. */
+.row.folder .path { margin-left: 0; }
+.row.folder { justify-content: flex-start; }
 
 /* note path bar */
 .pathbar { padding: 10px 20px 0; }
@@ -804,5 +822,32 @@ body {
 .settings-actions button:hover,
 .settings-actions button:focus-visible {
   border-color: var(--accent);
+}
+
+/* A drag in progress. The row is already drawn where it would land and the tree
+   has settled around it, so the only thing left to say is that none of it has
+   happened yet. */
+.provisional > .leaf > .row {
+  border-style: dashed;
+  border-color: var(--accent);
+  opacity: 0.75;
+}
+
+.provisional > .leaf > .delete {
+  visibility: hidden;
+}
+
+/* The whole subtree of a dragged folder moves with it, so it reads as one thing
+   rather than a row that happens to have moved. */
+.provisional ul .row {
+  opacity: 0.75;
+}
+
+.filed-heading {
+  margin: 18px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 

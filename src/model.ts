@@ -17,6 +17,7 @@ import { insertAt, isAttachmentPath } from "./attachments.ts";
 import {
   ARCHIVE,
   TRASH,
+  dropTarget,
   filedPath,
   isFiledPath,
   isTrashPath,
@@ -54,6 +55,14 @@ export type Mode = "notes" | "dump" | "archive" | "trash" | "settings";
 
 // The vault is a git branch, so a note's history is its commits. Nothing is
 // stored: this is emptied when the panel closes.
+export interface Drag {
+  readonly from: string;
+  readonly folder: boolean;
+  // The folder currently under the pointer, or null for the root. `undefined`
+  // is not a state: over nothing droppable means the drag shows no preview.
+  readonly over: string | null | undefined;
+}
+
 export interface History {
   readonly path: string;
   // null until fetched, which is what distinguishes "not asked yet" from
@@ -95,6 +104,10 @@ export interface Model {
   // level. A digit on a folder scopes to it, so the next digit reaches its
   // children.
   numberScope: string | null;
+  // A drag in progress. Held in the model so the tree can be drawn as it would
+  // be *after* the drop, which is what makes a drag legible: you see where the
+  // thing lands before you commit to it.
+  drag: Drag | null;
   hydrated: boolean;
   persisting: boolean;
   syncing: boolean;
@@ -131,6 +144,7 @@ export const createModel = (): Model => ({
   paletteIndex: 0,
   expanded: new Set(),
   numberScope: null,
+  drag: null,
   hydrated: false,
   persisting: false,
   persistBlocked: false,
@@ -179,6 +193,9 @@ export type Proposal =
   | { readonly kind: "jumped"; readonly index: number }
   // Back to numbering the top level.
   | { readonly kind: "unscoped" }
+  | { readonly kind: "dragStarted"; readonly from: string; readonly folder: boolean }
+  | { readonly kind: "draggedOver"; readonly over: string | null | undefined }
+  | { readonly kind: "dragEnded" }
   // A wikilink that could not be followed, so the click can say why.
   | { readonly kind: "linkRefused"; readonly target: string }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
@@ -227,6 +244,41 @@ export const openable = (m: Model): Note[] =>
     (n) => !isDumpPath(n.path) && !isAttachmentPath(n.path) && !isFiledPath(n.path),
   );
 
+// Attachments no note points at any more.
+//
+// Deliberately not collected automatically. An attachment is unreferenced the
+// moment you delete the line above it, and again for the second between cutting
+// a paragraph and pasting it back — a collector would take the bytes in that
+// gap, and undo would restore a reference to nothing. Nor would it be safe
+// across devices: a note written on the phone and not yet pulled here references
+// files this device cannot see.
+//
+// So they are listed, and removing one is something you do on purpose. Notes in
+// the bin and the archive count as referring: restoring a note should not find
+// its pictures gone.
+export const orphanAttachments = (m: Model): Note[] => {
+  const referenced = new Set<string>();
+  for (const note of visible(m)) {
+    if (note.encoding === "base64") continue;
+    for (const match of note.body.matchAll(IMAGE_SCAN)) {
+      const src = (match[1] ?? "").replace(/^\.?\//, "");
+      if (src !== "") referenced.add(src);
+    }
+  }
+  return visible(m)
+    .filter(
+      (n) =>
+        isAttachmentPath(n.path) &&
+        // One already in the bin is listed there, above this. Twice in one view
+        // would read as two files.
+        !isFiledPath(n.path) &&
+        !referenced.has(n.path),
+    )
+    .sort((a, b) => a.path.localeCompare(b.path));
+};
+
+const IMAGE_SCAN = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+
 // What the bin and the archive hold. Filed notes are ordinary files that the
 // note tree does not show, so this is the same question asked of a prefix.
 export const filedIn = (m: Model, folder: string): Note[] =>
@@ -238,7 +290,34 @@ export const filedIn = (m: Model, folder: string): Note[] =>
 // number shortcuts index into it, so there is one ordering and the badges cannot
 // drift from what the digits do (never duplicate rules).
 export const noteTree = (m: Model): TreeNode[] =>
-  buildTree(openable(m).sort((a, b) => a.path.localeCompare(b.path)));
+  buildTree(previewPaths(m).sort((a, b) => a.path.localeCompare(b.path)));
+
+// Where the dragged thing would end up, or null when the drop would do nothing.
+export const dragLanding = (m: Model): string | null => {
+  if (m.drag === null || m.drag.over === undefined) return null;
+  return dropTarget(m.drag.from, m.drag.over);
+};
+
+// The notes as the tree should draw them right now. Mid-drag that is the vault
+// as it *would* be, so the row moves under the pointer and the order settles
+// around it — and the row is drawn as provisional, so it still reads as a
+// question rather than a fact.
+const previewPaths = (m: Model): Note[] => {
+  const notes = openable(m);
+  const landing = dragLanding(m);
+  if (m.drag === null || landing === null) return notes;
+
+  const from = m.drag.from;
+  if (!m.drag.folder) {
+    return notes.map((n) => (n.path === from ? { ...n, path: landing } : n));
+  }
+  const prefix = `${from}/`;
+  return notes.map((n) =>
+    n.path.startsWith(prefix)
+      ? { ...n, path: `${landing}/${n.path.slice(prefix.length)}` }
+      : n,
+  );
+};
 
 // The rows the digits currently address, and the rows that therefore wear the
 // badges. One function, so a badge can never point somewhere its digit does not
@@ -556,6 +635,22 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       m.mode = "notes";
       m.expanded.add(target.path);
       m.numberScope = target.path;
+      return null;
+    }
+
+    case "dragStarted": {
+      m.drag = { from: p.from, folder: p.folder, over: undefined };
+      return null;
+    }
+
+    case "draggedOver": {
+      if (m.drag === null) return null;
+      m.drag = { ...m.drag, over: p.over };
+      return null;
+    }
+
+    case "dragEnded": {
+      m.drag = null;
       return null;
     }
 

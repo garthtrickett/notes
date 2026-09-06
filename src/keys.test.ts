@@ -250,3 +250,36 @@ describe("a dialog is modal", () => {
     });
   });
 });
+
+describe("shortcuts for the other views", () => {
+  it("v opens the archive", () => {
+    expect(keyAction(press("v"), model())).toEqual({
+      kind: "propose",
+      proposal: { kind: "modeChanged", mode: "archive" },
+    });
+  });
+
+  it("t opens the bin", () => {
+    expect(keyAction(press("t"), model())).toEqual({
+      kind: "propose",
+      proposal: { kind: "modeChanged", mode: "trash" },
+    });
+  });
+
+  it("does nothing when already there", () => {
+    expect(keyAction(press("v"), model({ mode: "archive" }))).toBeNull();
+    expect(keyAction(press("t"), model({ mode: "trash" }))).toBeNull();
+  });
+
+  it("h opens the history of the note in front of you", () => {
+    expect(keyAction(press("h"), model({ openPath: "a.md" }))).toEqual({
+      kind: "propose",
+      proposal: { kind: "historyOpened", path: "a.md" },
+    });
+  });
+
+  it("h does nothing where there is no note to have a history", () => {
+    expect(keyAction(press("h"), model({ openPath: null }))).toBeNull();
+    expect(keyAction(press("h"), model({ mode: "dump", openPath: "a.md" }))).toBeNull();
+  });
+})

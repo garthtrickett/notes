@@ -1,7 +1,7 @@
 import type { TreeNode } from "./tree.ts";
-import { dropTarget } from "./view.ts";
+import { dropTarget } from "./paths.ts";
 import { describe, expect, it } from "bun:test";
-import { createModel, present, type Model, type Note, noteTree, numberedRows, openable, filedIn } from "./model.ts";
+import { createModel, present, type Model, type Note, noteTree, numberedRows, openable, filedIn, dragLanding, orphanAttachments } from "./model.ts";
 
 const note = (
   path: string,
@@ -712,5 +712,109 @@ describe("present — coming back online", () => {
     present(m, { kind: "online", online: true });
     // A rejected token is a rejected token whether or not there is a network.
     expect(m.syncError?.kind).toBe("auth");
+  });
+});
+
+describe("present — a drag in progress", () => {
+  const vault = () =>
+    hydrated(note("apple/one.md"), note("loose.md"), note("zebra/two.md"));
+  const paths = (m: ReturnType<typeof vault>) =>
+    noteTree(m).flatMap(function walk(n): string[] {
+      return n.kind === "folder" ? [n.path, ...n.children.flatMap(walk)] : [n.note.path];
+    });
+
+  it("shows the tree as it would be, before anything has happened", () => {
+    const m = vault();
+    present(m, { kind: "dragStarted", from: "loose.md", folder: false });
+    present(m, { kind: "draggedOver", over: "apple" });
+    // The row has moved under the pointer, so you can see where it lands.
+    expect(paths(m)).toEqual(["apple", "apple/loose.md", "apple/one.md", "zebra", "zebra/two.md"]);
+    // But nothing has actually moved.
+    expect(m.notes.has("loose.md")).toBe(true);
+    expect(m.notes.has("apple/loose.md")).toBe(false);
+  });
+
+  it("puts it back when the drag leaves everything droppable", () => {
+    const m = vault();
+    present(m, { kind: "dragStarted", from: "loose.md", folder: false });
+    present(m, { kind: "draggedOver", over: "apple" });
+    present(m, { kind: "draggedOver", over: undefined });
+    expect(paths(m)).toEqual(["apple", "apple/one.md", "zebra", "zebra/two.md", "loose.md"]);
+  });
+
+  it("moves a folder's whole subtree in the preview", () => {
+    const m = vault();
+    present(m, { kind: "dragStarted", from: "apple", folder: true });
+    present(m, { kind: "draggedOver", over: "zebra" });
+    expect(paths(m)).toEqual([
+      "zebra",
+      "zebra/apple",
+      "zebra/apple/one.md",
+      "zebra/two.md",
+      "loose.md",
+    ]);
+  });
+
+  it("previews nothing for a drop that would do nothing", () => {
+    const m = vault();
+    present(m, { kind: "dragStarted", from: "apple", folder: true });
+    present(m, { kind: "draggedOver", over: "apple" });
+    expect(dragLanding(m)).toBeNull();
+    expect(paths(m)).toEqual(["apple", "apple/one.md", "zebra", "zebra/two.md", "loose.md"]);
+  });
+
+  it("forgets the drag when it ends", () => {
+    const m = vault();
+    present(m, { kind: "dragStarted", from: "loose.md", folder: false });
+    present(m, { kind: "draggedOver", over: "apple" });
+    present(m, { kind: "dragEnded" });
+    expect(m.drag).toBeNull();
+    expect(paths(m)).toEqual(["apple", "apple/one.md", "zebra", "zebra/two.md", "loose.md"]);
+  });
+});
+
+describe("present — attachments nothing points at", () => {
+  const image = (path: string) =>
+    note(path, "AAAA", false, { encoding: "base64" as const });
+
+  const withImages = () =>
+    hydrated(
+      note("a.md", "text ![](attachments/used.webp) more"),
+      note("b.md", "nothing here"),
+      image("attachments/used.webp"),
+      image("attachments/spare.webp"),
+    );
+
+  it("lists only the ones no note refers to", () => {
+    expect(orphanAttachments(withImages()).map((n) => n.path)).toEqual([
+      "attachments/spare.webp",
+    ]);
+  });
+
+  it("counts a note in the bin as still referring to its pictures", () => {
+    const m = withImages();
+    present(m, { kind: "deleted", path: "a.md" });
+    // Restoring that note should not find its image gone.
+    expect(orphanAttachments(m).map((n) => n.path)).toEqual(["attachments/spare.webp"]);
+  });
+
+  it("stops listing one once a note points at it again", () => {
+    const m = withImages();
+    present(m, { kind: "edited", path: "b.md", body: "![](attachments/spare.webp)" });
+    expect(orphanAttachments(m)).toEqual([]);
+  });
+
+  it("does not collect anything on its own", () => {
+    const m = withImages();
+    orphanAttachments(m);
+    // Listing is not removing: an image is unreferenced for the second between
+    // cutting a paragraph and pasting it back.
+    expect(m.notes.get("attachments/spare.webp")?.deleted).toBe(false);
+  });
+
+  it("never lists one that is already in the bin", () => {
+    const m = withImages();
+    present(m, { kind: "deleted", path: "attachments/spare.webp" });
+    expect(orphanAttachments(m)).toEqual([]);
   });
 });

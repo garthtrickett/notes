@@ -124,3 +124,17 @@ export const uniquePath = (
   return `${stem} (${Date.now()})${ext}`;
 };
 
+// Where a dragged path lands if dropped on `folder` — null when the move would
+// be a no-op or nonsense, which is also what stops a folder being dropped into
+// itself.
+export const dropTarget = (from: string, folder: string | null): string | null => {
+  const name = from.slice(from.lastIndexOf("/") + 1);
+  const to = folder === null ? name : `${folder}/${name}`;
+  if (to === from) return null;
+  // A folder cannot become its own descendant, and a note cannot land inside
+  // itself either.
+  if (folder !== null && (folder === from || folder.startsWith(`${from}/`))) {
+    return null;
+  }
+  return to;
+};

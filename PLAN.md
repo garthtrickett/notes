@@ -1349,3 +1349,56 @@ Backlinks survive a rename and the link text is rewritten. Quick capture from a
 note leaves the open note alone. Unicode, emoji, `?` and `#` in names all work,
 `../escape` is refused, and a 120-character name does not push the sidebar wide.
 
+# Phase 13 — the second next-up list
+
+## 13.1 You could not tell what was inside what
+
+The reported case, exactly: `sourdough.md` sat inside `recipes` and
+`known-quirks.md` did not, and the two looked identical. Two things caused it.
+Each level was worth 12px of padding, and the folder's own name was
+**right-aligned** — pushed to the far edge by an auto margin — so there was
+nothing for a child to line up against.
+
+Children already live in a nested `<ul>`, so the indent belongs there rather
+than in a `--depth` variable: one guide line per level, 23px a step. Folder names
+now sit at their own indent. Measured rather than eyeballed: 12 → 35 → 58.
+
+The `--depth` custom property is gone, and with it the `depth` parameter that was
+only still being threaded through to compute it.
+
+## 13.2 A drag now shows what it is about to do
+
+The tree is drawn **as it would be after the drop** — the row moves under the
+pointer and the order settles around it — and the moving row is dashed and
+faded, so it reads as a question rather than a fact until the mouse comes up.
+
+This works because the tree's order is derived. There is nowhere to store an
+arbitrary order, but there is nothing to store either: `noteTree` builds from a
+preview of the paths, so the real vault is untouched until the drop.
+
+A folder opens while something is dragged into it. Otherwise the row vanishes at
+exactly the moment you most want to see where it is going.
+
+**One bug of my own, found by driving it.** The root drop zone is the whole
+sidebar, so a folder's `dragover` reached it by bubbling and overwrote the answer
+with "root" — the preview showed the root no matter which folder the pointer was
+over. The innermost zone stops the event now.
+
+## 13.3 v, t, h
+
+Archive, bin and history. The tabs say so, the same way Notes and Dump always
+have. Five tabs do not fit across the sidebar, so they wrap.
+
+## 13.4 Unused images are listed, not collected
+
+Nothing collects them automatically, and that is the decision rather than the
+shortfall. An attachment is unreferenced the moment you delete the line above it,
+and again for the second between cutting a paragraph and pasting it back — a
+collector would take the bytes in that gap and undo would restore a reference to
+nothing. It is not safe across devices either: a note written on the phone and
+not yet pulled names files this device cannot see.
+
+So they are listed in the bin, which is where you go to get space back, and
+removing one is something you do on purpose and confirm. Notes in the bin and the
+archive count as referring: restoring a note should not find its pictures gone.
+
