@@ -13,6 +13,7 @@ known to hold.
 | 3. The vault | Nested folders, the dump, and offline start-up |
 | 4. Documents | Rendered markdown, links, backlinks, rename, search |
 | 5. Attachments | Paste an image, get a resized WebP committed |
+| 6. One surface | CodeMirror: styled markdown you edit directly, images inline |
 
 All five phases are written out, and all five have shipped. Each was fleshed out
 immediately before being built rather than up front, so the detail describes what
@@ -549,3 +550,240 @@ An unresolved image source is left visibly broken rather than silently dropped.
 - A relative image source resolves to a data URL; an unknown one does not.
 - The sanitizer permits `data:image/png;base64,` and still refuses
   `data:text/html`.
+
+---
+
+# Phase 6 — One surface
+
+**Goal:** stop having two modes. One always-editable surface where markdown is
+styled in place — headings bigger, emphasis applied, markup dimmed rather than
+hidden — and images render inline. The Ulysses model.
+
+**The gate, and it is a phone test:** drag-select from text, across an inline
+image, into the text after it. Copy. Paste elsewhere. The image comes with it and
+the markdown is intact. If that does not work on a touch device, the phase is
+abandoned and the textarea stays.
+
+## 6.0 Spike first — it *is* the gate, run early
+
+The gate above is not checked at the end of the phase. It is checked before the
+phase starts, on a throwaway branch, because it is the only part of this decision
+that cannot be reasoned out and the expensive thing to be wrong about.
+
+An hour: CM6 with a markdown parser and one image widget, flag-gated, not merged,
+opened on a real phone.
+
+Passes if all four hold:
+
+1. A drag-selection starting in text extends across the image and into the text
+   after it.
+2. Copy yields the markdown, image reference included.
+3. Paste inserts it and the image renders at the new position.
+4. Typing a paragraph shows no perceptible lag, and autocorrect behaves.
+
+Playwright can emulate touch and viewport but not Gboard composition or iOS
+selection handles, so this is run by a human thumb or it is not run.
+
+**Nothing below starts until it passes.** If it fails, go to 6.9.
+
+## 6.1 Why this needs a library, when nothing else did
+
+Cross-block selection. Selecting text → image → text as one range is what rules
+out the block editor, which was the no-library option and whose single stated
+weakness was exactly this.
+
+In CM6 an inline image is a `Decoration.replace` **inside the document**. The
+markdown `![](attachments/x.webp)` is still in the text; the widget draws over
+it. One document, one selection model, so a range spans it and a copy yields the
+markdown.
+
+That also subsumes drag-to-reorder: moving an image is moving a link. The bytes
+stay in `attachments/`; the reference moves. Nothing to build.
+
+## 6.2 The Ulysses rules, which are what keep this small
+
+Markup stays **visible** and subordinate — dimmed `##`, dimmed `**` — rather than
+hidden. This is not a compromise, it is the design, and it removes the single
+largest source of complexity in a live-preview editor: caret-aware decoration.
+Nothing appears or disappears as the cursor moves, so nothing reflows.
+
+One deliberate exception: **images render as widgets, replacing their markdown.**
+An image's source is a path, which is noise; the image is the content. Images are
+atomic — arrow keys step over them, backspace removes the whole reference — and
+phase 6 offers no way to edit the path in place. Rare enough to defer.
+
+## 6.3 Decorations
+
+Built by a `ViewPlugin` walking the Lezer tree over `view.visibleRanges` only, so
+document length does not cost anything.
+
+The node names below were **verified by parsing a sample document headlessly**,
+not taken from documentation:
+
+| Construct | Lezer node | Mechanism |
+|---|---|---|
+| Heading level | `ATXHeading1`…`6` | `Decoration.line`, CSS font-size — CM measures variable line heights natively |
+| The `#` characters | `HeaderMark` | `Decoration.mark`, dimmed, never removed |
+| Bold, italic | `StrongEmphasis`, `Emphasis` | `Decoration.mark` + class |
+| Their `*` characters | `EmphasisMark` | `Decoration.mark`, dimmed |
+| Inline code and its backticks | `InlineCode`, `CodeMark` | `Decoration.mark` |
+| Links | `Link`, `LinkMark`, `URL` | `Decoration.mark` + class |
+| Fenced blocks | `FencedCode`, `CodeInfo`, `CodeText` | monospace, no prose styling |
+| Local images | `Image` — one node spanning the whole `![](…)` | `Decoration.replace` + widget, `src` a data URL from IndexedDB |
+| `[[wikilinks]]` | *none* | The parser has no concept of them. A regex pass over the visible text, reusing `links.ts`. |
+
+Two things the probe settled. `Image` is a single node covering the entire
+`![](…)`, which is exactly the range `Decoration.replace` wants — no assembly
+from parts. And `**not bold**` inside a fenced block produces no emphasis node,
+so code is not styled as prose for free rather than by special-casing.
+
+**Only local attachments become widgets.** A remote image URL stays as markdown
+text and is never fetched. The rule survives even though the code enforcing it
+today does not: rendering a remote image tells its host that this note was
+opened, and a vault should not phone home.
+
+## 6.4 Model ↔ editor, which is where the bugs will be
+
+### The instance outlives the paint
+
+CM is an imperative component and must be created **once**, not per render. lit
+renders an empty container; the loop holds the `EditorView` and attaches it.
+
+This is the flash bug again in a new costume: a fresh `EditorView` per paint
+would tear the editor down mid-keystroke. The existing rule already covers it —
+lit is handed a stable node, never a rebuilt one — and the phase-4 fix is the
+precedent to follow rather than rediscover.
+
+### Switching notes
+
+A different `openPath` installs a **fresh `EditorState`**, not a change
+transaction. That is deliberate: it resets undo history at the note boundary, so
+undo cannot walk backwards out of the note you are in and start rewriting the
+previous one.
+
+**Non-goal:** undo does not span a rename. Renaming rewrites links in other
+notes, and unwinding that is a vault-level operation this phase does not attempt.
+
+### The two directions
+
+The rule is unchanged from the textarea: **the editor owns the buffer while it
+has focus; the model catches up.** `docChanged` proposes `edited`.
+
+The other direction — a pull, a rename rewriting links, a pasted image — is where
+this gets *better*. Today `syncEditorValue` hand-rolls common-prefix and
+common-suffix arithmetic to keep the caret still. CM maps selections through
+transactions itself, so the job becomes: compute a minimal change and dispatch it.
+The existing prefix/suffix scan supplies the range; CM does the caret.
+
+**`syncEditorValue` is deleted, not ported.**
+
+### Clicking a wikilink
+
+The preview's delegated click handler goes with the preview, so navigation has to
+be rebuilt: `EditorView.domEventHandlers({ click })`, resolve the position to a
+syntax node, and resolve the target against the model *at click time* — the same
+rule the delegated handler established, for the same reason.
+
+Easy to forget, and its absence is a silent functional regression rather than an
+error.
+
+### Escape
+
+`isTyping` already returns true for CM, since its content is contenteditable, so
+the single-letter shortcuts stay out of the way for free. Escape-to-blur needs
+`view.contentDOM.blur()` rather than the event target.
+
+## 6.5 What this deletes
+
+A replacement, not an addition. If both survive, the phase failed.
+
+- `preview` from the model, the `previewToggled` proposal, the `E` shortcut
+- the preview cache and its identity-keyed invalidation
+- `render-markdown.ts` entirely — and with it **almost the whole XSS surface**:
+  no sanitizer, no HTML escaping, no `data:` allowlist, no namespace holes.
+  Nothing renders untrusted markdown to HTML any more.
+
+  One thing survives, and a claim this strong has to name it: the image widget.
+  It is the only element built from note content. Its rules — the constraint,
+  not an aspiration — are that `src` is a `data:` URL assembled from our own
+  IndexedDB bytes, the mime type is derived from the file extension against a
+  fixed allowlist, and **`image/svg+xml` is never one of them**. An SVG is a
+  document that can script; a WebP is not.
+- `marked` — CM6 parses markdown itself via Lezer
+- `syncEditorValue`
+
+Unaffected: the tree, search, backlinks, the dump, sync, attachments storage.
+The blast radius is the editor pane.
+
+## 6.6 Scope, stated as refusals
+
+No folding. No autocomplete. No multiple cursors. No search panel. No vim mode.
+No caret-aware hiding.
+
+**The dump keeps its per-day textareas.** That is a real tension with "one
+surface" and worth naming rather than glossing: the dump ends up with a different
+editor from notes. It is accepted because changing two editors at once is how a
+phase stops being reviewable, and because the dump's needs are genuinely
+different — capture, not composition. Revisit once notes have settled.
+
+Accessibility is not a non-goal but is a regression risk: a `<textarea>` is
+natively accessible and CM's contenteditable relies on its own ARIA. Check with a
+screen reader before deleting the textarea path, not after.
+
+## 6.7 Tests
+
+This changes the testing shape, and pretending otherwise would be the mistake.
+
+**Headless, and this is most of it.** Verified rather than assumed:
+`markdownLanguage.parser.parse(text)` produced a full tree with exact offsets
+under `bun test` with no DOM present. So the decoration builder is a pure
+function from document text to a list of ranges and classes. Test that directly: heading
+levels, nested emphasis, markup positions, a wikilink, an image, a fenced code
+block that must not be styled as prose.
+
+**Browser, via Playwright.** Typing, the caret surviving a remote edit, paste,
+and the selection gate.
+
+**Neither, and said out loud.** IME composition and touch selection handles. The
+spike covers them once, by hand; nothing regressed-tests them afterwards. That is
+a real gap and the reason 6.0 exists.
+
+## 6.8 Rollout
+
+Behind `editor: "textarea" | "codemirror"` in localStorage, defaulting to
+textarea. **Device-local on purpose**, so during rollout the desktop can run CM
+while the phone stays on the textarea — which is also the honest fallback if the
+spike passes on desktop and disappoints on mobile.
+
+Cost to measure rather than assume: CM6 core plus the markdown parser is
+roughly 200–250 KB minified, well under half that gzipped, fetched once and then
+held by the service worker. Measure it on the real build; do not take that
+figure from this document.
+
+**Trigger to delete the textarea path: two weeks of daily use without reaching
+for the flag.** Written down because carrying two editors indefinitely is the
+likeliest bad outcome — worse than either editor alone, and the device-local flag
+makes drifting into it comfortable.
+
+## 6.9 Order
+
+1. **The spike** (6.0). Stop here if it fails.
+2. **The decoration builder**, pure and headless, with its tests. No editor yet —
+   text in, ranges out. This is the bulk of the logic and none of the risk.
+3. **Mount CM behind the flag**, one instance held by the loop, both sync
+   directions wired.
+4. **Paste and wikilink click**, the two handlers the textarea path owns today
+   that would otherwise silently disappear.
+5. **Delete the preview path** — model field, proposal, shortcut, cache,
+   `render-markdown.ts`, `marked`, `syncEditorValue`.
+6. **Remove the flag** once 6.8's trigger fires.
+
+Steps 2 and 5 are where the value is. Step 3 is where the bugs are.
+
+## 6.10 Bail-out
+
+If the spike fails on mobile, or the bundle costs more than it is worth on a
+phone connection, the answer is the cheap version: dim the markup and colour
+headings with a transparent textarea over a painted div. No size hierarchy, no
+inline images, no library, and it keeps the native selection that the gate is
+testing.
