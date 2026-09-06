@@ -98,6 +98,9 @@ export interface Model {
   hydrated: boolean;
   persisting: boolean;
   syncing: boolean;
+  // How much of a large first import is still to come, so the status line can
+  // say something and nap knows to go round again.
+  pullRemaining: number;
   // Set while a network failure is cooling off. nap() skips until now passes it.
   retryAt: number;
   retryDelay: number;
@@ -132,6 +135,7 @@ export const createModel = (): Model => ({
   persisting: false,
   persistBlocked: false,
   syncing: false,
+  pullRemaining: 0,
   retryAt: 0,
   retryDelay: 0,
   online: true,
@@ -156,7 +160,13 @@ export type Proposal =
   | { readonly kind: "failed"; readonly error: LocalError }
   | { readonly kind: "online"; readonly online: boolean }
   | { readonly kind: "woke" }
-  | { readonly kind: "pulled"; readonly notes: readonly NoteRecord[]; readonly gone: readonly string[] }
+  | {
+      readonly kind: "pulled";
+      readonly notes: readonly NoteRecord[];
+      readonly gone: readonly string[];
+      // Files the manifest wants that this batch did not take.
+      readonly remaining: number;
+    }
   | { readonly kind: "pushed"; readonly path: string; readonly body: string; readonly sha: string }
   | { readonly kind: "removed"; readonly path: string }
   | { readonly kind: "conflicted"; readonly path: string; readonly copyPath: string; readonly body: string }
@@ -827,6 +837,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         m.forgotten.add(path);
       }
       settleSync(m);
+      m.pullRemaining = p.remaining;
       if (m.openPath === null || !m.notes.has(m.openPath)) {
         m.openPath = firstVisiblePath(m);
       }
@@ -899,6 +910,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "syncFailed": {
       m.syncing = false;
       m.syncError = p.error;
+      // The backoff owns the retry from here. Leaving a batch count set would
+      // have nap pulling again immediately and spinning against whatever just
+      // failed.
+      m.pullRemaining = 0;
       if (p.error.kind === "offline") m.online = false;
       return null;
     }

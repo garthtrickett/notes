@@ -1068,13 +1068,24 @@ than to an error.
 
 ## 8.9 Import without waiting in line (9)
 
-The pull fetches file bodies one at a time. For a vault someone has just filled
-with a thousand notes from the GitHub side, that is a thousand round trips in
-series.
+**Half of this was already built, and the half that was left was the worse half.**
+`inPool` fetches six at a time, and the manifest's blob SHA already skips
+anything unchanged. Writing this section from the plan's deferred note rather
+than from the code would have produced a change that did nothing.
 
-Bounded concurrency, not unbounded: a pool small enough to stay inside the rate
-limit, with the existing `rateLimited` handling still in charge of backing off.
-The manifest already carries a blob SHA per file, so anything whose SHA matches
-what is stored is skipped without a fetch at all — which is the larger win and
-the one that keeps working on the second sync.
+What was actually wrong: the pull fetched **everything** and only then handed any
+of it to the model. A thousand notes was a minute of motionless "Syncing…" with
+nothing on screen, and a failure on the last file threw away the other nine
+hundred and ninety-nine.
+
+So: a batch of 200 per call, each landing as its own `pulled`. Notes appear as
+they arrive, and a failure costs one batch rather than the lot — everything
+already landed has a `baseSha`, so the next pull skips it. Resumability falls out
+of the SHA check that was already there rather than needing a watermark.
+
+Two consequences worth stating. The delete check is skipped except on the last
+batch: mid-import the local map is deliberately incomplete, and a file that has
+simply not been fetched yet is not a delete. And a failed batch sets
+`pullRemaining` to zero, handing the retry back to the existing backoff instead
+of letting nap spin against whatever just failed.
 

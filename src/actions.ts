@@ -86,6 +86,18 @@ export const forget = async (
 // flood with a rate limit, which is the failure this is trying to avoid.
 const POOL = 6;
 
+// How many files one pull will fetch before handing what it has to the model.
+//
+// The concurrency above was never the whole problem. A vault someone has just
+// filled with a thousand notes from the GitHub side used to fetch all thousand
+// and only then show any of them — a minute of motionless "Syncing…" — and a
+// failure on the last one threw away the other nine hundred and ninety-nine.
+//
+// Batching fixes both at once: notes appear as they arrive, and a failure costs
+// one batch rather than the lot, because everything already landed has a baseSha
+// and the next pull skips it.
+const BATCH = 200;
+
 const inPool = async <T, R>(
   items: readonly T[],
   run: (item: T) => Promise<R>,
@@ -114,11 +126,14 @@ export const pull = async (
 
   const remote = new Map(manifest.value.map((e) => [e.path, e.sha]));
 
-  const wanted = [...remote].filter(([path, sha]) => {
+  const allWanted = [...remote].filter(([path, sha]) => {
     const here = local.get(path);
     if (here?.pending) return false; // the push owns this one, conflict included
     return !here || here.baseSha !== sha; // otherwise unchanged
   });
+
+  const wanted = allWanted.slice(0, BATCH);
+  const remaining = allWanted.length - wanted.length;
 
   const fetched = await inPool(wanted, async ([path, sha]) => {
     const encoding: Encoding = isBinaryPath(path) ? "base64" : "utf8";
@@ -152,9 +167,14 @@ export const pull = async (
   // omission is not enough on its own. Confirm each disappearance against the
   // Contents API, which reads back a write immediately. Costs one request per
   // vanished file, and files rarely vanish.
-  const suspected = [...local.values()].filter(
-    (n) => n.baseSha !== null && !remote.has(n.path) && !n.deleted,
-  );
+  // Only on the last batch. Mid-import the local map is deliberately incomplete,
+  // and a missing file that has simply not been fetched yet is not a delete.
+  const suspected =
+    remaining > 0
+      ? []
+      : [...local.values()].filter(
+          (n) => n.baseSha !== null && !remote.has(n.path) && !n.deleted,
+        );
 
   const checked = await inPool(suspected, async (note) => ({
     path: note.path,
@@ -167,7 +187,7 @@ export const pull = async (
     .filter(({ result }) => !result.ok && result.error.kind === "notFound")
     .map(({ path }) => path);
 
-  return { kind: "pulled", notes, gone };
+  return { kind: "pulled", notes, gone, remaining };
 };
 
 const CONFLICT_SUFFIX = / \(conflict \d{4}-\d{2}-\d{2}( \d+)?\)$/;

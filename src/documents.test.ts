@@ -367,6 +367,7 @@ describe("the preview does not thrash the DOM", () => {
         kind: "pulled",
         notes: [{ ...note("elsewhere.md", "theirs"), baseSha: "s2" }],
         gone: [],
+        remaining: 0,
       }),
     );
     expect(churned).toEqual({ removed: 0, added: 0 });
@@ -392,6 +393,7 @@ describe("the preview does not thrash the DOM", () => {
       kind: "pulled",
       notes: [{ ...note("ghost.md", ""), baseSha: "s2" }],
       gone: [],
+      remaining: 0,
     });
     await settle(loop);
     expect(root.querySelector("a.unresolved")).toBeNull();

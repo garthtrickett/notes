@@ -358,7 +358,13 @@ const backlinks = (model: Model, path: string, propose: Propose) => {
 // compiling, which is the entire point of the union.
 const syncMessage = (model: Model): string | null => {
   const e = model.syncError;
-  if (e === null) return model.syncing ? "Syncing…" : null;
+  if (e === null) {
+    if (!model.syncing) return null;
+    // A thousand-note import is otherwise a motionless "Syncing…" for a minute.
+    return model.pullRemaining > 0
+      ? `Syncing… ${model.pullRemaining} notes to go`
+      : "Syncing…";
+  }
   switch (e.kind) {
     case "offline":
       return "Offline — your edits are saved here and will sync later.";

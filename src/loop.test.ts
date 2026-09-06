@@ -328,7 +328,7 @@ describe("deleting for good reaches the device, not just the model", () => {
     });
     await settle(loop);
 
-    loop.propose({ kind: "pulled", notes: [], gone: ["a.md"] });
+    loop.propose({ kind: "pulled", notes: [], gone: ["a.md"], remaining: 0 });
     await settle(loop);
     expect(await getAll(theDb())).toEqual([]);
   });

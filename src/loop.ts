@@ -244,8 +244,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       return;
     }
 
-    // 4. Pull once per session; phase 3 adds a trigger on window focus.
-    if (model.lastSyncedAt === null) {
+    // 4. Pull once per session, plus again immediately while a large first
+    //    import still has batches to go.
+    if (model.lastSyncedAt === null || model.pullRemaining > 0) {
       model.syncing = true;
       model.lastSyncedAt = now();
       track(actions.pull(github, model.notes).then(propose));

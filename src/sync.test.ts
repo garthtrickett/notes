@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getAll, openDb } from "./idb.ts";
+import * as actions from "./actions.ts";
 import { boot, type Deps, type Loop } from "./loop.ts";
 import { err, ok } from "./result.ts";
 import type { Github, SyncError } from "./github.ts";
@@ -541,5 +542,97 @@ describe("the history panel over the wire", () => {
     expect(loop.model.history?.error).toBe("No history while offline.");
     // The note itself is fine; only the panel failed.
     expect(loop.model.error).toBeNull();
+  });
+});
+
+describe("importing a vault someone filled from the GitHub side", () => {
+  const manyRemote = (count: number, prefix = "imported") => {
+    for (let i = 0; i < count; i += 1) {
+      remote.put(`${prefix}/note-${String(i).padStart(3, "0")}.md`, `body ${i}`);
+    }
+  };
+
+  // Driven through the action rather than the loop: one call, one proposal, so
+  // the batch boundary is observable instead of racing the scheduler.
+  it("hands back a batch and says how much is left", async () => {
+    manyRemote(450);
+    const first = await actions.pull(remote.github, new Map());
+    if (first.kind !== "pulled") throw new Error(`got ${first.kind}`);
+    expect(first.notes.length).toBe(200);
+    expect(first.remaining).toBe(250);
+  });
+
+  it("skips on the next batch what the last one already brought", async () => {
+    manyRemote(450);
+    const first = await actions.pull(remote.github, new Map());
+    if (first.kind !== "pulled") throw new Error(`got ${first.kind}`);
+    const local = new Map(
+      first.notes.map((n) => [n.path, { ...n, dirty: false } as Note]),
+    );
+    const second = await actions.pull(remote.github, local);
+    if (second.kind !== "pulled") throw new Error(`got ${second.kind}`);
+    expect(second.notes.length).toBe(200);
+    expect(second.remaining).toBe(50);
+    // None of the first batch was fetched twice.
+    expect(second.notes.some((n) => local.has(n.path))).toBe(false);
+  });
+
+  it("does not mistake an unfetched file for a remote delete", async () => {
+    manyRemote(300);
+    // A local note GitHub no longer lists would normally be checked. Mid-import
+    // the local map is deliberately incomplete, so that check is not run at all.
+    const first = await actions.pull(remote.github, new Map());
+    if (first.kind !== "pulled") throw new Error(`got ${first.kind}`);
+    expect(first.gone).toEqual([]);
+    expect(remote.calls.filter((c) => c.startsWith("read ")).length).toBe(200);
+  });
+
+  it("still checks for deletes on the last batch", async () => {
+    remote.put("stays.md", "here");
+    const local = new Map<string, Note>([
+      [
+        "vanished.md",
+        {
+          path: "vanished.md",
+          body: "was here",
+          baseSha: "sha-old",
+          pending: false,
+          deleted: false,
+          dirty: false,
+          encoding: "utf8",
+        },
+      ],
+    ]);
+    const result = await actions.pull(remote.github, local);
+    if (result.kind !== "pulled") throw new Error(`got ${result.kind}`);
+    expect(result.remaining).toBe(0);
+    expect(result.gone).toEqual(["vanished.md"]);
+  });
+
+  it("keeps what already landed when a later batch fails", async () => {
+    manyRemote(300);
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    await settle(loop);
+    const landed = loop.model.notes.size;
+    expect(landed).toBeGreaterThan(0);
+
+    remote.fail({ kind: "github", status: 500 });
+    await settle(loop);
+    // A failed batch costs one batch, not the import.
+    expect(loop.model.notes.size).toBe(landed);
+    // And the backoff owns the retry rather than nap spinning on it.
+    expect(loop.model.pullRemaining).toBe(0);
+  });
+
+  it("gets all the way there", async () => {
+    manyRemote(450);
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    for (let round = 0; round < 10 && loop.model.notes.size < 450; round += 1) {
+      await settle(loop);
+    }
+    expect(loop.model.notes.size).toBe(450);
+    expect(loop.model.pullRemaining).toBe(0);
   });
 });

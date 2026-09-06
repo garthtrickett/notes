@@ -415,6 +415,7 @@ describe("what the editor is allowed to open", () => {
         },
       ],
       gone: [],
+      remaining: 0,
     });
     expect(m.openPath).toBeNull();
   });
