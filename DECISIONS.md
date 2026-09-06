@@ -107,7 +107,19 @@ The cost is one extra parameter on two calls:
 **Never merge `vault` into `main`.** GitHub will offer a PR after the first
 push; decline it. They are separate histories on purpose.
 
-**Folders are not a data structure.**
+**Folders are not a data structure.** They are a path prefix. There is no folder
+entity, no tree table, no parent pointers — the Trees API manifest already
+returns every path, so the tree is derived from the paths on read. Creating a
+folder is creating a note inside it.
+
+**Nesting is arbitrary-depth and free.** `projects/gafu/runtime/notes.md` needs
+no more machinery than `inbox/thought.md`, because nothing in the model knows
+what a folder is. Depth is a rendering concern only — the tree view splits paths
+on `/`. Storage, sync and the manifest are unaffected.
+
+**Moving a note is a delete + a create.** The Contents API has no move, so a move
+is two calls and two commits. Links match on basename, so a move breaks nothing —
+see note identity below.
 
 ### The daily dump
 
