@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isTyping, keyProposal } from "./keys.ts";
+import { isTyping, keyAction } from "./keys.ts";
 import { createModel, present, type Model } from "./model.ts";
 
 const model = (over: Partial<Model> = {}): Model => {
@@ -32,38 +32,38 @@ const at = (event: KeyboardEvent, target: EventTarget): KeyboardEvent => {
 describe("shortcuts", () => {
   it("N goes to notes", () => {
     const m = model({ mode: "dump" });
-    expect(keyProposal(press("n"), m)).toEqual({ kind: "modeChanged", mode: "notes" });
+    expect(keyAction(press("n"), m)).toEqual({ kind: "propose", proposal: { kind: "modeChanged", mode: "notes" } });
   });
 
   it("D goes to the dump", () => {
-    expect(keyProposal(press("d"), model())).toEqual({
+    expect(keyAction(press("d"), model())).toEqual({ kind: "propose", proposal: {
       kind: "modeChanged",
       mode: "dump",
-    });
+    } });
   });
 
   it("E toggles preview", () => {
-    expect(keyProposal(press("e"), model())).toEqual({ kind: "previewToggled" });
+    expect(keyAction(press("e"), model())).toEqual({ kind: "propose", proposal: { kind: "previewToggled" } });
   });
 
   it("accepts uppercase, so caps lock is not a trap", () => {
-    expect(keyProposal(press("N"), model({ mode: "dump" }))).not.toBeNull();
+    expect(keyAction(press("N"), model({ mode: "dump" }))).not.toBeNull();
   });
 
   it("does nothing when already in that mode", () => {
-    expect(keyProposal(press("n"), model({ mode: "notes" }))).toBeNull();
+    expect(keyAction(press("n"), model({ mode: "notes" }))).toBeNull();
   });
 
   it("does not toggle preview from the dump", () => {
-    expect(keyProposal(press("e"), model({ mode: "dump" }))).toBeNull();
+    expect(keyAction(press("e"), model({ mode: "dump" }))).toBeNull();
   });
 
   it("does not toggle preview with no note open", () => {
-    expect(keyProposal(press("e"), model({ openPath: null }))).toBeNull();
+    expect(keyAction(press("e"), model({ openPath: null }))).toBeNull();
   });
 
   it("ignores other keys", () => {
-    expect(keyProposal(press("x"), model())).toBeNull();
+    expect(keyAction(press("x"), model())).toBeNull();
   });
 });
 
@@ -71,23 +71,23 @@ describe("shortcuts stay out of the way", () => {
   it("does nothing while typing in a textarea", () => {
     const editor = document.createElement("textarea");
     // Otherwise typing "note" inside a note jumps to the dump halfway through.
-    expect(keyProposal(at(press("d"), editor), model())).toBeNull();
+    expect(keyAction(at(press("d"), editor), model())).toBeNull();
   });
 
   it("does nothing while typing in an input", () => {
     const search = document.createElement("input");
-    expect(keyProposal(at(press("n"), search), model({ mode: "dump" }))).toBeNull();
+    expect(keyAction(at(press("n"), search), model({ mode: "dump" }))).toBeNull();
   });
 
   it("leaves the browser's own chords alone", () => {
     const m = model({ mode: "dump" });
-    expect(keyProposal(press("n", { metaKey: true }), m)).toBeNull();
-    expect(keyProposal(press("n", { ctrlKey: true }), m)).toBeNull();
-    expect(keyProposal(press("n", { altKey: true }), m)).toBeNull();
+    expect(keyAction(press("n", { metaKey: true }), m)).toBeNull();
+    expect(keyAction(press("n", { ctrlKey: true }), m)).toBeNull();
+    expect(keyAction(press("n", { altKey: true }), m)).toBeNull();
   });
 
   it("ignores a held key", () => {
-    expect(keyProposal(press("d", { repeat: true }), model())).toBeNull();
+    expect(keyAction(press("d", { repeat: true }), model())).toBeNull();
   });
 });
 
@@ -106,3 +106,45 @@ describe("isTyping", () => {
     expect(isTyping(el)).toBe(true);
   });
 });
+
+describe("quick capture", () => {
+  it("A focuses the box when the dump is already on screen", () => {
+    // A modal over a visible input would be theatre.
+    expect(keyAction(press("a"), model({ mode: "dump" }))).toEqual({
+      kind: "focus",
+      selector: "#capture",
+    });
+  });
+
+  it("A floats the box everywhere else", () => {
+    expect(keyAction(press("a"), model())).toEqual({
+      kind: "propose",
+      proposal: { kind: "captureOpened" },
+    });
+  });
+
+  it("A does nothing while typing", () => {
+    const editor = document.createElement("textarea");
+    expect(keyAction(at(press("a"), editor), model())).toBeNull();
+  });
+
+  it("Escape dismisses capture, even from inside its own field", () => {
+    const box = document.createElement("input");
+    // Blurring instead would look like Escape did nothing.
+    expect(keyAction(at(press("Escape"), box), model({ capturing: true }))).toEqual({
+      kind: "propose",
+      proposal: { kind: "captureClosed" },
+    });
+  });
+
+  it("Escape still leaves a field when capture is closed", () => {
+    const editor = document.createElement("textarea");
+    expect(keyAction(at(press("Escape"), editor), model())).toEqual({
+      kind: "blur",
+    });
+  });
+
+  it("Escape does nothing with no field focused and nothing open", () => {
+    expect(keyAction(press("Escape"), model())).toBeNull();
+  });
+})

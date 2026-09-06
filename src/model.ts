@@ -46,6 +46,9 @@ export interface Model {
   mode: Mode;
   preview: boolean;
   query: string;
+  // Quick capture, floating over whatever you were doing. The point is jotting
+  // something without navigating away and losing your place.
+  capturing: boolean;
   // Open folders. Session-lived UI state, deliberately not persisted.
   expanded: Set<string>;
   hydrated: boolean;
@@ -76,6 +79,7 @@ export const createModel = (): Model => ({
   mode: "notes",
   preview: false,
   query: "",
+  capturing: false,
   expanded: new Set(),
   hydrated: false,
   persisting: false,
@@ -113,6 +117,8 @@ export type Proposal =
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
   | { readonly kind: "previewToggled" }
   | { readonly kind: "searched"; readonly query: string }
+  | { readonly kind: "captureOpened" }
+  | { readonly kind: "captureClosed" }
   | {
       readonly kind: "attached";
       readonly path: string;
@@ -225,7 +231,11 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         dirty: true,
         encoding: "utf8",
       });
-      m.openPath = path;
+      // Only follow the user to something they could have opened. Quick capture
+      // creates today's dump file, and jumping to it would lose the place the
+      // whole feature exists to keep.
+      const created = m.notes.get(path);
+      if (created && isOpenable(created)) m.openPath = path;
       m.persistBlocked = false;
       return null;
     }
@@ -347,6 +357,16 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
 
     case "previewToggled": {
       m.preview = !m.preview;
+      return null;
+    }
+
+    case "captureOpened": {
+      m.capturing = true;
+      return null;
+    }
+
+    case "captureClosed": {
+      m.capturing = false;
       return null;
     }
 

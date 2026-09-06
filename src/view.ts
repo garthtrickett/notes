@@ -377,11 +377,49 @@ const dumpView = (
         }}
       >
         <input id="capture" placeholder="What's on your mind?" autocomplete="off" />
-        <button type="submit">Add</button>
+        <button type="submit" title="Capture (A)" aria-keyshortcuts="A">
+          Add <kbd>A</kbd>
+        </button>
       </form>
     </div>
   `;
 };
+
+// Quick capture, floating. Same destination as the box on the dump page — one
+// capture path, two ways in.
+const captureModal = (
+  propose: Propose,
+  onCapture: (text: string) => void,
+) => html`
+  <div
+    class="scrim"
+    @click=${(e: Event) => {
+      if (e.target === e.currentTarget) propose({ kind: "captureClosed" });
+    }}
+  >
+    <form
+      class="capture floating"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Quick capture"
+      @submit=${(e: SubmitEvent) => {
+        e.preventDefault();
+        const input = (e.target as HTMLFormElement).querySelector("input");
+        if (!input) return;
+        onCapture(input.value);
+        input.value = "";
+        propose({ kind: "captureClosed" });
+      }}
+    >
+      <input
+        id="quick-capture"
+        placeholder="What's on your mind?"
+        autocomplete="off"
+      />
+      <button type="submit">Add</button>
+    </form>
+  </div>
+`;
 
 const tabs = (model: Model, propose: Propose) => html`
   <div class="tabs">
@@ -418,6 +456,7 @@ export const view = (
       <main class="single">
         ${tabs(model, propose)}
         ${dumpView(model, propose, now, onCapture)}
+        ${model.capturing ? captureModal(propose, onCapture) : nothing}
         ${status(model)}
         ${model.error
           ? html`<p class="error" role="alert">${model.error}</p>`
@@ -464,6 +503,7 @@ export const view = (
             </ul>`}
       </nav>
       <section>${editor(model, propose, onPaste)}</section>
+      ${model.capturing ? captureModal(propose, onCapture) : nothing}
       ${status(model)}
       ${model.error
         ? html`<p class="error" role="alert">${model.error}</p>`

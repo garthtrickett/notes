@@ -314,3 +314,26 @@ kbd {
   padding: 0 4px;
   margin-left: 4px;
 }
+
+/* quick capture */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  background: rgb(0 0 0 / 55%);
+}
+
+.capture.floating {
+  width: min(560px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 45%);
+}
+
+.capture.floating input { font-size: 16px; }

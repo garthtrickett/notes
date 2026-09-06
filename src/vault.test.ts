@@ -230,3 +230,77 @@ describe("resumed", () => {
     expect(m.lastSyncedAt).toBe(12345);
   });
 });
+
+describe("quick capture from anywhere", () => {
+  it("opens over the notes view and captures to today's dump", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
+    await settle(loop);
+    expect(root.querySelector("#quick-capture")).toBeNull();
+
+    loop.propose({ kind: "captureOpened" });
+    await settle(loop);
+
+    const box = root.querySelector<HTMLInputElement>("#quick-capture");
+    expect(box).not.toBeNull();
+    // Opening it should put the caret in it; otherwise the shortcut saves
+    // nothing over clicking.
+    expect(document.activeElement).toBe(box as Element);
+
+    box!.value = "a passing thought";
+    box!.closest("form")!.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await settle(loop);
+
+    // Same destination as the box on the dump page: one capture path.
+    expect(loop.model.notes.get("dump/2026-09-06.md")?.body).toBe(
+      "14:32 a passing thought\n",
+    );
+    expect(loop.model.capturing).toBe(false);
+    // And you are still where you were.
+    expect(loop.model.mode).toBe("notes");
+    expect(loop.model.openPath).toBe("inbox/a.md");
+  });
+
+  it("closes without capturing when dismissed", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
+    loop.propose({ kind: "captureOpened" });
+    await settle(loop);
+
+    loop.propose({ kind: "captureClosed" });
+    await settle(loop);
+    expect(root.querySelector("#quick-capture")).toBeNull();
+    expect(loop.model.notes.has("dump/2026-09-06.md")).toBe(false);
+  });
+
+  it("is available from the dump view too", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    loop.propose({ kind: "captureOpened" });
+    await settle(loop);
+    expect(root.querySelector("#quick-capture")).not.toBeNull();
+  });
+});
+
+describe("creating something you cannot open", () => {
+  it("does not follow you to a dump file", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
+    await settle(loop);
+
+    loop.propose({ kind: "created", path: "dump/2026-09-06.md" });
+    await settle(loop);
+    expect(loop.model.openPath).toBe("inbox/a.md");
+  });
+
+  it("still follows you to a note", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
+    loop.propose({ kind: "created", path: "inbox/b.md" });
+    await settle(loop);
+    expect(loop.model.openPath).toBe("inbox/b.md");
+  });
+});

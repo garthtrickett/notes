@@ -62,6 +62,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // toggling preview destroys and recreates the textarea, and without this it
   // would come back empty.
   let lastEditorKey: string | null = null;
+  let wasCapturing = false;
   // Resolves when nothing is in flight and nothing is left to do. Tests await
   // it instead of sleeping.
   let idle: Promise<void> = Promise.resolve();
@@ -90,6 +91,15 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // The editor is uncontrolled: its value is set when the open note changes,
     // never on every render. Binding it to model state would fight the cursor,
     // and worst on a mobile keyboard.
+    // Focus quick capture as it opens, and only then — refocusing on every paint
+    // would fight the caret while typing.
+    if (model.capturing !== wasCapturing) {
+      wasCapturing = model.capturing;
+      if (model.capturing) {
+        root.querySelector<HTMLInputElement>("#quick-capture")?.focus();
+      }
+    }
+
     const editorKey = `${model.mode}|${model.preview}|${model.openPath ?? ""}`;
     const editor = root.querySelector<HTMLTextAreaElement>("#editor");
     const body = model.openPath
