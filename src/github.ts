@@ -21,6 +21,15 @@ export interface RemoteEntry {
   readonly sha: string;
 }
 
+// One commit that touched a note. The vault is a git branch, so the history
+// already exists and does not need inventing or storing.
+export interface Revision {
+  readonly sha: string;
+  readonly when: string;
+  readonly message: string;
+  readonly author: string;
+}
+
 export interface Github {
   readonly manifest: () => Promise<Result<RemoteEntry[], SyncError>>;
   // The encoding decides whether the body is converted or passed through. An
@@ -40,6 +49,12 @@ export interface Github {
     path: string,
     baseSha: string,
   ) => Promise<Result<void, SyncError>>;
+  // Read-only, and only asked for when someone opens the history panel.
+  readonly history: (path: string) => Promise<Result<Revision[], SyncError>>;
+  readonly readAt: (
+    path: string,
+    ref: string,
+  ) => Promise<Result<string, SyncError>>;
 }
 
 // btoa alone mangles anything outside Latin-1, which for a notes app is the
@@ -158,6 +173,47 @@ export const createGithub = (config: Config): Github => {
       if (!body.ok) return body;
       const content = (body.value.content ?? "").replace(/\n/g, "");
       return ok(encoding === "base64" ? content : decode(content));
+    },
+
+    history: async (path) => {
+      const res = await send(
+        `${base}/commits?sha=${encodeURIComponent(config.branch)}&path=${encodePath(path)}&per_page=50`,
+      );
+      if (!res.ok) return res;
+      if (!res.value.ok) return err(responseToError(res.value));
+
+      const body = await json<
+        Array<{
+          sha?: string;
+          commit?: { message?: string; author?: { date?: string; name?: string } };
+        }>
+      >(res.value);
+      if (!body.ok) return body;
+      // Parsed into our own shape here, so nothing above this file ever sees
+      // GitHub's (parse at the boundary).
+      const revisions = (Array.isArray(body.value) ? body.value : [])
+        .filter((c) => typeof c.sha === "string")
+        .map((c) => ({
+          sha: c.sha as string,
+          when: c.commit?.author?.date ?? "",
+          message: c.commit?.message ?? "",
+          author: c.commit?.author?.name ?? "",
+        }));
+      return ok(revisions);
+    },
+
+    readAt: async (path, ref) => {
+      const res = await send(
+        `${base}/contents/${encodePath(path)}?ref=${encodeURIComponent(ref)}`,
+      );
+      if (!res.ok) return res;
+      if (!res.value.ok) return err(responseToError(res.value));
+
+      const body = await json<{ content?: string }>(res.value);
+      if (!body.ok) return body;
+      // Text only: history is for notes, and an old attachment is not something
+      // this panel can show.
+      return ok(decode((body.value.content ?? "").replace(/\n/g, "")));
     },
 
     write: async (path, content, baseSha, encoding) => {

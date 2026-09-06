@@ -47,6 +47,29 @@ const fakeGithub = () => {
       files.delete(path);
       return ok(undefined);
     },
+    // History is read-only and is never reached by sync; the fake keeps one
+    // revision per file so the panel has something to show.
+    history: async (path) => {
+      calls.push(`history ${path}`);
+      if (failWith) return err(failWith);
+      const f = files.get(path);
+      return f
+        ? ok([
+            {
+              sha: f.sha,
+              when: "2026-09-06T00:00:00Z",
+              message: `notes: ${path}`,
+              author: "someone",
+            },
+          ])
+        : ok([]);
+    },
+    readAt: async (path, ref) => {
+      calls.push(`readAt ${path}@${ref}`);
+      if (failWith) return err(failWith);
+      const f = files.get(path);
+      return f && f.sha === ref ? ok(f.body) : err({ kind: "notFound" });
+    },
   };
 
   return {
@@ -483,5 +506,40 @@ describe("failure handling", () => {
     expect(stored.map((r) => [r.path, r.body, r.pending])).toEqual([
       ["a.md", "on the train", true],
     ]);
+  });
+});
+
+describe("the history panel over the wire", () => {
+  it("fetches the revisions, then the body of the one chosen", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "created", path: "a.md" });
+    loop.propose({ kind: "edited", path: "a.md", body: "on github" });
+    await settle(loop);
+
+    loop.propose({ kind: "historyOpened", path: "a.md" });
+    await settle(loop);
+    expect(remote.calls).toContain("history a.md");
+    const sha = remote.files.get("a.md")!.sha;
+    expect(loop.model.history?.revisions?.[0]?.sha).toBe(sha);
+
+    loop.propose({ kind: "revisionOpened", sha });
+    await settle(loop);
+    expect(remote.calls).toContain(`readAt a.md@${sha}`);
+    expect(loop.model.history?.viewingBody).toBe("on github");
+  });
+
+  it("says so in the panel when GitHub cannot be reached", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+
+    remote.fail({ kind: "offline" });
+    loop.propose({ kind: "historyOpened", path: "a.md" });
+    await settle(loop);
+    expect(loop.model.history?.error).toBe("No history while offline.");
+    // The note itself is fine; only the panel failed.
+    expect(loop.model.error).toBeNull();
   });
 });

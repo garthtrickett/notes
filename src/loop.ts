@@ -166,6 +166,23 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
   };
 
+  // The history panel asks for two things, in order: the list of revisions, then
+  // the body of whichever one is selected. Both are read-only and neither
+  // touches note state, so a failure shows in the panel and nowhere else.
+  const napHistory = (): void => {
+    const h = model.history;
+    if (h === null || github === null || h.loading) return;
+    if (h.revisions === null) {
+      h.loading = true;
+      track(actions.loadHistory(github, h.path).then(propose));
+      return;
+    }
+    if (h.viewingSha !== null && h.viewingBody === null) {
+      h.loading = true;
+      track(actions.loadRevision(github, h.path, h.viewingSha).then(propose));
+    }
+  };
+
   const scheduleRender = () => {
     if (renderQueued) return;
     renderQueued = true;
@@ -178,6 +195,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // Every automatic behaviour lives here, and every rule is a function of model
   // state rather than something a scheduler remembers.
   const nap = () => {
+    // 0. Whatever the history panel is waiting for. Read-only, independent of
+    //    the sync rules below, and it must not be gated behind them — a stalled
+    //    push should not leave the panel spinning.
+    napHistory();
+
     // 1. Get local edits onto the device before anything else. Losing a note to
     //    a closed tab is worse than syncing late.
     if (!model.persisting && !model.persistBlocked) {

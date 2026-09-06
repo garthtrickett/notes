@@ -8,7 +8,7 @@
 // model would cost one per keystroke for no benefit, since there is exactly one
 // writer.
 
-import type { SyncError } from "./github.ts";
+import type { Revision, SyncError } from "./github.ts";
 import { rewriteLinks } from "./links.ts";
 import { describeProblem, normalizePath, pathProblem, type PathProblem } from "./paths.ts";
 import { buildTree, type TreeNode } from "./tree.ts";
@@ -51,10 +51,24 @@ export interface Note extends NoteRecord {
 }
 
 export type Mode = "notes" | "dump" | "archive" | "trash";
+
+// The vault is a git branch, so a note's history is its commits. Nothing is
+// stored: this is emptied when the panel closes.
+export interface History {
+  readonly path: string;
+  // null until fetched, which is what distinguishes "not asked yet" from
+  // "no history".
+  revisions: Revision[] | null;
+  loading: boolean;
+  error: string | null;
+  viewingSha: string | null;
+  viewingBody: string | null;
+}
 // A discriminated union rather than a string, because a dialog that asks about
 // something has to carry what it is asking about.
 export type Modal =
   | { readonly kind: "capture" }
+  | { readonly kind: "history" }
   | { readonly kind: "newNote" }
   | { readonly kind: "open" }
   | { readonly kind: "confirmDelete"; readonly path: string; readonly folder: boolean };
@@ -69,6 +83,9 @@ export interface Model {
   // At most one floating box at a time. One field rather than a boolean each, so
   // opening, dismissing and focusing are one rule instead of one per modal.
   modal: Modal | null;
+  // What the history panel is showing. Separate from `modal` because it is data
+  // being fetched, not a dialog being open.
+  history: History | null;
   // Which row the open palette has selected. Lives here rather than in the view
   // because arrow keys move it and the view is a pure function of the model.
   paletteIndex: number;
@@ -107,6 +124,7 @@ export const createModel = (): Model => ({
   preview: false,
   query: "",
   modal: null,
+  history: null,
   paletteIndex: 0,
   expanded: new Set(),
   numberScope: null,
@@ -159,6 +177,16 @@ export type Proposal =
   | { readonly kind: "modalOpened"; readonly modal: Modal }
   | { readonly kind: "modalClosed" }
   | { readonly kind: "modalConfirmed" }
+  | { readonly kind: "historyOpened"; readonly path: string }
+  | {
+      readonly kind: "historyLoaded";
+      readonly path: string;
+      readonly revisions: readonly Revision[];
+    }
+  | { readonly kind: "historyFailed"; readonly path: string; readonly reason: string }
+  | { readonly kind: "revisionOpened"; readonly sha: string }
+  | { readonly kind: "revisionLoaded"; readonly sha: string; readonly body: string }
+  | { readonly kind: "revisionRestored" }
   | { readonly kind: "paletteMoved"; readonly delta: number }
   | {
       readonly kind: "attached";
@@ -613,7 +641,76 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
+    case "historyOpened": {
+      const note = m.notes.get(p.path);
+      if (!note || !isOpenable(note)) {
+        return reject(`Cannot show history for ${p.path}.`);
+      }
+      m.modal = { kind: "history" };
+      m.history = {
+        path: p.path,
+        revisions: null,
+        loading: false,
+        error: null,
+        viewingSha: null,
+        viewingBody: null,
+      };
+      return null;
+    }
+
+    case "historyLoaded": {
+      // A late answer for a note nobody is looking at any more is dropped, not
+      // shown over the top of the one they are.
+      if (m.history === null || m.history.path !== p.path) return null;
+      m.history.revisions = [...p.revisions];
+      m.history.loading = false;
+      m.history.error = null;
+      return null;
+    }
+
+    case "historyFailed": {
+      if (m.history === null || m.history.path !== p.path) return null;
+      m.history.loading = false;
+      m.history.revisions = m.history.revisions ?? [];
+      m.history.error = p.reason;
+      return null;
+    }
+
+    case "revisionOpened": {
+      if (m.history === null) return reject("No history is open.");
+      m.history.viewingSha = p.sha;
+      m.history.viewingBody = null;
+      m.history.error = null;
+      return null;
+    }
+
+    case "revisionLoaded": {
+      if (m.history === null || m.history.viewingSha !== p.sha) return null;
+      m.history.viewingBody = p.body;
+      m.history.loading = false;
+      return null;
+    }
+
+    case "revisionRestored": {
+      const h = m.history;
+      if (h === null || h.viewingBody === null) {
+        return reject("Nothing to restore.");
+      }
+      // Restoring writes the old text as a new edit, so history moves forward
+      // and nothing in the repo is rewritten.
+      const rejection = present(m, {
+        kind: "edited",
+        path: h.path,
+        body: h.viewingBody,
+      });
+      if (rejection !== null) return rejection;
+      m.modal = null;
+      m.history = null;
+      return null;
+    }
+
     case "modalClosed": {
+      m.history = null;
       m.modal = null;
       // The palette starts fresh next time rather than resuming someone else's
       // half-typed search.

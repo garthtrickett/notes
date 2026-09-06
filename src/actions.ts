@@ -9,7 +9,7 @@ import { attemptAsync } from "./result.ts";
 import type { LocalError } from "./local-error.ts";
 import * as idb from "./idb.ts";
 import type { Encoding, Note, NoteRecord, Proposal } from "./model.ts";
-import type { Github } from "./github.ts";
+import type { Github, SyncError } from "./github.ts";
 import { appendEntry, dumpPathOf } from "./dump.ts";
 import {
   attachmentPath,
@@ -304,4 +304,44 @@ export const attach = async (
     into: into.path,
     body: insertAt(into.body, cursor, `![](${path})`),
   };
+};
+
+// The history panel. Read-only against the network, and it degrades to a
+// message rather than an error banner: not being able to reach GitHub should
+// not look like the note is broken.
+export const loadHistory = async (
+  github: Github,
+  path: string,
+): Promise<Proposal> => {
+  const result = await github.history(path);
+  return result.ok
+    ? { kind: "historyLoaded", path, revisions: result.value }
+    : { kind: "historyFailed", path, reason: describeSync(result.error) };
+};
+
+export const loadRevision = async (
+  github: Github,
+  path: string,
+  sha: string,
+): Promise<Proposal> => {
+  const result = await github.readAt(path, sha);
+  return result.ok
+    ? { kind: "revisionLoaded", sha, body: result.value }
+    : { kind: "historyFailed", path, reason: describeSync(result.error) };
+};
+
+const describeSync = (error: SyncError): string => {
+  switch (error.kind) {
+    case "offline":
+      return "No history while offline.";
+    case "auth":
+      return "GitHub rejected the token.";
+    case "rateLimited":
+      return "GitHub is rate limiting; try again shortly.";
+    case "notFound":
+      return "GitHub has never seen this note.";
+    case "conflict":
+    case "github":
+      return "GitHub could not answer.";
+  }
 };

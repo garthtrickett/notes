@@ -529,3 +529,78 @@ describe("where a dragged row lands", () => {
     expect(dropTarget("apple", "zebra")).toBe("zebra/apple");
   });
 });
+
+describe("present — version history", () => {
+  const rev = (sha: string) => ({
+    sha,
+    when: "2026-09-06T10:00:00Z",
+    message: "notes: a.md",
+    author: "someone",
+  });
+
+  it("opens a panel that has not fetched anything yet", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "historyOpened", path: "a.md" });
+    expect(m.modal?.kind).toBe("history");
+    // null, not [] — "not asked yet" is a different thing from "no history".
+    expect(m.history?.revisions).toBeNull();
+  });
+
+  it("refuses history for something that is not an openable note", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "deleted", path: "a.md" });
+    expect(present(m, { kind: "historyOpened", path: ".trash/a.md" })).not.toBeNull();
+  });
+
+  it("drops an answer that arrives for a note nobody is looking at", () => {
+    const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "historyOpened", path: "a.md" });
+    present(m, { kind: "historyLoaded", path: "b.md", revisions: [rev("x")] });
+    expect(m.history?.revisions).toBeNull();
+  });
+
+  it("shows a failure in the panel rather than as an error banner", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "historyOpened", path: "a.md" });
+    present(m, { kind: "historyFailed", path: "a.md", reason: "No history while offline." });
+    expect(m.history?.error).toBe("No history while offline.");
+    expect(m.error).toBeNull();
+  });
+
+  it("restores a version as a new edit rather than a rewrite", () => {
+    const m = hydrated(note("a.md", "current"));
+    present(m, { kind: "historyOpened", path: "a.md" });
+    present(m, { kind: "historyLoaded", path: "a.md", revisions: [rev("old")] });
+    present(m, { kind: "revisionOpened", sha: "old" });
+    present(m, { kind: "revisionLoaded", sha: "old", body: "the old text" });
+    present(m, { kind: "revisionRestored" });
+    expect(m.notes.get("a.md")?.body).toBe("the old text");
+    expect(m.notes.get("a.md")?.dirty).toBe(true);
+    // The panel closes; nothing is left holding a stale body.
+    expect(m.history).toBeNull();
+    expect(m.modal).toBeNull();
+  });
+
+  it("ignores a body that arrives for a version no longer selected", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "historyOpened", path: "a.md" });
+    present(m, { kind: "revisionOpened", sha: "one" });
+    present(m, { kind: "revisionOpened", sha: "two" });
+    present(m, { kind: "revisionLoaded", sha: "one", body: "stale" });
+    expect(m.history?.viewingBody).toBeNull();
+  });
+
+  it("forgets the history when the panel closes", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "historyOpened", path: "a.md" });
+    present(m, { kind: "modalClosed" });
+    expect(m.history).toBeNull();
+  });
+
+  it("refuses to restore with nothing selected", () => {
+    const m = hydrated(note("a.md", "current"));
+    present(m, { kind: "historyOpened", path: "a.md" });
+    expect(present(m, { kind: "revisionRestored" })).not.toBeNull();
+    expect(m.notes.get("a.md")?.body).toBe("current");
+  });
+});

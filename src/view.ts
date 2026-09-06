@@ -213,6 +213,13 @@ const editor = (model: Model, ctx: ViewCtx) => {
       />
       <button
         class="toggle"
+        title="History of ${path}"
+        @click=${() => propose({ kind: "historyOpened", path })}
+      >
+        History
+      </button>
+      <button
+        class="toggle"
         title="Archive ${path}"
         @click=${() => propose({ kind: "archived", path })}
       >
@@ -514,6 +521,61 @@ const confirmBox = (propose: Propose, path: string, folder: boolean) => html`
   </form>
 `;
 
+// A note's history is the vault branch's commits for its path. Nothing here is
+// stored and nothing is rewritten: restoring writes the old text as a new edit,
+// so the history only ever moves forward.
+const historyBox = (model: Model, propose: Propose) => {
+  const h = model.history;
+  if (h === null) return nothing;
+  const when = (iso: string) =>
+    iso === "" ? "" : new Date(iso).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+
+  return html`
+    <div class="capture floating history" role="dialog" aria-modal="true" aria-label="History">
+      <h3>${h.path}</h3>
+      ${h.error !== null ? html`<p class="empty">${h.error}</p>` : nothing}
+      ${h.revisions === null
+        ? html`<p class="empty">Reading history…</p>`
+        : h.revisions.length === 0 && h.error === null
+          ? html`<p class="empty">GitHub has no history for this note yet.</p>`
+          : html`<ul class="revisions">
+              ${h.revisions.map(
+                (rev) => html`<li>
+                  <button
+                    class=${rev.sha === h.viewingSha ? "on" : ""}
+                    @click=${() => propose({ kind: "revisionOpened", sha: rev.sha })}
+                  >
+                    <span class="when">${when(rev.when)}</span>
+                    <span class="who">${rev.author}</span>
+                  </button>
+                </li>`,
+              )}
+            </ul>`}
+      ${h.viewingSha === null
+        ? nothing
+        : h.viewingBody === null
+          ? html`<p class="empty">Reading that version…</p>`
+          : html`
+              <pre class="revision-body">${h.viewingBody}</pre>
+              <div class="confirm-actions">
+                <button type="button" @click=${() => propose({ kind: "modalClosed" })}>
+                  Close
+                </button>
+                <button
+                  type="button"
+                  @click=${() => propose({ kind: "revisionRestored" })}
+                >
+                  Restore this version
+                </button>
+              </div>
+            `}
+    </div>
+  `;
+};
+
 // An empty query lists everything rather than nothing, so `o` then Enter is
 // useful without typing.
 const paletteResults = (model: Model): Note[] => {
@@ -597,7 +659,9 @@ const modal = (
           )
         : model.modal.kind === "confirmDelete"
           ? confirmBox(propose, model.modal.path, model.modal.folder)
-          : openPalette(model, propose);
+          : model.modal.kind === "history"
+            ? historyBox(model, propose)
+            : openPalette(model, propose);
 
   return html`<div
     class="scrim"
