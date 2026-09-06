@@ -345,6 +345,23 @@ describe("flush", () => {
   });
 });
 
+describe("rate limiting", () => {
+  it("waits as long as GitHub asked, not as long as the backoff guessed", async () => {
+    remote.fail({ kind: "rateLimited", retryAfterMs: 15 * 60_000 });
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+
+    // Doubling from a second towards a sixty-second cap would burn requests
+    // against a window fifteen minutes wide.
+    expect(loop.model.retryAt).toBe(clock + 15 * 60_000);
+    expect(loop.model.syncError).toEqual({
+      kind: "rateLimited",
+      retryAfterMs: 15 * 60_000,
+    });
+  });
+});
+
 describe("conflict naming", () => {
   it("does not stack a second marker on an already-conflicted copy", () => {
     const at = () => new Date("2026-09-07T10:00:00").getTime();

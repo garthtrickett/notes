@@ -5,8 +5,10 @@
 // imperatively and memoises it. It has to — markdown is handed to lit as a
 // sanitised *node*, never a string, so nothing can inject unfiltered markup —
 // and it has to be cached, because a fresh node each paint made lit tear the
-// rendered note down and rebuild it on every render. So this file does hold
-// state: two module-level variables, both of them that cache.
+// rendered note down and rebuild it on every render.
+//
+// The cache is passed in rather than held here, so it belongs to a loop like
+// every other piece of state. This file has none of its own.
 
 import { html, nothing, type TemplateResult } from "lit-html";
 import { openable, visible, type Model, type Note, type Proposal } from "./model.ts";
@@ -90,7 +92,12 @@ const newNoteField = (propose: Propose) => {
   `;
 };
 
-const editor = (model: Model, propose: Propose, onPaste: PasteHandler) => {
+const editor = (
+  model: Model,
+  propose: Propose,
+  onPaste: PasteHandler,
+  cache: PreviewCache,
+) => {
   const path = model.openPath;
   if (path === null) {
     return html`<p class="empty">No note open.</p>`;
@@ -125,7 +132,7 @@ const editor = (model: Model, propose: Propose, onPaste: PasteHandler) => {
           class="preview"
           @click=${(e: Event) => onPreviewClick(e, model, propose)}
         >
-          ${preview(model, path)}
+          ${preview(model, path, cache)}
         </div>`
       : html`<textarea
           id="editor"
@@ -149,8 +156,12 @@ const editor = (model: Model, propose: Propose, onPaste: PasteHandler) => {
 // Node value whenever its identity changes, so returning a fresh fragment each
 // paint tore the whole preview down and rebuilt it on *every* render — several
 // times per sync, re-decoding every image. That is the flash.
-let cachedKey: string | null = null;
-let cachedNode: HTMLElement | null = null;
+export interface PreviewCache {
+  key: string | null;
+  node: HTMLElement | null;
+}
+
+export const createPreviewCache = (): PreviewCache => ({ key: null, node: null });
 
 const WIKILINK_SCAN = /\[\[([^\]\n]+)\]\]/g;
 const IMAGE_SCAN = /!\[[^\]]*\]\(([^)\s]+)\)/g;
@@ -177,10 +188,14 @@ const previewKey = (model: Model, path: string, body: string): string => {
   return [path, body, ...links, ...images].join("\u0000");
 };
 
-const preview = (model: Model, path: string): HTMLElement => {
+const preview = (
+  model: Model,
+  path: string,
+  cache: PreviewCache,
+): HTMLElement => {
   const body = model.notes.get(path)?.body ?? "";
   const key = previewKey(model, path, body);
-  if (key === cachedKey && cachedNode !== null) return cachedNode;
+  if (key === cache.key && cache.node !== null) return cache.node;
 
   const container = document.createElement("div");
   container.className = "preview-body";
@@ -207,8 +222,8 @@ const preview = (model: Model, path: string): HTMLElement => {
         : `Ambiguous: ${resolved.paths.join(", ")}`;
   }
 
-  cachedKey = key;
-  cachedNode = container;
+  cache.key = key;
+  cache.node = container;
   return container;
 };
 
@@ -259,6 +274,12 @@ const syncMessage = (model: Model): string | null => {
       return "That note changed on GitHub; your version was kept alongside it.";
     case "auth":
       return "GitHub rejected the token. Check it in settings.";
+    case "rateLimited": {
+      const minutes = Math.ceil(e.retryAfterMs / 60_000);
+      return minutes <= 1
+        ? "GitHub is rate limiting; retrying shortly."
+        : `GitHub is rate limiting; retrying in about ${minutes} minutes.`;
+    }
     case "notFound":
       return "That repo or branch is missing. Check it in settings.";
     case "github":
@@ -448,6 +469,7 @@ export const view = (
   now: () => number,
   onCapture: (text: string) => void,
   onPaste: PasteHandler,
+  previewCache: PreviewCache,
 ): TemplateResult => {
   if (!model.hydrated) return html`<p class="empty">Loading…</p>`;
 
@@ -502,7 +524,7 @@ export const view = (
               )}
             </ul>`}
       </nav>
-      <section>${editor(model, propose, onPaste)}</section>
+      <section>${editor(model, propose, onPaste, previewCache)}</section>
       ${model.capturing ? captureModal(propose, onCapture) : nothing}
       ${status(model)}
       ${model.error

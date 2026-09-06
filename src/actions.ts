@@ -80,6 +80,31 @@ export const forget = async (
 // Sync. Same rule as above: impure, and ends by returning a proposal.
 // ---------------------------------------------------------------------------
 
+// Six at a time. A first sync of a large vault is otherwise one round trip per
+// file, in series — minutes behind a motionless "Syncing…". Bounded rather than
+// unbounded because the manifest can name hundreds of files and GitHub answers a
+// flood with a rate limit, which is the failure this is trying to avoid.
+const POOL = 6;
+
+const inPool = async <T, R>(
+  items: readonly T[],
+  run: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  const results: R[] = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next++;
+      if (index >= items.length) return;
+      results[index] = await run(items[index] as T);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(POOL, items.length) }, worker),
+  );
+  return results;
+};
+
 export const pull = async (
   github: Github,
   local: ReadonlyMap<string, Note>,
@@ -88,15 +113,21 @@ export const pull = async (
   if (!manifest.ok) return { kind: "syncFailed", error: manifest.error };
 
   const remote = new Map(manifest.value.map((e) => [e.path, e.sha]));
-  const notes: NoteRecord[] = [];
 
-  for (const [path, sha] of remote) {
+  const wanted = [...remote].filter(([path, sha]) => {
     const here = local.get(path);
-    if (here?.pending) continue; // the push owns this one, conflict included
-    if (here && here.baseSha === sha) continue; // unchanged
+    if (here?.pending) return false; // the push owns this one, conflict included
+    return !here || here.baseSha !== sha; // otherwise unchanged
+  });
 
+  const fetched = await inPool(wanted, async ([path, sha]) => {
     const encoding: Encoding = isBinaryPath(path) ? "base64" : "utf8";
     const body = await github.read(path, encoding);
+    return { path, sha, encoding, body };
+  });
+
+  const notes: NoteRecord[] = [];
+  for (const { path, sha, encoding, body } of fetched) {
     if (!body.ok) {
       // A file listed in the manifest and then missing is a race with someone
       // else's delete, not an error worth failing the whole pull over.
@@ -125,16 +156,16 @@ export const pull = async (
     (n) => n.baseSha !== null && !remote.has(n.path) && !n.deleted,
   );
 
-  const gone: string[] = [];
-  for (const note of suspected) {
-    const check = await github.read(note.path, note.encoding);
-    if (!check.ok && check.error.kind === "notFound") {
-      gone.push(note.path);
-      continue;
-    }
-    // Anything else — it still exists, or the network faltered — means leave it
-    // alone. A later pull will settle it.
-  }
+  const checked = await inPool(suspected, async (note) => ({
+    path: note.path,
+    result: await github.read(note.path, note.encoding),
+  }));
+
+  // Anything other than a confirmed 404 — it still exists, or the network
+  // faltered — means leave it alone. A later pull will settle it.
+  const gone = checked
+    .filter(({ result }) => !result.ok && result.error.kind === "notFound")
+    .map(({ path }) => path);
 
   return { kind: "pulled", notes, gone };
 };

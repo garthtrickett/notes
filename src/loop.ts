@@ -16,7 +16,7 @@ import { render } from "lit-html";
 import { createModel, present, type Model, type Proposal } from "./model.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
-import { view } from "./view.ts";
+import { createPreviewCache, view } from "./view.ts";
 
 export interface Deps {
   readonly db: IDBDatabase;
@@ -91,6 +91,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // would come back empty.
   let lastEditorKey: string | null = null;
   let wasCapturing = false;
+  const previewCache = createPreviewCache();
   // Everything currently in flight, not merely the most recent thing started.
   // A push can begin while a persist is still running — the first block is
   // skipped rather than returned from — so assigning would drop the persist's
@@ -119,7 +120,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   };
 
   const paint = () => {
-    render(view(model, propose, now, capture, onPaste), root);
+    render(view(model, propose, now, capture, onPaste, previewCache), root);
 
     // The editor is uncontrolled: its value is set when the open note changes,
     // never on every render. Binding it to model state would fight the cursor,
@@ -226,11 +227,19 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // Backoff is bookkeeping about the loop rather than about notes, so it lives
     // here instead of leaking a clock into present().
     if (p.kind === "syncFailed") {
-      model.retryDelay = Math.min(
-        model.retryDelay === 0 ? FIRST_BACKOFF_MS : model.retryDelay * 2,
-        MAX_BACKOFF_MS,
-      );
-      model.retryAt = now() + model.retryDelay;
+      if (p.error.kind === "rateLimited") {
+        // GitHub said exactly when it will answer again. Doubling from one
+        // second towards a sixty-second cap would just burn requests against a
+        // window that might be an hour wide.
+        model.retryDelay = p.error.retryAfterMs;
+        model.retryAt = now() + p.error.retryAfterMs;
+      } else {
+        model.retryDelay = Math.min(
+          model.retryDelay === 0 ? FIRST_BACKOFF_MS : model.retryDelay * 2,
+          MAX_BACKOFF_MS,
+        );
+        model.retryAt = now() + model.retryDelay;
+      }
     }
     const rejection = present(model, p);
     if (rejection !== null && import.meta.env.DEV) {
@@ -250,9 +259,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // spin that can throw. Checking PROD rather than DEV matters: outside Vite —
   // under `bun test` — neither is defined, and the tests need the real thing.
   //
-  // It must check every in-flight flag. Checking only `persisting` meant it
-  // returned while a push or pull was still running, which is why callers were
-  // adding their own microtask hop afterwards — a flake waiting for a slow day.
+  // It must check every in-flight flag. Returning while a push or pull is still
+  // running makes callers add their own wait afterwards, which is a flake
+  // waiting for a slow day.
   const flush = async (): Promise<void> => {
     if (import.meta.env.PROD) return;
     for (let i = 0; i < 40; i += 1) {

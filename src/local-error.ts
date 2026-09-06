@@ -1,9 +1,8 @@
 // What can go wrong on this device, as a union rather than a sentence.
 //
-// The counterpart to SyncError. Previously actions built English prose and put
-// it straight on the model, which let an action decide presentation — the exact
-// thing principle 6 exists to stop. Actions now report what happened; this file
-// is the only place that decides how to say it.
+// The counterpart to SyncError. Actions report what happened; this file is the
+// only place that decides how to say it, so an action never decides presentation
+// (principle 6).
 
 export type LocalError =
   | { readonly kind: "readFailed"; readonly cause: string }

@@ -77,6 +77,51 @@ describe("manifest", () => {
     expect(result).toEqual({ ok: false, error: { kind: "offline" } });
   });
 
+  it("does not call a rate limit a bad token", async () => {
+    // GitHub answers both with 403. Telling someone their token was rejected
+    // sends them off to reissue a token that was working.
+    globalThis.fetch = (async () =>
+      new Response("{}", {
+        status: 403,
+        headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "9999999999" },
+      })) as unknown as typeof fetch;
+    const result = await createGithub(config).manifest();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("rateLimited");
+  });
+
+  it("honours retry-after on a secondary rate limit", async () => {
+    globalThis.fetch = (async () =>
+      new Response("{}", { status: 429, headers: { "retry-after": "120" } })) as unknown as typeof fetch;
+    const result = await createGithub(config).manifest();
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error).toEqual({ kind: "rateLimited", retryAfterMs: 120_000 });
+  });
+
+  it("still calls a genuine 403 an auth problem", async () => {
+    globalThis.fetch = (async () =>
+      new Response("{}", { status: 403 })) as unknown as typeof fetch;
+    const result = await createGithub(config).manifest();
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.error.kind).toBe("auth");
+  });
+
+  it("escapes a path segment, not just the spaces in it", async () => {
+    const fetchMock = install({ content: { sha: "new" } });
+    // encodeURI leaves ? and # alone, so `why?.md` turned its own name into a
+    // query string and the write went to the wrong place.
+    await createGithub(config).write("inbox/why?.md", "body", null, "utf8");
+    const [url] = fetchMock.calls[0]!;
+    expect(url).toContain("/contents/inbox/why%3F.md");
+    expect(url).not.toContain("why?.md");
+  });
+
+  it("keeps the slashes that separate segments", async () => {
+    const fetchMock = install({ content: { sha: "new" } });
+    await createGithub(config).write("a/b/c.md", "body", null, "utf8");
+    expect(fetchMock.calls[0]![0]).toContain("/contents/a/b/c.md");
+  });
+
   it("maps an unexpected status to github with the number", async () => {
     install({}, 503);
     const result = await createGithub(config).manifest();

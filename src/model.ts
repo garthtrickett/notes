@@ -1,10 +1,12 @@
 // The model is a mutable container of immutable values.
 //
-// present() writes note state and everything a Model holds is readonly
-// (principle 3). loop.ts additionally writes the in-flight flags — see the header
-// there for why that boundary is temporal rather than by field. Replacing one Note per keystroke costs a small allocation;
-// replacing the whole model would cost one per keystroke for no benefit, since
-// there is exactly one writer.
+// present() writes note state; everything a Model holds is readonly (principle
+// 3). loop.ts additionally writes the in-flight flags — see the header there for
+// why that boundary is temporal rather than by field.
+//
+// Replacing one Note per keystroke costs a small allocation. Replacing the whole
+// model would cost one per keystroke for no benefit, since there is exactly one
+// writer.
 
 import type { SyncError } from "./github.ts";
 import { rewriteLinks } from "./links.ts";
@@ -165,8 +167,8 @@ const checkPath = (m: Model, raw: string): CheckedPath => {
   };
 };
 
-// A rejected path used to be a silent return, which is how someone ends up
-// typing into a note they did not mean to open. Every rejection now says why.
+// A rejection says why. A silent one is how someone ends up typing into a note
+// they did not mean to open.
 const refusePath = (m: Model, path: string, problem: PathProblem): Rejection => {
   m.error = describeProblem(problem, path);
   return reject(m.error);
@@ -181,6 +183,28 @@ const reject = (reason: string): Rejection => ({ reason });
 // A sync ended well. Four fields have to move together — an arm that sets three
 // of them leaves a cooldown in place and wedges the retry loop, so this is a
 // rule rather than a shape and does not get duplicated (principle 4).
+// Removing a note is two different things depending on whether GitHub has ever
+// heard of it, and getting that wrong either strands a record on the device or
+// tells GitHub to delete something that was never there. Copied verbatim in two
+// arms before this: a rule, not a shape (principle 4).
+const stopKeeping = (m: Model, note: Note, path: string): void => {
+  if (note.baseSha === null) {
+    // Never reached GitHub, so nothing to tell it — but this device still has to
+    // forget the record, or it is read back on the next reload.
+    m.notes.delete(path);
+    m.forgotten.add(path);
+    return;
+  }
+  // Keep a tombstone until the remote delete lands.
+  m.notes.set(path, {
+    ...note,
+    body: "",
+    deleted: true,
+    pending: true,
+    dirty: true,
+  });
+};
+
 const settleSync = (m: Model): void => {
   m.syncing = false;
   m.syncError = null;
@@ -188,13 +212,11 @@ const settleSync = (m: Model): void => {
   m.retryAt = 0;
 };
 
-// Accepts or rejects. A rejection returns a reason rather than a silent return
-//
-// `renamed` delegates to `moved` and returns its verdict. One delegation is
-// legible; verifying "a rename is one synchronous state change" already means
-// reading two arms. **At the third, this switch has become a dispatcher and the
-// arms want to be named functions** — extract then, not before. — the proposal violated an
+// Accepts or rejects. A rejection returns a reason: the proposal violated an
 // invariant, so the model declines it and nothing changes. Never throws.
+//
+// `renamed` delegates to `moved` and returns its verdict. At a third delegation
+// this switch has become a dispatcher and the arms want to be named functions.
 export const present = (m: Model, p: Proposal): Rejection | null => {
   switch (p.kind) {
     case "hydrated": {
@@ -255,21 +277,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "deleted": {
       const doomed = m.notes.get(p.path);
       if (!doomed) return reject(`Cannot delete ${p.path}: no such note.`);
-      if (doomed.baseSha === null) {
-        // Never reached GitHub, so there is nothing to tell it about — but this
-        // device still has to forget it.
-        m.notes.delete(p.path);
-        m.forgotten.add(p.path);
-      } else {
-        // Keep a tombstone until the remote delete lands.
-        m.notes.set(p.path, {
-          ...doomed,
-          body: "",
-          deleted: true,
-          pending: true,
-          dirty: true,
-        });
-      }
+      stopKeeping(m, doomed, p.path);
       m.persistBlocked = false;
       if (m.openPath === p.path) m.openPath = firstVisiblePath(m);
       return null;
@@ -435,18 +443,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         dirty: true,
         encoding: note.encoding,
       });
-      if (note.baseSha === null) {
-        m.notes.delete(p.from);
-        m.forgotten.add(p.from);
-      } else {
-        m.notes.set(p.from, {
-          ...note,
-          body: "",
-          deleted: true,
-          pending: true,
-          dirty: true,
-        });
-      }
+      stopKeeping(m, note, p.from);
       if (m.openPath === p.from) m.openPath = to;
       m.persistBlocked = false;
       return null;

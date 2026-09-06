@@ -477,6 +477,19 @@ Stated up front so they aren't surprises later.
   note locally — every disappearance is confirmed against the Contents API
   first. Deleting is the most destructive thing here and deserves the second
   signal.
+- **Attachments live in the model, in full, in memory.** Treating an attachment
+  as an ordinary record is what makes sync, conflicts, tombstones and retries
+  work on it for free, and that uniformity has paid for itself repeatedly. The
+  bill arrives as memory: a pull downloads every image, and `notes` holds each as
+  base64 — about 1.33× the bytes — for the life of the session. At this
+  document's own projection of a thousand images and 200 MB, that is roughly 270
+  MB resident, and `nap()`'s dirty scan walks that Map on every keystroke.
+
+  **Trigger: the first vault where a phone tab is killed in the background, or a
+  first sync where images dominate the wait.** The fix is not to abandon the
+  uniformity — it is to keep attachment *bodies* out of the model: the record
+  stays, `body` moves to a separate IndexedDB store, and the renderer loads bytes
+  on demand for the images actually on screen.
 - **Two O(n)-per-render scans, left in deliberately.** `nap()` walks every note
   twice per proposal to find dirty and pending ones, and `backlinksTo` runs the
   wikilink regex over every body on every paint. Both are imperceptible at the

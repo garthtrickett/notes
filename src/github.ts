@@ -12,6 +12,7 @@ export type SyncError =
   | { readonly kind: "offline" }
   | { readonly kind: "conflict" }
   | { readonly kind: "auth" }
+  | { readonly kind: "rateLimited"; readonly retryAfterMs: number }
   | { readonly kind: "notFound" }
   | { readonly kind: "github"; readonly status: number };
 
@@ -65,8 +66,34 @@ const REGULAR_FILE_MODES = new Set(["100644", "100755"]);
 const isRegularFile = (entry: { type?: string; mode?: string }): boolean =>
   entry.type === "blob" && REGULAR_FILE_MODES.has(entry.mode ?? "");
 
-const statusToError = (status: number): SyncError => {
-  if (status === 401 || status === 403) return { kind: "auth" };
+// Each path segment separately, because encodeURI leaves `?` and `#` alone — a
+// note called `why?.md` would turn its own name into a query string. Splitting on
+// `/` first keeps the separators that GitHub needs.
+const encodePath = (path: string): string =>
+  path.split("/").map(encodeURIComponent).join("/");
+
+// GitHub answers a rate limit with 403, the same status it uses for a bad token.
+// Telling someone their token was rejected sends them off to reissue a token
+// that was working, so the headers decide which it is.
+const responseToError = (res: Response): SyncError => {
+  const status = res.status;
+
+  if (status === 403 || status === 429) {
+    const remaining = res.headers.get("x-ratelimit-remaining");
+    const retryAfter = res.headers.get("retry-after");
+    const reset = res.headers.get("x-ratelimit-reset");
+
+    if (retryAfter !== null) {
+      return { kind: "rateLimited", retryAfterMs: Number(retryAfter) * 1000 };
+    }
+    if (remaining === "0") {
+      const resetMs = reset === null ? 0 : Number(reset) * 1000 - Date.now();
+      return { kind: "rateLimited", retryAfterMs: Math.max(0, resetMs) };
+    }
+    return { kind: "auth" };
+  }
+
+  if (status === 401) return { kind: "auth" };
   if (status === 404) return { kind: "notFound" };
   return { kind: "github", status };
 };
@@ -107,7 +134,7 @@ export const createGithub = (config: Config): Github => {
         `${base}/git/trees/${config.branch}?recursive=1`,
       );
       if (!res.ok) return res;
-      if (!res.value.ok) return err(statusToError(res.value.status));
+      if (!res.value.ok) return err(responseToError(res.value));
 
       const body = await json<{
         tree?: { path?: string; sha?: string; type?: string; mode?: string }[];
@@ -122,10 +149,10 @@ export const createGithub = (config: Config): Github => {
 
     read: async (path, encoding) => {
       const res = await send(
-        `${base}/contents/${encodeURI(path)}?ref=${config.branch}`,
+        `${base}/contents/${encodePath(path)}?ref=${config.branch}`,
       );
       if (!res.ok) return res;
-      if (!res.value.ok) return err(statusToError(res.value.status));
+      if (!res.value.ok) return err(responseToError(res.value));
 
       const body = await json<{ content?: string }>(res.value);
       if (!body.ok) return body;
@@ -134,7 +161,7 @@ export const createGithub = (config: Config): Github => {
     },
 
     write: async (path, content, baseSha, encoding) => {
-      const res = await send(`${base}/contents/${encodeURI(path)}`, {
+      const res = await send(`${base}/contents/${encodePath(path)}`, {
         method: "PUT",
         body: JSON.stringify({
           message: `notes: ${path}`,
@@ -151,7 +178,7 @@ export const createGithub = (config: Config): Github => {
       if (res.value.status === 409 || res.value.status === 422) {
         return err({ kind: "conflict" });
       }
-      if (!res.value.ok) return err(statusToError(res.value.status));
+      if (!res.value.ok) return err(responseToError(res.value));
 
       const body = await json<{ content?: { sha?: string } }>(res.value);
       if (!body.ok) return body;
@@ -162,7 +189,7 @@ export const createGithub = (config: Config): Github => {
     },
 
     remove: async (path, baseSha) => {
-      const res = await send(`${base}/contents/${encodeURI(path)}`, {
+      const res = await send(`${base}/contents/${encodePath(path)}`, {
         method: "DELETE",
         body: JSON.stringify({
           message: `notes: delete ${path}`,
@@ -176,7 +203,7 @@ export const createGithub = (config: Config): Github => {
       }
       // Already gone is the outcome we wanted.
       if (res.value.status === 404) return ok(undefined);
-      if (!res.value.ok) return err(statusToError(res.value.status));
+      if (!res.value.ok) return err(responseToError(res.value));
       return ok(undefined);
     },
   };
