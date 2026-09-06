@@ -1,0 +1,9 @@
+{
+  "name": "notes",
+  "short_name": "notes",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#16171a",
+  "theme_color": "#16171a",
+  "icons": []
+}

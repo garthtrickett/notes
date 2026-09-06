@@ -36,4 +36,17 @@ if (config === null) {
   addEventListener("offline", () =>
     loop.propose({ kind: "online", online: false }),
   );
+
+  // Without this the app pulls once per session, so a note written on the laptop
+  // does not appear on the phone until a reload. Clearing the watermark is the
+  // whole mechanism; nap() does the rest.
+  const refresh = () => loop.propose({ kind: "refresh" });
+  addEventListener("focus", refresh);
+  addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refresh();
+  });
+
+  if ("serviceWorker" in navigator) {
+    void navigator.serviceWorker.register("/sw.js");
+  }
 }

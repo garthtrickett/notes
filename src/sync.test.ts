@@ -191,6 +191,58 @@ describe("pull", () => {
   });
 });
 
+describe("a stale manifest", () => {
+  it("does not delete a note the manifest has not caught up with yet", async () => {
+    remote.put("a.md", "v1");
+    const first = await boot(deps(), root);
+    await settle(first);
+    expect(first.model.notes.get("a.md")?.baseSha).not.toBeNull();
+
+    // The Trees API lags behind a write, so the file is missing from the
+    // manifest while still readable. This is what happens moments after
+    // creating a note, and it must not look like a deletion.
+    const entry = remote.files.get("a.md");
+    remote.files.delete("a.md");
+    const stale: typeof remote.github = {
+      ...remote.github,
+      read: async (path) =>
+        path === "a.md" ? ok("v1") : remote.github.read(path),
+    };
+
+    const proposal = await pull(stale, first.model.notes);
+    if (proposal.kind !== "pulled") throw new Error("expected a pull");
+    expect(proposal.gone).toEqual([]);
+    remote.files.set("a.md", entry!);
+  });
+
+  it("still deletes a note the Contents API confirms is gone", async () => {
+    remote.put("a.md", "v1");
+    const loop = await boot(deps(), root);
+    await settle(loop);
+
+    remote.files.delete("a.md");
+    const proposal = await pull(remote.github, loop.model.notes);
+    if (proposal.kind !== "pulled") throw new Error("expected a pull");
+    expect(proposal.gone).toEqual(["a.md"]);
+  });
+
+  it("leaves it alone when the check itself fails", async () => {
+    remote.put("a.md", "v1");
+    const loop = await boot(deps(), root);
+    await settle(loop);
+
+    remote.files.delete("a.md");
+    const flaky: typeof remote.github = {
+      ...remote.github,
+      read: async () => err({ kind: "offline" }),
+    };
+    const proposal = await pull(flaky, loop.model.notes);
+    if (proposal.kind !== "pulled") throw new Error("expected a pull");
+    // An unreachable network is not evidence of a deletion.
+    expect(proposal.gone).toEqual([]);
+  });
+});
+
 describe("push", () => {
   it("sends a new note and records the sha it came back with", async () => {
     const loop = await boot(deps(), root);

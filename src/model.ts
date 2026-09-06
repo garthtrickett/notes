@@ -29,9 +29,14 @@ export interface Note extends NoteRecord {
   readonly dirty: boolean;
 }
 
+export type Mode = "notes" | "dump";
+
 export interface Model {
   notes: Map<string, Note>;
   openPath: string | null;
+  mode: Mode;
+  // Open folders. Session-lived UI state, deliberately not persisted.
+  expanded: Set<string>;
   hydrated: boolean;
   persisting: boolean;
   syncing: boolean;
@@ -52,6 +57,8 @@ export interface Model {
 export const createModel = (): Model => ({
   notes: new Map(),
   openPath: null,
+  mode: "notes",
+  expanded: new Set(),
   hydrated: false,
   persisting: false,
   persistBlocked: false,
@@ -78,7 +85,11 @@ export type Proposal =
   | { readonly kind: "pushed"; readonly path: string; readonly body: string; readonly sha: string }
   | { readonly kind: "removed"; readonly path: string }
   | { readonly kind: "conflicted"; readonly path: string; readonly copyPath: string; readonly body: string }
-  | { readonly kind: "syncFailed"; readonly error: SyncError };
+  | { readonly kind: "syncFailed"; readonly error: SyncError }
+  | { readonly kind: "modeChanged"; readonly mode: Mode }
+  | { readonly kind: "folderToggled"; readonly path: string }
+  | { readonly kind: "moved"; readonly from: string; readonly to: string }
+  | { readonly kind: "refresh" };
 
 // A tombstone still exists as a record until the remote delete lands, but it is
 // not a note any more and must never be shown or opened.
@@ -175,6 +186,54 @@ export const present = (m: Model, p: Proposal): void => {
       return;
     }
 
+    case "modeChanged": {
+      m.mode = p.mode;
+      return;
+    }
+
+    case "folderToggled": {
+      if (m.expanded.has(p.path)) m.expanded.delete(p.path);
+      else m.expanded.add(p.path);
+      return;
+    }
+
+    case "refresh": {
+      // Clearing the watermark is the whole mechanism; nap() notices and pulls.
+      if (!m.syncing) m.lastSyncedAt = null;
+      return;
+    }
+
+    case "moved": {
+      const note = m.notes.get(p.from);
+      if (!note || note.deleted) return; // reject: nothing there
+      if (p.to.trim() === "" || m.notes.has(p.to)) return; // reject: bad target
+
+      // A move is a create plus a delete, which the sync machinery already
+      // expresses. Links match on basename, so nothing else needs touching.
+      m.notes.set(p.to, {
+        path: p.to,
+        body: note.body,
+        baseSha: null,
+        pending: true,
+        deleted: false,
+        dirty: true,
+      });
+      if (note.baseSha === null) {
+        m.notes.delete(p.from);
+      } else {
+        m.notes.set(p.from, {
+          ...note,
+          body: "",
+          deleted: true,
+          pending: true,
+          dirty: true,
+        });
+      }
+      if (m.openPath === p.from) m.openPath = p.to;
+      m.persistBlocked = false;
+      return;
+    }
+
     case "online": {
       m.online = p.online;
       // Coming back is itself the signal to try again, so drop any cooldown.
@@ -219,9 +278,10 @@ export const present = (m: Model, p: Proposal): void => {
       m.syncError = null;
       m.retryDelay = 0;
       m.retryAt = 0;
-      // Re-pull after pushing, so the remote's view of the world is confirmed
-      // rather than assumed.
-      m.lastSyncedAt = null;
+      // Deliberately *not* clearing lastSyncedAt here. Re-pulling straight after
+      // a push races the Trees API's staleness for no benefit — the push already
+      // told us the remote state. The conflict branch still forces a pull,
+      // because there the remote genuinely holds something we do not have.
       if (!note) return;
       // Same rule as persistence: only clear pending if the body still matches
       // what went to GitHub. An edit that landed mid-flight stays pending.

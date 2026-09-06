@@ -385,6 +385,16 @@ Stated up front so they aren't surprises later.
   commit across files.
 - **Attachments.** Git never forgets a 4 MB pasted screenshot. Decide a policy
   before the first paste.
+- **The GitHub API is not read-your-writes across endpoints.** The Trees API can
+  lag seconds behind a Contents write, so a manifest may omit a file that was
+  just created. Consequence: a manifest omission is never enough to delete a
+  note locally — every disappearance is confirmed against the Contents API
+  first. Deleting is the most destructive thing here and deserves the second
+  signal.
+- **Authenticated API responses carry `Cache-Control: private, max-age=60`.**
+  Every request is therefore `cache: "no-store"`. Without it the browser serves
+  a minute-old tree and a note written on another device simply appears not to
+  exist, which reads as sync being broken.
 - **`git clone` no longer gets the notes.** It gets `main`. Export is
   `git clone -b vault <repo>`, or `git fetch origin vault` in an existing clone.
   Slightly worse than the one-command story, and the price of a clean `main`.

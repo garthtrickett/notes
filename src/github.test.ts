@@ -53,6 +53,16 @@ describe("manifest", () => {
     expect(result.value.map((e) => e.path)).toEqual(["a.md", "run.sh"]);
   });
 
+  it("bypasses the browser cache, or another device's note looks absent", async () => {
+    const fetchMock = install({ tree: [] });
+    await createGithub(config).manifest();
+    const [, init] = fetchMock.calls[0]!;
+    // GitHub sends Cache-Control: private, max-age=60 on authenticated
+    // responses, so without this a note written elsewhere stays invisible for
+    // up to a minute and pull-on-focus appears to do nothing.
+    expect((init as RequestInit).cache).toBe("no-store");
+  });
+
   it("maps 401 to auth rather than leaking a status", async () => {
     install({}, 401);
     const result = await createGithub(config).manifest();

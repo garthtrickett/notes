@@ -130,3 +130,86 @@ section { display: flex; }
 
 .settings button:hover { border-color: var(--accent); }
 .hint { margin: 0; font-size: 12px; color: var(--muted); }
+
+/* tabs */
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tabs button {
+  flex: 1;
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+}
+.tabs button.on { color: #fff; border-color: var(--accent); }
+
+/* tree */
+nav ul ul { margin: 0; padding: 0; }
+nav li { display: block; margin-bottom: 2px; }
+.leaf { display: flex; gap: 4px; }
+.row { padding-left: calc(8px + var(--depth, 0) * 12px); }
+.row.folder { width: 100%; color: var(--muted); gap: 6px; }
+.twist { font-size: 10px; }
+
+/* note path bar */
+.pathbar { padding: 10px 20px 0; }
+.pathfield {
+  width: 100%;
+  font: 13px ui-monospace, Menlo, monospace;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.pathfield:focus { outline: none; border-color: var(--accent); color: var(--text); }
+main:not(.single) section { flex-direction: column; }
+
+/* dump */
+main.single { display: block; height: 100dvh; padding: 12px; overflow: hidden; }
+main.single .tabs { max-width: 720px; margin: 0 auto 12px; }
+.dump { display: flex; flex-direction: column; height: calc(100dvh - 68px); max-width: 720px; margin: 0 auto; }
+.days { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; padding-bottom: 12px; }
+.day h2 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.day-body {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: 15px/1.7 ui-monospace, Menlo, monospace;
+  padding: 12px;
+  resize: none;
+}
+.day-body:read-only { background: transparent; border-color: transparent; color: var(--muted); }
+.day-body:focus { outline: none; border-color: var(--accent); }
+.capture { display: flex; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+.capture input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+}
+.capture input:focus { outline: none; border-color: var(--accent); }
+.capture button {
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 16px;
+  cursor: pointer;
+}

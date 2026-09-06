@@ -39,13 +39,17 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // it instead of sleeping.
   let idle: Promise<void> = Promise.resolve();
 
+  const capture = (text: string) => {
+    for (const p of actions.captureProposals(model.notes, text, now)) propose(p);
+  };
+
   const paint = () => {
-    render(view(model, propose), root);
+    render(view(model, propose, now, capture), root);
 
     // The editor is uncontrolled: its value is set when the open note changes,
     // never on every render. Binding it to model state would fight the cursor,
     // and worst on a mobile keyboard.
-    if (model.openPath !== lastRenderedPath) {
+    if (model.mode === "notes" && model.openPath !== lastRenderedPath) {
       lastRenderedPath = model.openPath;
       const editor = root.querySelector<HTMLTextAreaElement>("#editor");
       if (editor) editor.value = model.openPath

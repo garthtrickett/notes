@@ -9,6 +9,7 @@ import { attemptAsync } from "./result.ts";
 import * as idb from "./idb.ts";
 import type { Note, NoteRecord, Proposal } from "./model.ts";
 import type { Github } from "./github.ts";
+import { appendEntry, dumpPathOf } from "./dump.ts";
 
 export const hydrate = async (db: IDBDatabase): Promise<Proposal> => {
   const read = await attemptAsync(
@@ -94,10 +95,28 @@ export const pull = async (
     });
   }
 
-  // Known to GitHub before, absent now: deleted by someone else.
-  const gone = [...local.values()]
-    .filter((n) => n.baseSha !== null && !remote.has(n.path) && !n.deleted)
-    .map((n) => n.path);
+  // Known to GitHub before, absent now — which *might* mean deleted by someone
+  // else. The Trees API lags a moment behind a write, so a file created seconds
+  // ago can be missing from a manifest that is otherwise current.
+  //
+  // Deleting a note is the most destructive thing this app does, so a manifest
+  // omission is not enough on its own. Confirm each disappearance against the
+  // Contents API, which reads back a write immediately. Costs one request per
+  // vanished file, and files rarely vanish.
+  const suspected = [...local.values()].filter(
+    (n) => n.baseSha !== null && !remote.has(n.path) && !n.deleted,
+  );
+
+  const gone: string[] = [];
+  for (const note of suspected) {
+    const check = await github.read(note.path);
+    if (!check.ok && check.error.kind === "notFound") {
+      gone.push(note.path);
+      continue;
+    }
+    // Anything else — it still exists, or the network faltered — means leave it
+    // alone. A later pull will settle it.
+  }
 
   return { kind: "pulled", notes, gone };
 };
@@ -142,4 +161,28 @@ export const push = async (
   }
 
   return { kind: "pushed", path: note.path, body, sha: written.value };
+};
+
+// Capture appends to today's dump file, creating it if the day has not started
+// yet. Synchronous and pure apart from the clock, so it is two proposals rather
+// than an async action.
+export const captureProposals = (
+  notes: ReadonlyMap<string, Note>,
+  text: string,
+  now: () => number,
+): Proposal[] => {
+  if (text.trim() === "") return [];
+  const at = now();
+  const path = dumpPathOf(at);
+  const existing = notes.get(path);
+
+  if (!existing || existing.deleted) {
+    return [
+      { kind: "created", path },
+      { kind: "edited", path, body: appendEntry("", text, at) },
+    ];
+  }
+  return [
+    { kind: "edited", path, body: appendEntry(existing.body, text, at) },
+  ];
 };

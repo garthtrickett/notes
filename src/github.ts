@@ -78,7 +78,10 @@ export const createGithub = (config: Config): Github => {
     // A thrown fetch means the network is unreachable, which is a different
     // thing from the server saying no.
     const sent = await attemptAsync(
-      () => fetch(url, { ...init, headers }),
+      // GitHub sends `Cache-Control: private, max-age=60` on authenticated API
+      // responses, so without this the browser happily serves a minute-old tree
+      // and a note written on another device appears not to exist yet.
+      () => fetch(url, { ...init, headers, cache: "no-store" }),
       (): SyncError => ({ kind: "offline" }),
     );
     return sent;
