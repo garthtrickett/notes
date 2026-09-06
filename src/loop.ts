@@ -29,6 +29,28 @@ export interface Loop {
 const FIRST_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
 
+// Replaces the text without throwing the caret away. Text inserted at or before
+// the caret carries it along; a change after it leaves it where it was.
+const syncEditorValue = (editor: HTMLTextAreaElement, body: string): void => {
+  const previous = editor.value;
+  const caret = editor.selectionStart ?? previous.length;
+
+  let shared = 0;
+  while (
+    shared < previous.length &&
+    shared < body.length &&
+    previous[shared] === body[shared]
+  ) {
+    shared += 1;
+  }
+
+  const moved = caret < shared ? caret : caret + (body.length - previous.length);
+  const next = Math.max(0, Math.min(moved, body.length));
+
+  editor.value = body;
+  if (document.activeElement === editor) editor.setSelectionRange(next, next);
+};
+
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const { db, github, now, schedule, shrink } = deps;
   const model = createModel();
@@ -69,14 +91,27 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // never on every render. Binding it to model state would fight the cursor,
     // and worst on a mobile keyboard.
     const editorKey = `${model.mode}|${model.preview}|${model.openPath ?? ""}`;
-    if (editorKey !== lastEditorKey) {
-      lastEditorKey = editorKey;
-      const editor = root.querySelector<HTMLTextAreaElement>("#editor");
-      if (editor) {
-        editor.value = model.openPath
-          ? (model.notes.get(model.openPath)?.body ?? "")
-          : "";
+    const editor = root.querySelector<HTMLTextAreaElement>("#editor");
+    const body = model.openPath
+      ? (model.notes.get(model.openPath)?.body ?? "")
+      : "";
+
+    if (editor) {
+      // Two reasons to push a value in. The element was replaced — a different
+      // note, or preview toggled — or the model changed the body underneath a
+      // live textarea, which is what pasting an image, pulling a remote edit and
+      // rewriting links on rename all do.
+      //
+      // Typing is unaffected: present() stores exactly what the DOM had, so by
+      // the time this runs the two already agree and nothing is written.
+      if (editorKey !== lastEditorKey) {
+        lastEditorKey = editorKey;
+        editor.value = body;
+      } else if (editor.value !== body) {
+        syncEditorValue(editor, body);
       }
+    } else {
+      lastEditorKey = editorKey;
     }
   };
 
