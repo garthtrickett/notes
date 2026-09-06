@@ -243,15 +243,27 @@ export const present = (m: Model, p: Proposal): void => {
     case "attached": {
       const host = m.notes.get(p.into);
       if (!host || host.deleted) return; // reject: nowhere to put it
-      m.notes.set(p.path, {
-        path: p.path,
-        body: p.base64,
-        baseSha: null,
-        pending: true,
-        deleted: false,
-        dirty: true,
-        encoding: "base64",
-      });
+
+      // The name is a hash of the bytes, so pasting the same image twice lands
+      // on the same path. Re-adding it would reset baseSha to null, and the next
+      // push would then send "create" for a path that already exists — a 422,
+      // which is a conflict, which produced a spurious conflict copy. An
+      // identical attachment is already there; only the reference is new.
+      const already = m.notes.get(p.path);
+      const unchanged =
+        already !== undefined && !already.deleted && already.body === p.base64;
+
+      if (!unchanged) {
+        m.notes.set(p.path, {
+          path: p.path,
+          body: p.base64,
+          baseSha: already?.deleted === false ? already.baseSha : null,
+          pending: true,
+          deleted: false,
+          dirty: true,
+          encoding: "base64",
+        });
+      }
       // The markdown reference and the bytes land together, so a note never
       // points at an attachment that was not added.
       m.notes.set(p.into, { ...host, body: p.body, dirty: true, pending: true });
@@ -415,7 +427,9 @@ export const present = (m: Model, p: Proposal): void => {
         pending: true,
         deleted: false,
         dirty: true,
-        encoding: "utf8",
+        // Inherited, not assumed. A conflicted attachment copied as text would
+        // be re-encoded on push and arrive corrupt.
+        encoding: note.encoding,
       });
       // Drop the local claim on the original; the next pull brings the remote.
       m.notes.set(p.path, {

@@ -268,3 +268,87 @@ describe("insertAt", () => {
     expect(insertAt("ab", 99, "!")).toBe("ab!");
   });
 });
+
+describe("pasting the same image twice", () => {
+  const withAttachment = () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [note("a.md", "one ")] });
+    present(m, {
+      kind: "attached",
+      path: "attachments/2026-09-06-abcd.webp",
+      base64: "AAAA",
+      into: "a.md",
+      body: "one ![](attachments/2026-09-06-abcd.webp)",
+    });
+    // pretend it synced
+    const stored = m.notes.get("attachments/2026-09-06-abcd.webp") as Note;
+    m.notes.set(stored.path, { ...stored, baseSha: "sha-1", pending: false, dirty: false });
+    return m;
+  };
+
+  it("does not resurrect the attachment as a fresh create", () => {
+    const m = withAttachment();
+    present(m, {
+      kind: "attached",
+      path: "attachments/2026-09-06-abcd.webp",
+      base64: "AAAA",
+      into: "a.md",
+      body: "one ![](x) two ![](attachments/2026-09-06-abcd.webp)",
+    });
+
+    const record = m.notes.get("attachments/2026-09-06-abcd.webp");
+    // Resetting baseSha would make the next push send "create" for a path that
+    // already exists — a 422, which the app reads as a conflict and answers with
+    // a conflict copy nobody asked for.
+    expect(record?.baseSha).toBe("sha-1");
+    expect(record?.pending).toBe(false);
+  });
+
+  it("still adds the new reference to the note", () => {
+    const m = withAttachment();
+    present(m, {
+      kind: "attached",
+      path: "attachments/2026-09-06-abcd.webp",
+      base64: "AAAA",
+      into: "a.md",
+      body: "twice ![](attachments/2026-09-06-abcd.webp)",
+    });
+    expect(m.notes.get("a.md")?.body).toBe("twice ![](attachments/2026-09-06-abcd.webp)");
+    expect(m.notes.get("a.md")?.pending).toBe(true);
+  });
+
+  it("re-adds it if the bytes at that path really did change", () => {
+    const m = withAttachment();
+    present(m, {
+      kind: "attached",
+      path: "attachments/2026-09-06-abcd.webp",
+      base64: "BBBB",
+      into: "a.md",
+      body: "x",
+    });
+    const record = m.notes.get("attachments/2026-09-06-abcd.webp");
+    expect(record?.body).toBe("BBBB");
+    expect(record?.pending).toBe(true);
+    // Keeps the sha, so the push is an update rather than a create.
+    expect(record?.baseSha).toBe("sha-1");
+  });
+});
+
+describe("a conflicted attachment", () => {
+  it("keeps its encoding, so the copy is not corrupted as text", () => {
+    const m = createModel();
+    present(m, {
+      kind: "hydrated",
+      notes: [note("attachments/a.webp", "AAAA", { encoding: "base64" })],
+    });
+    present(m, {
+      kind: "conflicted",
+      path: "attachments/a.webp",
+      copyPath: "attachments/a (conflict 2026-09-06).webp",
+      body: "AAAA",
+    });
+    const copy = m.notes.get("attachments/a (conflict 2026-09-06).webp");
+    expect(copy?.encoding).toBe("base64");
+    expect(copy?.body).toBe("AAAA");
+  });
+});
