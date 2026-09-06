@@ -75,10 +75,22 @@ class ImageWidget extends WidgetType {
   }
 }
 
-const buildDecorations = (view: EditorView, resolve: ResolveImage): DecorationSet => {
+// Decorations and, alongside them, the ranges the editor must treat as single
+// units. A picture is one thing to the reader, so it has to be one thing to the
+// caret: without this, arrow keys walk invisibly through the hidden `![](...)`
+// and a selection that looks like it stops above the picture actually reaches
+// into it, so deleting eats a couple of characters out of the middle of the
+// reference and leaves broken markdown where the image was.
+interface Built {
+  readonly decorations: DecorationSet;
+  readonly atomics: DecorationSet;
+}
+
+const buildDecorations = (view: EditorView, resolve: ResolveImage): Built => {
   const doc = view.state.doc.toString();
   const { from, to } = view.viewport;
   const ranges: Range<Decoration>[] = [];
+  const atomic: Range<Decoration>[] = [];
 
   for (const span of spansFor(doc, resolve, { from, to })) {
     if (span.kind === "line") {
@@ -91,24 +103,24 @@ const buildDecorations = (view: EditorView, resolve: ResolveImage): DecorationSe
     } else {
       // Replace, not remove: the markdown is still in the document, so a
       // selection dragged across the picture copies the reference with it.
-      ranges.push(
-        Decoration.replace({ widget: new ImageWidget(span.src, span.alt) }).range(
-          span.from,
-          span.to,
-        ),
-      );
+      const replace = Decoration.replace({ widget: new ImageWidget(span.src, span.alt) });
+      ranges.push(replace.range(span.from, span.to));
+      atomic.push(replace.range(span.from, span.to));
     }
   }
-  return Decoration.set(ranges, true);
+  return {
+    decorations: Decoration.set(ranges, true),
+    atomics: Decoration.set(atomic, true),
+  };
 };
 
 const decorator = (hooks: EditorHooks) =>
   ViewPlugin.fromClass(
     class {
-      decorations: DecorationSet;
+      built: Built;
 
       constructor(view: EditorView) {
-        this.decorations = buildDecorations(view, hooks.resolveImage);
+        this.built = buildDecorations(view, hooks.resolveImage);
       }
 
       update(update: ViewUpdate): void {
@@ -116,11 +128,17 @@ const decorator = (hooks: EditorHooks) =>
           tr.effects.some((e) => e.is(rebuild)),
         );
         if (update.docChanged || update.viewportChanged || forced) {
-          this.decorations = buildDecorations(update.view, hooks.resolveImage);
+          this.built = buildDecorations(update.view, hooks.resolveImage);
         }
       }
     },
-    { decorations: (plugin) => plugin.decorations },
+    {
+      decorations: (plugin) => plugin.built.decorations,
+      provide: (plugin) =>
+        EditorView.atomicRanges.of(
+          (view) => view.plugin(plugin)?.built.atomics ?? Decoration.none,
+        ),
+    },
   );
 
 // The smallest edit that turns one string into the other. CodeMirror maps the

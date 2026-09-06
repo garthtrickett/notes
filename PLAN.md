@@ -638,6 +638,19 @@ Two things the probe settled. `Image` is a single node covering the entire
 from parts. And `**not bold**` inside a fenced block produces no emphasis node,
 so code is not styled as prose for free rather than by special-casing.
 
+**A replaced range must also be an atomic range.** `Decoration.replace` hides the
+markdown; it does not make it one thing. Found in use: the caret walked through
+the hidden `![](…)` a character at a time, so a selection dragged up from below
+looked like it stopped above the picture while actually reaching inside it, and
+deleting chewed two characters out of the middle of the reference — the image
+disappeared and left broken markdown in its place. The plugin now also provides
+`EditorView.atomicRanges` over the same image ranges, so motion, selection and
+deletion treat a picture as the single thing the reader sees.
+
+Worth stating as a rule rather than a fix: **anything replaced visually has to be
+atomic behaviourally.** Any future widget — a rendered table, a folded block —
+inherits the same obligation.
+
 **Only local attachments become widgets.** A remote image URL stays as markdown
 text and is never fetched. The rule survives even though the code enforcing it
 today does not: rendering a remote image tells its host that this note was
