@@ -1,6 +1,6 @@
 # Build plan
 
-Four phases. Each is self-contained and ends with the whole thing under test.
+Five phases. Each is self-contained and ends with the whole thing under test.
 
 The split is at the risky seams: phase 1 proves the architecture with no network,
 phase 2 proves sync, and only then does feature work start on a base that is
@@ -11,7 +11,8 @@ known to hold.
 | 1. The loop, offline | A working notes app with no network |
 | 2. Sync | It round-trips to GitHub and survives a real conflict |
 | 3. The vault | Nested folders, the dump, and offline start-up |
-| 4. Documents | Rendered markdown, links, rename, search, attachments |
+| 4. Documents | Rendered markdown, links, backlinks, rename, search |
+| 5. Attachments | Paste an image, get a resized WebP committed |
 
 Only phase 1 is fleshed out. The rest are one paragraph each and get expanded
 when we reach them — writing them out now would be guessing.
@@ -383,9 +384,107 @@ Also out: markdown rendering, links, backlinks, rename, search, attachments.
 
 # Phase 4 — Documents
 
-Notes stop being plain text.
+**Goal:** notes stop being plain text. Rendered markdown, links that work,
+backlinks, rename that does not break them, and search.
 
-Markdown rendering via `remark`, `[[wikilinks]]` resolved on basename plus a
-backlink index, rename-as-an-operation (find inbound links, rewrite, move, one
-commit via the Git Data API), search over the vault, and attachments —
-canvas-resized to WebP on paste.
+**The gate:** rename a note that three others link to, and have every one of
+those links still resolve afterwards — with the rewrite visible on GitHub.
+
+## 4.1 Rendering
+
+`marked`, not `remark`.
+
+The plan justified remark by needing an AST to find `[[wikilinks]]`. That was
+wrong: a wikilink is `/\[\[([^\]]+)\]\]/g` over the raw text, three lines and no
+parser. With that gone, the remaining job is markdown to HTML, which is what
+`marked` does in a third of the weight.
+
+Wikilinks are turned into ordinary markdown links *before* parsing, so the
+renderer needs no plugin and no fork.
+
+**Raw HTML is stripped from the output.** Not a dependency — a short pass over
+the produced fragment removing `script`, `iframe`, `object`, `embed`, every
+`on*` attribute, and any non-`http(s)` URL. Personal notes rarely contain
+deliberate HTML, and the agent-native goal means content can arrive from a web
+page an agent summarised. This is not DOMPurify and is not claimed to be; it
+removes the obvious class rather than every case.
+
+The editor stays a textarea. Rendering is a **preview toggle**, not a WYSIWYG
+surface — the round trip through a document model is the trap phase 1 avoided
+and there is still no reason to take it.
+
+## 4.2 Links and backlinks
+
+`[[japanese-grammar]]` resolves on **basename**, so a note keeps its links when
+it moves between folders. If two notes share a basename the link is ambiguous
+and needs a path; that is surfaced rather than guessed at.
+
+Backlinks — "what points here" — are derived by scanning bodies, not stored.
+At a few hundred notes that is a scan per render and imperceptible; when it is
+not, memoise it. Storing an index would be a second source of truth for
+something the notes already say (principle 4).
+
+A broken link renders differently from a live one. A link to a note that does
+not exist yet is a normal thing to write, and clicking it should offer to create
+it.
+
+## 4.3 Rename is an operation
+
+The thing `DECISIONS.md` promised. Renaming `a.md` to `b.md`:
+
+1. find every note whose body contains `[[a]]`
+2. rewrite those to `[[b]]`, marking each dirty and pending
+3. move the note itself, tombstoning the old path
+
+All in `present()`, so it is one synchronous state change — either the whole
+rename happened or none of it did.
+
+**Deferred: making it one commit.** The decisions doc calls for the Git Data
+API so the N files land atomically. Pushing them individually means a window
+where some links point at the new name and some at the old, if the network dies
+midway. Self-healing, since the rest stay pending and retry — and it reuses the
+push path that already exists rather than adding a second one. **Trigger: it
+actually stranding a rename in practice, or a vault big enough that a rename
+touches dozens of files.**
+
+## 4.4 Search
+
+`Array.filter` over path and body, case-insensitive, as the decisions doc says.
+Results replace the tree while the box has text. No index, no dependency.
+
+## 4.5 Tests
+
+- Wikilink extraction: multiple links, duplicates, ones inside code fences (a
+  known limitation if not handled — decide and test whichever way).
+- Basename resolution, including a link that matches nothing and one that
+  matches two notes.
+- Backlinks find every referrer and no false positives.
+- Rename rewrites every inbound link, and leaves `[[ab]]` alone when renaming
+  `[[a]]`.
+- Rename marks every touched note pending, so all of them sync.
+- The sanitizer drops `script`, `on*` and `javascript:` while keeping ordinary
+  markup.
+- Search matches path and body, and is case-insensitive.
+
+## Not in phase 4
+
+**Attachments have moved to phase 5.** They are a different kind of change from
+everything above: a binary record type threaded through the model, a second
+encoding path in the GitHub client, and rewriting image sources to local data
+URLs in the renderer. Bundling that with rendering and rename would make the
+phase hard to review and give it two unrelated gates. Everything in phase 4 is
+"text in, text out"; attachments are not.
+
+---
+
+# Phase 5 — Attachments
+
+Paste an image, get it canvas-resized to ~2000px and re-encoded to WebP before
+it is committed — a 4 MB screenshot at roughly 200 KB.
+
+Needs a binary record (`encoding: "utf8" | "base64"`), a write path that skips
+the UTF-8 encode because the content is already base64, `attachments/YYYY-MM-DD-<shorthash>.webp`
+naming, and the renderer resolving `![](attachments/…)` against the local copy.
+
+**The rule that matters: never commit a raw screenshot, not even once.** Git
+keeps binaries forever and undoing it means rewriting history.
