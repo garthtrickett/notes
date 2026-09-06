@@ -90,7 +90,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // toggling preview destroys and recreates the textarea, and without this it
   // would come back empty.
   let lastEditorKey: string | null = null;
-  let wasCapturing = false;
+  let lastModal: string | null = null;
   const previewCache = createPreviewCache();
   // Everything currently in flight, not merely the most recent thing started.
   // A push can begin while a persist is still running — the first block is
@@ -125,12 +125,12 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // The editor is uncontrolled: its value is set when the open note changes,
     // never on every render. Binding it to model state would fight the cursor,
     // and worst on a mobile keyboard.
-    // Focus quick capture as it opens, and only then — refocusing on every paint
-    // would fight the caret while typing.
-    if (model.capturing !== wasCapturing) {
-      wasCapturing = model.capturing;
-      if (model.capturing) {
-        root.querySelector<HTMLInputElement>("#quick-capture")?.focus();
+    // Focus a modal as it opens, and only then — refocusing on every paint would
+    // fight the caret while typing. One rule, whichever modal it is.
+    if (model.modal !== lastModal) {
+      lastModal = model.modal;
+      if (model.modal !== null) {
+        root.querySelector<HTMLInputElement>("#modal-input")?.focus();
       }
     }
 

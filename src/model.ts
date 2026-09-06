@@ -41,6 +41,7 @@ export interface Note extends NoteRecord {
 }
 
 export type Mode = "notes" | "dump";
+export type Modal = "capture" | "newNote" | "open";
 export type Encoding = "utf8" | "base64";
 
 export interface Model {
@@ -49,9 +50,12 @@ export interface Model {
   mode: Mode;
   preview: boolean;
   query: string;
-  // Quick capture, floating over whatever you were doing. The point is jotting
-  // something without navigating away and losing your place.
-  capturing: boolean;
+  // At most one floating box at a time. One field rather than a boolean each, so
+  // opening, dismissing and focusing are one rule instead of one per modal.
+  modal: Modal | null;
+  // Which row the open palette has selected. Lives here rather than in the view
+  // because arrow keys move it and the view is a pure function of the model.
+  paletteIndex: number;
   // Open folders. Session-lived UI state, deliberately not persisted.
   expanded: Set<string>;
   hydrated: boolean;
@@ -82,7 +86,8 @@ export const createModel = (): Model => ({
   mode: "notes",
   preview: false,
   query: "",
-  capturing: false,
+  modal: null,
+  paletteIndex: 0,
   expanded: new Set(),
   hydrated: false,
   persisting: false,
@@ -120,8 +125,9 @@ export type Proposal =
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
   | { readonly kind: "previewToggled" }
   | { readonly kind: "searched"; readonly query: string }
-  | { readonly kind: "captureOpened" }
-  | { readonly kind: "captureClosed" }
+  | { readonly kind: "modalOpened"; readonly modal: Modal }
+  | { readonly kind: "modalClosed" }
+  | { readonly kind: "paletteMoved"; readonly delta: number }
   | {
       readonly kind: "attached";
       readonly path: string;
@@ -258,7 +264,12 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // creates today's dump file, and jumping to it would lose the place the
       // whole feature exists to keep.
       const created = m.notes.get(path);
-      if (created && isOpenable(created)) m.openPath = path;
+      if (created && isOpenable(created)) {
+        m.openPath = path;
+        // Creating a note from the dump should take you to it. Quick capture
+        // creates a dump file, which is not openable, so it stays put.
+        m.mode = "notes";
+      }
       m.persistBlocked = false;
       return null;
     }
@@ -369,18 +380,29 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
-    case "captureOpened": {
-      m.capturing = true;
+    case "modalOpened": {
+      m.modal = p.modal;
       return null;
     }
 
-    case "captureClosed": {
-      m.capturing = false;
+    case "modalClosed": {
+      m.modal = null;
+      // The palette starts fresh next time rather than resuming someone else's
+      // half-typed search.
+      m.query = "";
+      m.paletteIndex = 0;
+      return null;
+    }
+
+    case "paletteMoved": {
+      m.paletteIndex = Math.max(0, m.paletteIndex + p.delta);
       return null;
     }
 
     case "searched": {
       m.query = p.query;
+      // A new query means the old selection points at a different note.
+      m.paletteIndex = 0;
       return null;
     }
 

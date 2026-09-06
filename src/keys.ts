@@ -27,7 +27,7 @@ export const keyAction = (
   if (event.key === "Escape") {
     // Dismissing quick capture beats blurring its own field — otherwise Escape
     // in the box you just opened does nothing visible.
-    if (model.capturing) return propose({ kind: "captureClosed" });
+    if (model.modal !== null) return propose({ kind: "modalClosed" });
     if (isTyping(event.target)) return { kind: "blur" };
     return null;
   }
@@ -53,7 +53,14 @@ export const keyAction = (
       // would be theatre. Everywhere else, floating it is the whole point.
       return model.mode === "dump"
         ? { kind: "focus", selector: "#capture" }
-        : propose({ kind: "captureOpened" });
+        : propose({ kind: "modalOpened", modal: "capture" });
+    case " ":
+      // Space costs the browser's scroll-down. Accepted, because a new note is
+      // then reachable from anywhere — including the dump, which has no button
+      // for it.
+      return propose({ kind: "modalOpened", modal: "newNote" });
+    case "o":
+      return propose({ kind: "modalOpened", modal: "open" });
     default:
       return null;
   }

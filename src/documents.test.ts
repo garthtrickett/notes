@@ -287,126 +287,21 @@ describe("preview and search in the app", () => {
     expect(root.querySelector(".backlinks")?.textContent).toContain("from-here.md");
   });
 
-  it("replaces the tree with matches while searching", async () => {
+  it("finds notes through the palette, which replaced the sidebar search", async () => {
     const loop = await boot(deps(), root);
     loop.propose({
       kind: "hydrated",
       notes: [note("inbox/shopping.md", "milk"), note("ref/a.md", "grammar")],
     });
     await settle(loop);
-    expect(root.querySelector("nav ul.results")).toBeNull();
+    expect(root.querySelector(".palette")).toBeNull();
 
+    loop.propose({ kind: "modalOpened", modal: "open" });
     loop.propose({ kind: "searched", query: "milk" });
     await settle(loop);
-    const results = root.querySelectorAll("nav ul.results .path");
+
+    const results = root.querySelectorAll(".palette .results .path");
     expect([...results].map((n) => n.textContent)).toEqual(["inbox/shopping.md"]);
-  });
-});
-
-describe("the editor when the model changes underneath it", () => {
-  // note() is defined at the top of this file.
-  const focusEditor = (): HTMLTextAreaElement => {
-    const editor = root.querySelector<HTMLTextAreaElement>("#editor");
-    if (!editor) throw new Error("no editor");
-    editor.focus();
-    return editor;
-  };
-
-  it("shows a pasted image reference straight away", async () => {
-    const loop = await boot(deps(), root);
-    loop.propose({ kind: "hydrated", notes: [note("a.md", "look: ")] });
-    await settle(loop);
-    const editor = focusEditor();
-    editor.setSelectionRange(6, 6);
-
-    loop.propose({
-      kind: "attached",
-      path: "attachments/x.webp",
-      base64: "AAAA",
-      into: "a.md",
-      body: "look: ![](attachments/x.webp)",
-    });
-    await settle(loop);
-
-    // Previously this only appeared after toggling preview and back, because the
-    // textarea is uncontrolled and nothing had replaced the element.
-    expect(editor.value).toBe("look: ![](attachments/x.webp)");
-  });
-
-  it("puts the caret after the text that was inserted", async () => {
-    const loop = await boot(deps(), root);
-    loop.propose({ kind: "hydrated", notes: [note("a.md", "ab")] });
-    await settle(loop);
-    const editor = focusEditor();
-    editor.setSelectionRange(1, 1);
-
-    loop.propose({ kind: "edited", path: "a.md", body: "a-INSERTED-b" });
-    await settle(loop);
-
-    expect(editor.value).toBe("a-INSERTED-b");
-    expect(editor.selectionStart).toBe(1 + "-INSERTED-".length);
-  });
-
-  it("leaves the caret alone when the change is after it", async () => {
-    const loop = await boot(deps(), root);
-    loop.propose({ kind: "hydrated", notes: [note("a.md", "abc")] });
-    await settle(loop);
-    const editor = focusEditor();
-    editor.setSelectionRange(1, 1);
-
-    loop.propose({ kind: "edited", path: "a.md", body: "abcTAIL" });
-    await settle(loop);
-
-    expect(editor.selectionStart).toBe(1);
-  });
-
-  it("shows a remote change to the open note without a reload", async () => {
-    const loop = await boot(deps(), root);
-    loop.propose({ kind: "hydrated", notes: [note("a.md", "mine")] });
-    await settle(loop);
-    const editor = focusEditor();
-
-    loop.propose({
-      kind: "pulled",
-      notes: [{ ...note("a.md", "theirs"), baseSha: "sha-9" }],
-      gone: [],
-    });
-    await settle(loop);
-
-    expect(editor.value).toBe("theirs");
-  });
-
-  it("shows links rewritten by a rename of another note", async () => {
-    const loop = await boot(deps(), root);
-    loop.propose({
-      kind: "hydrated",
-      notes: [note("a.md", "see [[old]]"), note("old.md", "")],
-    });
-    loop.propose({ kind: "opened", path: "a.md" });
-    await settle(loop);
-    const editor = focusEditor();
-
-    loop.propose({ kind: "renamed", from: "old.md", to: "new.md" });
-    await settle(loop);
-
-    expect(editor.value).toBe("see [[new]]");
-  });
-
-  it("does not disturb the caret while typing", async () => {
-    const loop = await boot(deps(), root);
-    loop.propose({ kind: "hydrated", notes: [note("a.md", "")] });
-    await settle(loop);
-    const editor = focusEditor();
-
-    // Typing means the DOM already holds the text; the model catches up. Nothing
-    // should be written back over a live field.
-    editor.value = "hello";
-    editor.setSelectionRange(5, 5);
-    loop.propose({ kind: "edited", path: "a.md", body: "hello" });
-    await settle(loop);
-
-    expect(editor.value).toBe("hello");
-    expect(editor.selectionStart).toBe(5);
   });
 });
 

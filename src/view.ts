@@ -70,28 +70,6 @@ const treeNodes = (
     </li>`;
   });
 
-const newNoteField = (propose: Propose) => {
-  const create = (input: HTMLInputElement) => {
-    const path = input.value.trim();
-    if (path === "") return;
-    propose({ kind: "created", path });
-    input.value = "";
-  };
-  return html`
-    <form
-      class="new"
-      @submit=${(e: SubmitEvent) => {
-        e.preventDefault();
-        const input = (e.target as HTMLFormElement).querySelector("input");
-        if (input) create(input);
-      }}
-    >
-      <input id="new-path" placeholder="inbox/new-note.md" autocomplete="off" />
-      <button type="submit">New</button>
-    </form>
-  `;
-};
-
 const editor = (
   model: Model,
   propose: Propose,
@@ -406,41 +384,128 @@ const dumpView = (
   `;
 };
 
-// Quick capture, floating. Same destination as the box on the dump page — one
-// capture path, two ways in.
-const captureModal = (
+// Capture and new-note are the same shape — one field, submit — so they share a
+// box told what it is. The open palette is not that shape and does not share it:
+// it filters as you type and has a selection.
+const modalBox = (
   propose: Propose,
-  onCapture: (text: string) => void,
+  placeholder: string,
+  label: string,
+  action: string,
+  onSubmit: (text: string) => void,
 ) => html`
-  <div
-    class="scrim"
-    @click=${(e: Event) => {
-      if (e.target === e.currentTarget) propose({ kind: "captureClosed" });
+  <form
+    class="capture floating"
+    role="dialog"
+    aria-modal="true"
+    aria-label=${label}
+    @submit=${(e: SubmitEvent) => {
+      e.preventDefault();
+      const input = (e.target as HTMLFormElement).querySelector("input");
+      if (!input) return;
+      const text = input.value.trim();
+      if (text !== "") onSubmit(text);
+      input.value = "";
+      propose({ kind: "modalClosed" });
     }}
   >
+    <input id="modal-input" placeholder=${placeholder} autocomplete="off" />
+    <button type="submit">${action}</button>
+  </form>
+`;
+
+// An empty query lists everything rather than nothing, so `o` then Enter is
+// useful without typing.
+const paletteResults = (model: Model): Note[] => {
+  const notes = openable(model).sort((a, b) => a.path.localeCompare(b.path));
+  return (model.query.trim() === "" ? notes : searchNotes(notes, model.query)).slice(
+    0,
+    50,
+  );
+};
+
+const openPalette = (model: Model, propose: Propose) => {
+  const results = paletteResults(model);
+  const selected = Math.min(model.paletteIndex, Math.max(0, results.length - 1));
+  const go = (path: string | undefined) => {
+    if (path === undefined) return;
+    propose({ kind: "opened", path });
+    propose({ kind: "modalClosed" });
+  };
+
+  return html`
     <form
-      class="capture floating"
+      class="palette floating"
       role="dialog"
       aria-modal="true"
-      aria-label="Quick capture"
+      aria-label="Open a note"
       @submit=${(e: SubmitEvent) => {
         e.preventDefault();
-        const input = (e.target as HTMLFormElement).querySelector("input");
-        if (!input) return;
-        onCapture(input.value);
-        input.value = "";
-        propose({ kind: "captureClosed" });
+        go(results[selected]?.path);
       }}
     >
       <input
-        id="quick-capture"
-        placeholder="What's on your mind?"
+        id="modal-input"
+        placeholder="Find a note"
         autocomplete="off"
+        .value=${model.query}
+        @input=${(e: Event) =>
+          propose({
+            kind: "searched",
+            query: (e.target as HTMLInputElement).value,
+          })}
+        @keydown=${(e: KeyboardEvent) => {
+          // Arrows have to be handled here: the global shortcuts stand down
+          // while a field has focus, which is exactly where this one is.
+          if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+          e.preventDefault();
+          propose({ kind: "paletteMoved", delta: e.key === "ArrowDown" ? 1 : -1 });
+        }}
       />
-      <button type="submit">Add</button>
+      <ul class="results">
+        ${results.length === 0
+          ? html`<li class="empty">No note matches.</li>`
+          : nothing}
+        ${results.map(
+          (note, index) => html`<li>
+            <button
+              type="button"
+              class="row ${index === selected ? "open" : ""}"
+              @click=${() => go(note.path)}
+            >
+              <span class="path">${note.path}</span>
+            </button>
+          </li>`,
+        )}
+      </ul>
     </form>
-  </div>
-`;
+  `;
+};
+
+const modal = (
+  model: Model,
+  propose: Propose,
+  onCapture: (text: string) => void,
+) => {
+  if (model.modal === null) return nothing;
+  const inner =
+    model.modal === "capture"
+      ? modalBox(propose, "What's on your mind?", "Quick capture", "Add", onCapture)
+      : model.modal === "newNote"
+        ? modalBox(propose, "inbox/new-note.md", "New note", "Create", (path) =>
+            propose({ kind: "created", path }),
+          )
+        : openPalette(model, propose);
+
+  return html`<div
+    class="scrim"
+    @click=${(e: Event) => {
+      if (e.target === e.currentTarget) propose({ kind: "modalClosed" });
+    }}
+  >
+    ${inner}
+  </div>`;
+};
 
 const tabs = (model: Model, propose: Propose) => html`
   <div class="tabs">
@@ -478,7 +543,7 @@ export const view = (
       <main class="single">
         ${tabs(model, propose)}
         ${dumpView(model, propose, now, onCapture)}
-        ${model.capturing ? captureModal(propose, onCapture) : nothing}
+        ${modal(model, propose, onCapture)}
         ${status(model)}
         ${model.error
           ? html`<p class="error" role="alert">${model.error}</p>`
@@ -496,36 +561,10 @@ export const view = (
     <main>
       <nav>
         ${tabs(model, propose)}
-        ${newNoteField(propose)}
-        <input
-          id="search"
-          class="search"
-          placeholder="Search"
-          autocomplete="off"
-          .value=${model.query}
-          @input=${(e: Event) =>
-            propose({
-              kind: "searched",
-              query: (e.target as HTMLInputElement).value,
-            })}
-        />
-        ${model.query.trim() === ""
-          ? html`<ul>${treeNodes(buildTree(notes), model, propose, 0)}</ul>`
-          : html`<ul class="results">
-              ${searchNotes(notes, model.query).map(
-                (n) => html`<li>
-                  <button
-                    class="row ${n.path === model.openPath ? "open" : ""}"
-                    @click=${() => propose({ kind: "opened", path: n.path })}
-                  >
-                    <span class="path">${n.path}</span>
-                  </button>
-                </li>`,
-              )}
-            </ul>`}
+        <ul>${treeNodes(buildTree(notes), model, propose, 0)}</ul>
       </nav>
       <section>${editor(model, propose, onPaste, previewCache)}</section>
-      ${model.capturing ? captureModal(propose, onCapture) : nothing}
+      ${modal(model, propose, onCapture)}
       ${status(model)}
       ${model.error
         ? html`<p class="error" role="alert">${model.error}</p>`

@@ -236,12 +236,12 @@ describe("quick capture from anywhere", () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
     await settle(loop);
-    expect(root.querySelector("#quick-capture")).toBeNull();
+    expect(root.querySelector("#modal-input")).toBeNull();
 
-    loop.propose({ kind: "captureOpened" });
+    loop.propose({ kind: "modalOpened", modal: "capture" });
     await settle(loop);
 
-    const box = root.querySelector<HTMLInputElement>("#quick-capture");
+    const box = root.querySelector<HTMLInputElement>("#modal-input");
     expect(box).not.toBeNull();
     // Opening it should put the caret in it; otherwise the shortcut saves
     // nothing over clicking.
@@ -257,7 +257,7 @@ describe("quick capture from anywhere", () => {
     expect(loop.model.notes.get("dump/2026-09-06.md")?.body).toBe(
       "14:32 a passing thought\n",
     );
-    expect(loop.model.capturing).toBe(false);
+    expect(loop.model.modal).toBeNull();
     // And you are still where you were.
     expect(loop.model.mode).toBe("notes");
     expect(loop.model.openPath).toBe("inbox/a.md");
@@ -266,12 +266,12 @@ describe("quick capture from anywhere", () => {
   it("closes without capturing when dismissed", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
-    loop.propose({ kind: "captureOpened" });
+    loop.propose({ kind: "modalOpened", modal: "capture" });
     await settle(loop);
 
-    loop.propose({ kind: "captureClosed" });
+    loop.propose({ kind: "modalClosed" });
     await settle(loop);
-    expect(root.querySelector("#quick-capture")).toBeNull();
+    expect(root.querySelector("#modal-input")).toBeNull();
     expect(loop.model.notes.has("dump/2026-09-06.md")).toBe(false);
   });
 
@@ -279,9 +279,9 @@ describe("quick capture from anywhere", () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [] });
     loop.propose({ kind: "modeChanged", mode: "dump" });
-    loop.propose({ kind: "captureOpened" });
+    loop.propose({ kind: "modalOpened", modal: "capture" });
     await settle(loop);
-    expect(root.querySelector("#quick-capture")).not.toBeNull();
+    expect(root.querySelector("#modal-input")).not.toBeNull();
   });
 });
 
@@ -302,5 +302,98 @@ describe("creating something you cannot open", () => {
     loop.propose({ kind: "created", path: "inbox/b.md" });
     await settle(loop);
     expect(loop.model.openPath).toBe("inbox/b.md");
+  });
+});
+
+describe("the open palette", () => {
+  const withNotes = async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        note("inbox/alpha.md", { body: "milk" }),
+        note("reference/beta.md", { body: "grammar" }),
+        note("dump/2026-09-06.md", { body: "09:00 thought" }),
+        note("attachments/x.webp", { body: "AAAA", encoding: "base64" }),
+      ],
+    });
+    loop.propose({ kind: "modalOpened", modal: "open" });
+    await settle(loop);
+    return loop;
+  };
+
+  const rows = () =>
+    [...root.querySelectorAll(".palette .results .path")].map((n) => n.textContent);
+
+  it("lists every note with an empty query, so Enter works without typing", async () => {
+    await withNotes();
+    // Attachments and dump days are not notes, and the palette opens notes.
+    expect(rows()).toEqual(["inbox/alpha.md", "reference/beta.md"]);
+  });
+
+  it("filters as you type", async () => {
+    const loop = await withNotes();
+    loop.propose({ kind: "searched", query: "grammar" });
+    await settle(loop);
+    expect(rows()).toEqual(["reference/beta.md"]);
+  });
+
+  it("opens the selected note and closes", async () => {
+    const loop = await withNotes();
+    loop.propose({ kind: "paletteMoved", delta: 1 });
+    await settle(loop);
+
+    root.querySelectorAll<HTMLButtonElement>(".palette .results .row")[1]!.click();
+    await settle(loop);
+    expect(loop.model.openPath).toBe("reference/beta.md");
+    expect(loop.model.modal).toBeNull();
+  });
+
+  it("forgets the query when dismissed, so it opens fresh", async () => {
+    const loop = await withNotes();
+    loop.propose({ kind: "searched", query: "grammar" });
+    loop.propose({ kind: "paletteMoved", delta: 1 });
+    loop.propose({ kind: "modalClosed" });
+    await settle(loop);
+    expect(loop.model.query).toBe("");
+    expect(loop.model.paletteIndex).toBe(0);
+  });
+
+  it("says so when nothing matches", async () => {
+    const loop = await withNotes();
+    loop.propose({ kind: "searched", query: "zzzz" });
+    await settle(loop);
+    expect(root.querySelector(".palette .empty")?.textContent).toContain("No note");
+  });
+});
+
+describe("creating from the dump", () => {
+  it("takes you to the new note", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    loop.propose({ kind: "modalOpened", modal: "newNote" });
+    await settle(loop);
+
+    loop.propose({ kind: "created", path: "inbox/fresh.md" });
+    loop.propose({ kind: "modalClosed" });
+    await settle(loop);
+
+    // Otherwise you create a note and stay looking at the dump.
+    expect(loop.model.mode).toBe("notes");
+    expect(loop.model.openPath).toBe("inbox/fresh.md");
+  });
+
+  it("quick capture still leaves you where you were", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+    // The dump file it creates is not openable, so nothing moves.
+    for (const p of captureProposals(loop.model.notes, "a thought", () => NOON)) {
+      loop.propose(p);
+    }
+    await settle(loop);
+    expect(loop.model.mode).toBe("dump");
   });
 });

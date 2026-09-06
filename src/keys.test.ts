@@ -119,7 +119,7 @@ describe("quick capture", () => {
   it("A floats the box everywhere else", () => {
     expect(keyAction(press("a"), model())).toEqual({
       kind: "propose",
-      proposal: { kind: "captureOpened" },
+      proposal: { kind: "modalOpened", modal: "capture" },
     });
   });
 
@@ -131,9 +131,9 @@ describe("quick capture", () => {
   it("Escape dismisses capture, even from inside its own field", () => {
     const box = document.createElement("input");
     // Blurring instead would look like Escape did nothing.
-    expect(keyAction(at(press("Escape"), box), model({ capturing: true }))).toEqual({
+    expect(keyAction(at(press("Escape"), box), model({ modal: "capture" }))).toEqual({
       kind: "propose",
-      proposal: { kind: "captureClosed" },
+      proposal: { kind: "modalClosed" },
     });
   });
 
@@ -148,3 +148,41 @@ describe("quick capture", () => {
     expect(keyAction(press("Escape"), model())).toBeNull();
   });
 })
+
+describe("new note and open", () => {
+  it("Space opens the new-note box from anywhere", () => {
+    expect(keyAction(press(" "), model({ mode: "dump" }))).toEqual({
+      kind: "propose",
+      proposal: { kind: "modalOpened", modal: "newNote" },
+    });
+  });
+
+  it("O opens the palette", () => {
+    expect(keyAction(press("o"), model())).toEqual({
+      kind: "propose",
+      proposal: { kind: "modalOpened", modal: "open" },
+    });
+  });
+
+  it("neither fires while typing, so a space stays a space", () => {
+    const editor = document.createElement("textarea");
+    expect(keyAction(at(press(" "), editor), model())).toBeNull();
+    expect(keyAction(at(press("o"), editor), model())).toBeNull();
+  });
+
+  it("N still goes to notes", () => {
+    expect(keyAction(press("n"), model({ mode: "dump" }))).toEqual({
+      kind: "propose",
+      proposal: { kind: "modeChanged", mode: "notes" },
+    });
+  });
+
+  it("Escape closes whichever modal is open", () => {
+    for (const which of ["capture", "newNote", "open"] as const) {
+      expect(keyAction(press("Escape"), model({ modal: which }))).toEqual({
+        kind: "propose",
+        proposal: { kind: "modalClosed" },
+      });
+    }
+  });
+});
