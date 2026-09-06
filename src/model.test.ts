@@ -1,10 +1,27 @@
 import { describe, expect, it } from "bun:test";
 import { createModel, present, type Model, type Note } from "./model.ts";
 
-const note = (path: string, body = "", dirty = false): Note => ({
+const note = (
+  path: string,
+  body = "",
+  dirty = false,
+  extra: Partial<Note> = {},
+): Note => ({
   path,
   body,
+  baseSha: "sha-0",
+  pending: false,
+  deleted: false,
   dirty,
+  ...extra,
+});
+
+const recordOf = ({ path, body, baseSha, pending, deleted }: Note) => ({
+  path,
+  body,
+  baseSha,
+  pending,
+  deleted,
 });
 
 const hydrated = (...notes: Note[]): Model => {
@@ -27,30 +44,52 @@ describe("present — accepting", () => {
     expect(m.openPath).toBeNull();
   });
 
-  it("creates a note, opens it, and marks it dirty", () => {
+  it("creates a note, opens it, and marks it dirty and pending", () => {
     const m = hydrated();
     present(m, { kind: "created", path: "inbox/new.md" });
     expect(m.openPath).toBe("inbox/new.md");
-    expect(m.notes.get("inbox/new.md")).toEqual(note("inbox/new.md", "", true));
+    expect(m.notes.get("inbox/new.md")).toEqual(
+      note("inbox/new.md", "", true, { baseSha: null, pending: true }),
+    );
   });
 
-  it("edits a note and marks it dirty", () => {
+  it("edits a note and marks it dirty and pending", () => {
     const m = hydrated(note("a.md", "old"));
     present(m, { kind: "edited", path: "a.md", body: "new" });
-    expect(m.notes.get("a.md")).toEqual(note("a.md", "new", true));
+    expect(m.notes.get("a.md")).toEqual(
+      note("a.md", "new", true, { pending: true }),
+    );
   });
 
-  it("deletes a note and moves off it", () => {
+  it("tombstones a synced note rather than dropping it, and moves off it", () => {
     const m = hydrated(note("a.md"), note("b.md"));
     present(m, { kind: "deleted", path: "a.md" });
-    expect(m.notes.has("a.md")).toBe(false);
+
+    // The record survives so the remote delete can still be sent.
+    const tombstone = m.notes.get("a.md");
+    expect(tombstone?.deleted).toBe(true);
+    expect(tombstone?.pending).toBe(true);
+    expect(tombstone?.body).toBe("");
     expect(m.openPath).toBe("b.md");
   });
 
-  it("clears openPath when the last note is deleted", () => {
+  it("drops a never-synced note outright, with nothing to tell GitHub", () => {
+    const m = hydrated(note("a.md", "", false, { baseSha: null }));
+    present(m, { kind: "deleted", path: "a.md" });
+    expect(m.notes.has("a.md")).toBe(false);
+  });
+
+  it("clears openPath when the last visible note is deleted", () => {
     const m = hydrated(note("a.md"));
     present(m, { kind: "deleted", path: "a.md" });
     expect(m.openPath).toBeNull();
+  });
+
+  it("never opens a tombstone", () => {
+    const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "deleted", path: "a.md" });
+    present(m, { kind: "opened", path: "a.md" });
+    expect(m.openPath).toBe("b.md");
   });
 });
 
@@ -97,7 +136,7 @@ describe("present — persistence bookkeeping", () => {
   it("cleans a note whose body still matches what was written", () => {
     const m = hydrated(note("a.md", "v1"));
     present(m, { kind: "edited", path: "a.md", body: "v2" });
-    present(m, { kind: "persisted", written: [{ path: "a.md", body: "v2" }] });
+    present(m, { kind: "persisted", written: [recordOf(note("a.md", "v2"))] });
     expect(m.notes.get("a.md")?.dirty).toBe(false);
   });
 
@@ -106,7 +145,7 @@ describe("present — persistence bookkeeping", () => {
     present(m, { kind: "edited", path: "a.md", body: "v2" });
     // v2 goes to disk, and v3 is typed before it lands.
     present(m, { kind: "edited", path: "a.md", body: "v3" });
-    present(m, { kind: "persisted", written: [{ path: "a.md", body: "v2" }] });
+    present(m, { kind: "persisted", written: [recordOf(note("a.md", "v2"))] });
 
     // Clearing the flag here would strand v3 on this device forever.
     expect(m.notes.get("a.md")?.dirty).toBe(true);

@@ -5,14 +5,11 @@
 // collection — that would rewrite every note on every keystroke, which is the
 // write amplification that made gafu's store O(n) per edit.
 
+import type { NoteRecord } from "./model.ts";
+
 const DB_NAME = "notes";
 const DB_VERSION = 1;
 export const NOTES_STORE = "notes";
-
-export interface NoteRecord {
-  readonly path: string;
-  readonly body: string;
-}
 
 const request = <T>(req: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {

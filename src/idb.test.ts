@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { deleteMany, getAll, NOTES_STORE, openDb, putMany } from "./idb.ts";
+import type { NoteRecord } from "./model.ts";
+
+const rec = (path: string, body: string): NoteRecord => ({
+  path,
+  body,
+  baseSha: null,
+  pending: false,
+  deleted: false,
+});
 
 let db: IDBDatabase | undefined;
 
@@ -24,19 +33,19 @@ const store = (): IDBDatabase => {
 describe("idb", () => {
   it("round-trips records", async () => {
     await putMany(store(), [
-      { path: "a.md", body: "A" },
-      { path: "b.md", body: "B" },
+      rec("a.md", "A"),
+      rec("b.md", "B"),
     ]);
     const all = (await getAll(store())).sort((x, y) => x.path.localeCompare(y.path));
     expect(all).toEqual([
-      { path: "a.md", body: "A" },
-      { path: "b.md", body: "B" },
+      rec("a.md", "A"),
+      rec("b.md", "B"),
     ]);
   });
 
   it("writes one record per note, not one blob for the collection", async () => {
-    await putMany(store(), [{ path: "a.md", body: "A" }]);
-    await putMany(store(), [{ path: "b.md", body: "B" }]);
+    await putMany(store(), [rec("a.md", "A")]);
+    await putMany(store(), [rec("b.md", "B")]);
 
     const count = await new Promise<number>((resolve, reject) => {
       const req = store()
@@ -51,20 +60,20 @@ describe("idb", () => {
   });
 
   it("overwrites by path rather than duplicating", async () => {
-    await putMany(store(), [{ path: "a.md", body: "v1" }]);
-    await putMany(store(), [{ path: "a.md", body: "v2" }]);
-    expect(await getAll(store())).toEqual([{ path: "a.md", body: "v2" }]);
+    await putMany(store(), [rec("a.md", "v1")]);
+    await putMany(store(), [rec("a.md", "v2")]);
+    expect(await getAll(store())).toEqual([rec("a.md", "v2")]);
   });
 
   it("writes nothing at all when one record in the batch is unstorable", async () => {
-    await putMany(store(), [{ path: "existing.md", body: "before" }]);
+    await putMany(store(), [rec("existing.md", "before")]);
 
     // A value IndexedDB's structured clone cannot handle. It must take the whole
     // transaction down, not land the records that came before it.
     const poisoned = [
-      { path: "a.md", body: "A" },
-      { path: "b.md", body: (() => {}) as unknown as string },
-      { path: "c.md", body: "C" },
+      rec("a.md", "A"),
+      rec("b.md", (() => {}) as unknown as string),
+      rec("c.md", "C"),
     ];
 
     let threw = false;
@@ -76,17 +85,17 @@ describe("idb", () => {
 
     expect(threw).toBe(true);
     const all = await getAll(store());
-    expect(all).toEqual([{ path: "existing.md", body: "before" }]);
+    expect(all).toEqual([rec("existing.md", "before")]);
   });
 
   it("deletes in one transaction", async () => {
     await putMany(store(), [
-      { path: "a.md", body: "A" },
-      { path: "b.md", body: "B" },
-      { path: "c.md", body: "C" },
+      rec("a.md", "A"),
+      rec("b.md", "B"),
+      rec("c.md", "C"),
     ]);
     await deleteMany(store(), ["a.md", "c.md"]);
-    expect(await getAll(store())).toEqual([{ path: "b.md", body: "B" }]);
+    expect(await getAll(store())).toEqual([rec("b.md", "B")]);
   });
 
   it("treats an empty batch as a no-op", async () => {

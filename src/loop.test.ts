@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getAll, openDb } from "./idb.ts";
-import { boot, createLoop, type Loop } from "./loop.ts";
+import { boot, createLoop, type Deps, type Loop } from "./loop.ts";
+import type { Note } from "./model.ts";
+
+const record = (path: string, body: string): Note => ({
+  path,
+  body,
+  baseSha: "sha-0",
+  pending: false,
+  deleted: false,
+  dirty: false,
+});
 
 let db: IDBDatabase | undefined;
 let root: HTMLElement;
@@ -21,6 +31,14 @@ const theDb = (): IDBDatabase => {
   return db;
 };
 
+// Phase 1 behaviour is sync-free: no client, so nap() never leaves the device.
+const localOnly = (): Deps => ({
+  db: theDb(),
+  github: null,
+  now: () => 1_700_000_000_000,
+  schedule: (_ms, fire) => void queueMicrotask(fire),
+});
+
 const paint = async () => {
   await new Promise<void>((r) => queueMicrotask(() => r()));
 };
@@ -38,34 +56,37 @@ beforeEach(async () => {
 
 describe("the loop", () => {
   it("boots empty and renders", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     await paint();
     expect(loop.model.hydrated).toBe(true);
     expect(root.textContent).toContain("No note open.");
   });
 
   it("persists a created note without being told to", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     loop.propose({ kind: "created", path: "inbox/a.md" });
     await settle(loop);
 
     // Nothing called save(). nap() noticed the dirty note and acted.
-    expect(await getAll(theDb())).toEqual([{ path: "inbox/a.md", body: "" }]);
+    const stored = await getAll(theDb());
+    expect(stored.map((r) => [r.path, r.body])).toEqual([["inbox/a.md", ""]]);
     expect(loop.model.notes.get("inbox/a.md")?.dirty).toBe(false);
   });
 
   it("persists an edit", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     loop.propose({ kind: "created", path: "a.md" });
     await settle(loop);
     loop.propose({ kind: "edited", path: "a.md", body: "hello" });
     await settle(loop);
 
-    expect(await getAll(theDb())).toEqual([{ path: "a.md", body: "hello" }]);
+    expect((await getAll(theDb())).map((r) => [r.path, r.body])).toEqual([
+      ["a.md", "hello"],
+    ]);
   });
 
   it("survives a reload — the gate for this phase", async () => {
-    const first = await boot(theDb(), root);
+    const first = await boot(localOnly(), root);
     first.propose({ kind: "created", path: "inbox/thought.md" });
     first.propose({ kind: "edited", path: "inbox/thought.md", body: "kept" });
     await settle(first);
@@ -73,7 +94,7 @@ describe("the loop", () => {
     // Drop everything but the database, exactly as a page refresh would.
     document.body.innerHTML = '<div id="app"></div>';
     const second = await boot(
-      theDb(),
+      localOnly(),
       document.getElementById("app") as HTMLElement,
     );
     await paint();
@@ -83,7 +104,7 @@ describe("the loop", () => {
   });
 
   it("does not start a second write while one is in flight", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     loop.propose({ kind: "created", path: "a.md" });
     expect(loop.model.persisting).toBe(true);
 
@@ -93,14 +114,14 @@ describe("the loop", () => {
 
     await settle(loop);
     // ...and the loop comes back for it, so the edit is not stranded.
-    expect(await getAll(theDb())).toEqual([
-      { path: "a.md", body: "typed while saving" },
+    expect((await getAll(theDb())).map((r) => [r.path, r.body])).toEqual([
+      ["a.md", "typed while saving"],
     ]);
     expect(loop.model.notes.get("a.md")?.dirty).toBe(false);
   });
 
   it("removes a deleted note from the model", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     loop.propose({ kind: "created", path: "a.md" });
     await settle(loop);
     loop.propose({ kind: "deleted", path: "a.md" });
@@ -109,12 +130,12 @@ describe("the loop", () => {
   });
 
   it("renders the note list and marks the open one", async () => {
-    const loop = createLoop(theDb(), root);
+    const loop = createLoop(localOnly(), root);
     loop.propose({
       kind: "hydrated",
       notes: [
-        { path: "a.md", body: "A", dirty: false },
-        { path: "b.md", body: "B", dirty: false },
+        record("a.md", "A"),
+        record("b.md", "B"),
       ],
     });
     await paint();
@@ -126,10 +147,10 @@ describe("the loop", () => {
   });
 
   it("keeps the editor uncontrolled so the cursor is never yanked", async () => {
-    const loop = createLoop(theDb(), root);
+    const loop = createLoop(localOnly(), root);
     loop.propose({
       kind: "hydrated",
-      notes: [{ path: "a.md", body: "hello", dirty: false }],
+      notes: [record("a.md", "hello")],
     });
     await paint();
 
@@ -148,12 +169,12 @@ describe("the loop", () => {
   });
 
   it("loads the note body when the open note changes", async () => {
-    const loop = createLoop(theDb(), root);
+    const loop = createLoop(localOnly(), root);
     loop.propose({
       kind: "hydrated",
       notes: [
-        { path: "a.md", body: "A body", dirty: false },
-        { path: "b.md", body: "B body", dirty: false },
+        record("a.md", "A body"),
+        record("b.md", "B body"),
       ],
     });
     await paint();
@@ -165,7 +186,7 @@ describe("the loop", () => {
   });
 
   it("surfaces a storage failure instead of dying silently", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     theDb().close(); // every later write now fails
 
     loop.propose({ kind: "created", path: "a.md" });
@@ -180,7 +201,7 @@ describe("the loop", () => {
   });
 
   it("stops retrying a failing write instead of spinning", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     theDb().close();
 
     loop.propose({ kind: "created", path: "a.md" });
@@ -193,7 +214,7 @@ describe("the loop", () => {
   });
 
   it("tries again after the next user action", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     theDb().close();
     loop.propose({ kind: "created", path: "a.md" });
     await settle(loop);
@@ -207,7 +228,7 @@ describe("the loop", () => {
   });
 
   it("clears a stale error once a write succeeds", async () => {
-    const loop = await boot(theDb(), root);
+    const loop = await boot(localOnly(), root);
     loop.model.error = "something old";
     loop.propose({ kind: "created", path: "a.md" });
     await settle(loop);

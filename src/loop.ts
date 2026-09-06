@@ -8,7 +8,16 @@
 import { render } from "lit-html";
 import { createModel, present, type Model, type Proposal } from "./model.ts";
 import * as actions from "./actions.ts";
+import type { Github } from "./github.ts";
 import { view } from "./view.ts";
+
+export interface Deps {
+  readonly db: IDBDatabase;
+  readonly github: Github | null;
+  readonly now: () => number;
+  // Injected so tests can drive the cooldown without waiting for real seconds.
+  readonly schedule: (ms: number, fire: () => void) => void;
+}
 
 export interface Loop {
   readonly model: Model;
@@ -16,8 +25,13 @@ export interface Loop {
   readonly flush: () => Promise<void>;
 }
 
-export const createLoop = (db: IDBDatabase, root: HTMLElement): Loop => {
+const FIRST_BACKOFF_MS = 1_000;
+const MAX_BACKOFF_MS = 60_000;
+
+export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
+  const { db, github, now, schedule } = deps;
   const model = createModel();
+  let wakeScheduled = false;
 
   let renderQueued = false;
   let lastRenderedPath: string | null = null;
@@ -49,18 +63,63 @@ export const createLoop = (db: IDBDatabase, root: HTMLElement): Loop => {
     });
   };
 
-  // Every automatic behaviour lives here, and it is a function of model state
-  // rather than a scheduler. Phase 1 has one rule.
+  // Every automatic behaviour lives here, and every rule is a function of model
+  // state rather than something a scheduler remembers.
   const nap = () => {
-    if (model.persisting || model.persistBlocked) return;
-    const dirty = [...model.notes.values()].filter((n) => n.dirty);
-    if (dirty.length === 0) return;
+    // 1. Get local edits onto the device before anything else. Losing a note to
+    //    a closed tab is worse than syncing late.
+    if (!model.persisting && !model.persistBlocked) {
+      const dirty = [...model.notes.values()].filter((n) => n.dirty);
+      if (dirty.length > 0) {
+        model.persisting = true;
+        idle = actions.persist(db, dirty).then(propose);
+        return;
+      }
+    }
 
-    model.persisting = true;
-    idle = actions.persist(db, dirty).then(propose);
+    if (github === null || model.syncing || !model.hydrated) return;
+
+    // 2. A network failure cools off. Unlike phase 1's latch, this expires on
+    //    its own — nobody is typing while the train is in a tunnel.
+    if (now() < model.retryAt) {
+      if (!wakeScheduled) {
+        wakeScheduled = true;
+        schedule(Math.max(0, model.retryAt - now()), () => {
+          wakeScheduled = false;
+          propose({ kind: "woke" });
+        });
+      }
+      return;
+    }
+    if (!model.online) return;
+
+    // 3. Push before pulling. An unpushed edit is the only state that exists
+    //    nowhere else.
+    const pending = [...model.notes.values()].find((n) => n.pending && !n.dirty);
+    if (pending) {
+      model.syncing = true;
+      idle = actions.push(github, pending, now).then(propose);
+      return;
+    }
+
+    // 4. Pull once per session; phase 3 adds a trigger on window focus.
+    if (model.lastSyncedAt === null) {
+      model.syncing = true;
+      model.lastSyncedAt = now();
+      idle = actions.pull(github, model.notes).then(propose);
+    }
   };
 
   function propose(p: Proposal): void {
+    // Backoff is bookkeeping about the loop rather than about notes, so it lives
+    // here instead of leaking a clock into present().
+    if (p.kind === "syncFailed") {
+      model.retryDelay = Math.min(
+        model.retryDelay === 0 ? FIRST_BACKOFF_MS : model.retryDelay * 2,
+        MAX_BACKOFF_MS,
+      );
+      model.retryAt = now() + model.retryDelay;
+    }
     present(model, p);
     scheduleRender();
     nap();
@@ -80,8 +139,8 @@ export const createLoop = (db: IDBDatabase, root: HTMLElement): Loop => {
   return { model, propose, flush };
 };
 
-export const boot = async (db: IDBDatabase, root: HTMLElement): Promise<Loop> => {
-  const loop = createLoop(db, root);
-  loop.propose(await actions.hydrate(db));
+export const boot = async (deps: Deps, root: HTMLElement): Promise<Loop> => {
+  const loop = createLoop(deps, root);
+  loop.propose(await actions.hydrate(deps.db));
   return loop;
 };
