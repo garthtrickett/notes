@@ -2,7 +2,7 @@
 //
 // No markdown AST is needed for any of this: a wikilink is a regex, and an
 // index of backlinks would be a second source of truth for something the note
-// bodies already say (principle 4).
+// bodies already say (never duplicate rules).
 
 import type { Note } from "./model.ts";
 

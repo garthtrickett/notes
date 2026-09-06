@@ -1,5 +1,5 @@
 // The GitHub API, and the only place HTTP statuses exist. Above this file a
-// failure is a SyncError, never a number (principle 6).
+// failure is a SyncError, never a number (parse at the boundary).
 //
 // Every method is on the Github interface so the loop can be handed a fake, and
 // all of sync is testable with no network.

@@ -2,7 +2,7 @@
 //
 // The counterpart to SyncError. Actions report what happened; this file is the
 // only place that decides how to say it, so an action never decides presentation
-// (principle 6).
+// (parse at the boundary).
 
 export type LocalError =
   | { readonly kind: "readFailed"; readonly cause: string }

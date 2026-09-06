@@ -22,7 +22,7 @@ export const isDumpPath = (path: string): boolean =>
   path.startsWith(`${DUMP_DIR}/`) && path.endsWith(".md");
 
 // The date a dump file is for, taken from its name. Never stored inside the
-// file — that would be a file repeating its own name (principle 4).
+// file — that would be a file repeating its own name (never duplicate rules).
 export const dayOfPath = (path: string): string =>
   path.slice(DUMP_DIR.length + 1, -".md".length);
 

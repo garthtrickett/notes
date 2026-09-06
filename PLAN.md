@@ -1,6 +1,6 @@
 # Build plan
 
-Five phases. Each is self-contained and ends with the whole thing under test.
+Six phases. Each is self-contained and ends with the whole thing under test.
 
 The split is at the risky seams: phase 1 proves the architecture with no network,
 phase 2 proves sync, and only then does feature work start on a base that is
@@ -15,7 +15,8 @@ known to hold.
 | 5. Attachments | Paste an image, get a resized WebP committed |
 | 6. One surface | CodeMirror: styled markdown you edit directly, images inline |
 
-All five phases are written out, and all five have shipped. Each was fleshed out
+Phases 1 to 5 are written out and shipped. Phase 6 is written out and has not
+started — its gate is a spike that has not been run. Each was fleshed out
 immediately before being built rather than up front, so the detail describes what
 was actually done — including the deferrals, which carry triggers rather than
 good intentions.

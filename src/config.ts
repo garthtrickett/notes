@@ -16,7 +16,7 @@ export const loadConfig = (storage: Storage): Config | null => {
   try {
     const parsed = JSON.parse(raw) as Partial<Config>;
     // Parse at the boundary: nothing above this returns a half-built config
-    // (principle 6).
+    // (parse at the boundary).
     if (!parsed.owner || !parsed.repo || !parsed.token) return null;
     return {
       owner: parsed.owner,

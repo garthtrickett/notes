@@ -1,10 +1,10 @@
 // A failure is a value, not an exception. Nothing below this file throws into
 // the loop; the untyped world is converted at the boundary by attemptAsync
-// (principle 2).
+// (effects only in actions).
 //
 // Deliberately only what is used. A synchronous attempt() and a combine() are
 // the obvious next two, and they get written when something needs them
-// (principle 8) — not before, or their signatures are a guess.
+// (add it at the wall) — not before, or their signatures are a guess.
 
 export type Result<T, E> =
   | { readonly ok: true; readonly value: T }

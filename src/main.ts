@@ -4,7 +4,7 @@ import { openDb } from "./idb.ts";
 import { boot } from "./loop.ts";
 import { createGithub } from "./github.ts";
 import { loadConfig, saveConfig } from "./config.ts";
-import { settingsView } from "./view.ts";
+import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
 
@@ -36,7 +36,7 @@ const root = document.getElementById("app");
 if (!root) throw new Error("#app is missing from index.html");
 
 // The only place that reaches for ambient state. Everything below is handed what
-// it needs (principle 5).
+// it needs (injected, not reached for).
 const config = loadConfig(localStorage);
 
 if (config === null) {
@@ -88,6 +88,9 @@ if (config === null) {
   });
 
   const resumed = () => loop.propose({ kind: "resumed" });
+  // Without these the app pulls once per session, so a note written on the
+  // laptop does not appear on the phone until a reload. Clearing the watermark
+  // is the whole mechanism; nap() does the rest.
   addEventListener("focus", resumed);
   addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") resumed();

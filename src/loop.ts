@@ -120,7 +120,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   };
 
   const paint = () => {
-    render(view(model, propose, now, capture, onPaste, previewCache), root);
+    render(
+      view(model, { propose, now, onCapture: capture, onPaste, previewCache }),
+      root,
+    );
 
     // The editor is uncontrolled: its value is set when the open note changes,
     // never on every render. Binding it to model state would fight the cursor,

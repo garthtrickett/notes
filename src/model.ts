@@ -144,7 +144,7 @@ export const visible = (m: Model): Note[] =>
 // What the notes view can show and open. An attachment is a record, not a note,
 // and a dump day belongs to its own view — opening either puts something in the
 // editor that is not text you meant to edit. Defined here rather than in the
-// view so there is one answer to "is this a note" (principle 4).
+// view so there is one answer to "is this a note" (never duplicate rules).
 export const openable = (m: Model): Note[] =>
   visible(m).filter((n) => !isDumpPath(n.path) && !isAttachmentPath(n.path));
 
@@ -188,11 +188,11 @@ const reject = (reason: string): Rejection => ({ reason });
 
 // A sync ended well. Four fields have to move together — an arm that sets three
 // of them leaves a cooldown in place and wedges the retry loop, so this is a
-// rule rather than a shape and does not get duplicated (principle 4).
+// rule rather than a shape and does not get duplicated (never duplicate rules).
 // Removing a note is two different things depending on whether GitHub has ever
 // heard of it, and getting that wrong either strands a record on the device or
 // tells GitHub to delete something that was never there. Copied verbatim in two
-// arms before this: a rule, not a shape (principle 4).
+// arms before this: a rule, not a shape (never duplicate rules).
 const stopKeeping = (m: Model, note: Note, path: string): void => {
   if (note.baseSha === null) {
     // Never reached GitHub, so nothing to tell it — but this device still has to
@@ -211,6 +211,9 @@ const stopKeeping = (m: Model, note: Note, path: string): void => {
   });
 };
 
+// A sync ended well. Four fields have to move together — an arm that sets three
+// of them leaves a cooldown in place and wedges the retry loop, so this is a
+// rule rather than a shape and does not get duplicated (never duplicate rules).
 const settleSync = (m: Model): void => {
   m.syncing = false;
   m.syncError = null;

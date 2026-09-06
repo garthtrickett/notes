@@ -21,6 +21,16 @@ import { renderMarkdown } from "./render-markdown.ts";
 type Propose = (p: Proposal) => void;
 export type PasteHandler = (event: ClipboardEvent, path: string) => void;
 
+// Everything the view is handed. The positional list grew by exactly one per
+// feature and had reached six.
+export interface ViewCtx {
+  readonly propose: Propose;
+  readonly now: () => number;
+  readonly onCapture: (text: string) => void;
+  readonly onPaste: PasteHandler;
+  readonly previewCache: PreviewCache;
+}
+
 const noteRow = (note: Note, openPath: string | null, propose: Propose) => html`
   <div class="leaf">
     <button
@@ -272,45 +282,6 @@ const status = (model: Model) => {
     : html`<p class="status" role="status">${message}</p>`;
 };
 
-export const settingsView = (
-  onSave: (c: {
-    owner: string;
-    repo: string;
-    token: string;
-    branch: string;
-  }) => void,
-): TemplateResult => html`
-  <form
-    class="settings"
-    @submit=${(e: SubmitEvent) => {
-      e.preventDefault();
-      const form = e.target as HTMLFormElement;
-      const value = (name: string) =>
-        (form.elements.namedItem(name) as HTMLInputElement).value.trim();
-      if (!value("owner") || !value("repo") || !value("token")) return;
-      onSave({
-        owner: value("owner"),
-        repo: value("repo"),
-        token: value("token"),
-        branch: value("branch") || "vault",
-      });
-    }}
-  >
-    <h1>Connect your vault</h1>
-    <label>Owner <input name="owner" autocomplete="off" /></label>
-    <label>Repo <input name="repo" autocomplete="off" /></label>
-    <label>Branch <input name="branch" value="vault" autocomplete="off" /></label>
-    <label>
-      Token
-      <input name="token" type="password" autocomplete="off" />
-    </label>
-    <p class="hint">
-      A personal access token with contents write access to that repo. It stays
-      in this browser.
-    </p>
-    <button type="submit">Save</button>
-  </form>
-`;
 
 // One continuous scroll, oldest to newest, that reads like a single document.
 // The storage stays one file per day: a single editor over everything would have
@@ -528,14 +499,8 @@ const tabs = (model: Model, propose: Propose) => html`
   </div>
 `;
 
-export const view = (
-  model: Model,
-  propose: Propose,
-  now: () => number,
-  onCapture: (text: string) => void,
-  onPaste: PasteHandler,
-  previewCache: PreviewCache,
-): TemplateResult => {
+export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
+  const { propose, now, onCapture, onPaste, previewCache } = ctx;
   if (!model.hydrated) return html`<p class="empty">Loading…</p>`;
 
   if (model.mode === "dump") {

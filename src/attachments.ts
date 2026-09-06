@@ -8,14 +8,22 @@ const QUALITY = 0.85;
 // than commit it.
 export const MAX_BYTES = 1_000_000;
 
-const BINARY_EXTENSIONS = new Set([
-  ".webp",
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".avif",
-]);
+// The one list of what an image is: which extensions count as binary, and what
+// mime each becomes. Two lists would be a rule written twice, and the pair that
+// matters most is that neither of them says svg — an SVG is a document that can
+// carry script, and nothing in a vault needs one.
+const IMAGE_MIME: Readonly<Record<string, string>> = {
+  webp: "image/webp",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  avif: "image/avif",
+};
+
+const BINARY_EXTENSIONS = new Set(
+  Object.keys(IMAGE_MIME).map((ext) => `.${ext}`),
+);
 
 // Decided by extension, not folder, so an image is an image wherever it sits.
 export const isBinaryPath = (path: string): boolean => {
@@ -55,11 +63,18 @@ export const base64Of = (bytes: ArrayBuffer): string => {
   return btoa(binary);
 };
 
-export const dataUrlOf = (base64: string, path: string): string => {
+// Null for anything not on the allowlist, so an unrenderable attachment is
+// declined here rather than turned into a `data:image/svg` or `data:image/html`
+// URL by taking the extension at its word.
+//
+// Previously safe only because encoding is set from the same extension list —
+// but `moved` inherits encoding, so renaming x.webp to foo.svg walked straight
+// past that. The check belongs where the URL is built.
+export const dataUrlOf = (base64: string, path: string): string | null => {
   const dot = path.lastIndexOf(".");
-  const ext = dot === -1 ? "webp" : path.slice(dot + 1).toLowerCase();
-  const type = ext === "jpg" ? "jpeg" : ext;
-  return `data:image/${type};base64,${base64}`;
+  const ext = dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
+  const mime = IMAGE_MIME[ext];
+  return mime === undefined ? null : `data:${mime};base64,${base64}`;
 };
 
 // Inserts the markdown reference where the cursor was, rather than appending —

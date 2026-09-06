@@ -419,3 +419,35 @@ describe("what the editor is allowed to open", () => {
     expect(m.openPath).toBeNull();
   });
 });
+
+describe("what may become a data URL", () => {
+  it("maps the image types it knows", () => {
+    expect(dataUrlOf("AAAA", "a.webp")).toBe("data:image/webp;base64,AAAA");
+    expect(dataUrlOf("AAAA", "a.jpg")).toBe("data:image/jpeg;base64,AAAA");
+    expect(dataUrlOf("AAAA", "a.PNG")).toBe("data:image/png;base64,AAAA");
+  });
+
+  it("refuses svg outright", () => {
+    // An SVG is a document that can carry script. Taking the extension at its
+    // word produced `data:image/svg`, which is defence by accident.
+    expect(dataUrlOf("AAAA", "a.svg")).toBeNull();
+  });
+
+  it("refuses anything else rather than inventing a mime", () => {
+    expect(dataUrlOf("AAAA", "a.html")).toBeNull();
+    expect(dataUrlOf("AAAA", "a")).toBeNull();
+  });
+
+  it("holds after a move, which inherits encoding", () => {
+    // The path that made this reachable: encoding comes from the old name.
+    const m = createModel();
+    present(m, {
+      kind: "hydrated",
+      notes: [note("attachments/x.webp", "AAAA", { encoding: "base64" })],
+    });
+    present(m, { kind: "moved", from: "attachments/x.webp", to: "foo.svg" });
+    const moved = m.notes.get("foo.svg");
+    expect(moved?.encoding).toBe("base64");
+    expect(dataUrlOf(moved?.body ?? "", "foo.svg")).toBeNull();
+  });
+});

@@ -525,28 +525,15 @@ Stated up front so they aren't surprises later.
 
 ## Open questions
 
-1. **Dump shape — decide first, it is cheap now and annoying later.** One file
-   per day under `dump/` (recommended, see Repo layout) versus a single
-   `dump.md` split by day headings. The UI is identical either way.
-2. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
-   find out whether it's actually missed.
+1. **Attachment policy for anything that is not an image** — PDFs, audio. Images
+   are settled; nothing else is.
 
+Two questions closed rather than left standing. The dump is one file per day,
+decided when it was built. The editor question is answered at length in *The
+editor, revisited* above — a decision that long should not also be listed as
+open.
 
-## Agent-native
-
-**Goal:** an agent should be able to achieve anything the UI can achieve. Features
-are outcomes described in prompts, not code paths. Reference: Shipper & Claude,
-*Agent-native Architectures* (Every).
-
-### Most of this is already paid for
-
-The article's central claim is that files are the best agent interface —
-inspectable, portable, self-documenting, and the primitives agents are most
-fluent with. This design landed on `.md` files in a git repo for entirely
-separate reasons, which means the substrate is already right:
-
-| Article principle | Status here |
-|---|---|
+---|---|
 | Files as the universal interface | The whole design |
 | Shared workspace, not a sandbox | Agent and user both write the `vault` branch |
 | Self-documenting structure | `projects/gafu/adaptive-media.md` |
@@ -652,6 +639,10 @@ has calcified around a different shape.
 
 ## Principles
 
+Cited in the source by **name**, not by number — `(never duplicate rules)` rather
+than `(principle 4)`. Inserting a principle here would silently invalidate every
+numbered citation in the code, and nothing would fail.
+
 ### 1. No classes unless a library forces it
 
 A bright line, which is the point — it needs no judgement at 11pm. It also falls
@@ -662,7 +653,7 @@ normally forces classes on you — throwing — is already designed out.
 Not a real exception: `Map`, `Set`, `URL`. The rule means "don't write
 `class Foo`", not "avoid built-ins".
 
-### 2. Impure code lives only in actions, and every action ends in `present()`
+### 2. Effects only in actions — impure code lives only in actions, and every action ends in `present()`
 
 This is the effects discipline. **Do not build an IO wrapper** — no
 `type IO<T> = () => T`, no descriptor you interpret later. That is Effect with
@@ -709,7 +700,7 @@ first place, and SAM already gives you that.
 `readonly` in types is free and catches real bugs. `Object.freeze` at runtime
 mostly doesn't earn its cost. No immer, no structural sharing — not your problem.
 
-### 4. WET until the abstraction is proven
+### 4. Never duplicate rules — WET until the abstraction is proven
 
 Locality of behaviour over DRY. But give it a trigger, or it becomes an excuse:
 **write it three times, then look at all three together.** The third instance is
@@ -720,7 +711,7 @@ The trade is asymmetric, so split it: **duplicate shapes freely, never duplicate
 rules.** Two render functions that drift apart are just different. Two copies of
 the conflict rule, or of the path → identity mapping, is a bug with a delay fuse.
 
-### 5. Injectable clock and IDs
+### 5. Injected, not reached for — clock and IDs
 
 `now: () => number` as a parameter, never `Date.now()` inline. Same for
 `crypto.randomUUID`.
@@ -739,7 +730,7 @@ types. A raw API shape must never reach the model.
 If any state can exist only in IndexedDB, the design is broken. The local cache
 is a cache. Easy to drift on, so it is written down.
 
-### 8. Add a dependency when you hit the wall, not when you anticipate it
+### 8. Add it at the wall — a dependency when you hit one, not when you anticipate it
 
 gafu finished with 18 runtime dependencies that were never imported once —
 roughly 90 MB installed, added on speculation for features that never landed.
