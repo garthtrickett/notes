@@ -4,7 +4,7 @@
 // index of backlinks would be a second source of truth for something the note
 // bodies already say (never duplicate rules).
 
-import type { Note } from "./model.ts";
+import type { Note, Proposal } from "./model.ts";
 
 const WIKILINK = /\[\[([^\]\n]+)\]\]/g;
 
@@ -88,4 +88,19 @@ export const searchNotes = (
       n.path.toLowerCase().includes(needle) ||
       n.body.toLowerCase().includes(needle),
   );
+};
+
+// What following a wikilink means, in one place. The preview and the editor
+// both need it and it is the same rule for both (never duplicate rules): an
+// existing note opens, one that does not exist yet is offered for creation —
+// writing a link to a note you have not made is a normal thing to do — and an
+// ambiguous target does nothing until it is disambiguated.
+export const followLink = (
+  target: string,
+  notes: ReadonlyMap<string, Note>,
+): Proposal | null => {
+  const resolved = resolveLink(target, notes);
+  if (resolved.kind === "found") return { kind: "opened", path: resolved.path };
+  if (resolved.kind === "missing") return { kind: "created", path: target };
+  return null;
 };

@@ -14,9 +14,10 @@ import { html, nothing, type TemplateResult } from "lit-html";
 import { openable, visible, type Model, type Note, type Proposal } from "./model.ts";
 import { buildTree, type TreeNode } from "./tree.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
-import { backlinksTo, resolveLink, searchNotes } from "./links.ts";
+import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { dataUrlOf } from "./attachments.ts";
 import { renderMarkdown } from "./render-markdown.ts";
+import type { EditorKind } from "./config.ts";
 
 type Propose = (p: Proposal) => void;
 export type PasteHandler = (event: ClipboardEvent, path: string) => void;
@@ -29,6 +30,10 @@ export interface ViewCtx {
   readonly onCapture: (text: string) => void;
   readonly onPaste: PasteHandler;
   readonly previewCache: PreviewCache;
+  readonly editorKind: EditorKind;
+  // Flipping the surface reloads, because the flag is read once at boot. Goes
+  // away with the textarea path.
+  readonly onEditorKind: (kind: EditorKind) => void;
 }
 
 const noteRow = (note: Note, openPath: string | null, propose: Propose) => html`
@@ -80,12 +85,8 @@ const treeNodes = (
     </li>`;
   });
 
-const editor = (
-  model: Model,
-  propose: Propose,
-  onPaste: PasteHandler,
-  cache: PreviewCache,
-) => {
+const editor = (model: Model, ctx: ViewCtx) => {
+  const { propose, onPaste, previewCache: cache, editorKind } = ctx;
   const path = model.openPath;
   if (path === null) {
     return html`<p class="empty">No note open.</p>`;
@@ -114,6 +115,14 @@ const editor = (
       >
         ${model.preview ? "Edit" : "Preview"} <kbd>E</kbd>
       </button>
+      <button
+        class="toggle ${editorKind === "codemirror" ? "on" : ""}"
+        title="Editing surface, this device only"
+        @click=${() =>
+          ctx.onEditorKind(editorKind === "codemirror" ? "textarea" : "codemirror")}
+      >
+        ${editorKind === "codemirror" ? "CM" : "Plain"}
+      </button>
     </div>
     ${model.preview
       ? html`<div
@@ -122,17 +131,21 @@ const editor = (
         >
           ${preview(model, path, cache)}
         </div>`
-      : html`<textarea
-          id="editor"
-          spellcheck="false"
-          @paste=${(e: ClipboardEvent) => onPaste(e, path)}
-          @input=${(e: Event) =>
-            propose({
-              kind: "edited",
-              path,
-              body: (e.target as HTMLTextAreaElement).value,
-            })}
-        ></textarea>`}
+      : editorKind === "codemirror"
+        ? // Empty on purpose. The loop holds the EditorView and attaches it here
+          // once; rebuilding it per paint would tear the editor down mid-keystroke.
+          html`<div id="editor-host"></div>`
+        : html`<textarea
+            id="editor"
+            spellcheck="false"
+            @paste=${(e: ClipboardEvent) => onPaste(e, path)}
+            @input=${(e: Event) =>
+              propose({
+                kind: "edited",
+                path,
+                body: (e.target as HTMLTextAreaElement).value,
+              })}
+          ></textarea>`}
     ${backlinks(model, path, propose)}
   `;
 };
@@ -156,7 +169,7 @@ const IMAGE_SCAN = /!\[[^\]]*\]\(([^)\s]+)\)/g;
 
 // A relative source is an attachment in this vault; anything absolute is
 // somebody else's problem and left alone.
-const localImage = (model: Model, src: string): string | null => {
+export const localImage = (model: Model, src: string): string | null => {
   if (/^[a-z]+:/i.test(src) || src.startsWith("//")) return null;
   const record = model.notes.get(src.replace(/^\.?\//, ""));
   if (!record || record.deleted || record.encoding !== "base64") return null;
@@ -220,15 +233,8 @@ const onPreviewClick = (event: Event, model: Model, propose: Propose): void => {
   if (!(anchor instanceof HTMLAnchorElement)) return;
   event.preventDefault();
 
-  const target = anchor.dataset.note ?? "";
-  const resolved = resolveLink(target, model.notes);
-  if (resolved.kind === "found") {
-    propose({ kind: "opened", path: resolved.path });
-    return;
-  }
-  if (resolved.kind === "missing") {
-    propose({ kind: "created", path: target });
-  }
+  const proposal = followLink(anchor.dataset.note ?? "", model.notes);
+  if (proposal !== null) propose(proposal);
 };
 
 const backlinks = (model: Model, path: string, propose: Propose) => {
@@ -528,7 +534,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
         ${tabs(model, propose)}
         <ul>${treeNodes(buildTree(notes), model, propose, 0)}</ul>
       </nav>
-      <section>${editor(model, propose, onPaste, previewCache)}</section>
+      <section>${editor(model, ctx)}</section>
       ${modal(model, propose, onCapture)}
       ${status(model)}
       ${model.error

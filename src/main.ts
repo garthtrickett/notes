@@ -3,7 +3,7 @@ import { render } from "lit-html";
 import { openDb } from "./idb.ts";
 import { boot } from "./loop.ts";
 import { createGithub } from "./github.ts";
-import { loadConfig, saveConfig } from "./config.ts";
+import { loadConfig, loadEditorKind, saveConfig, saveEditorKind } from "./config.ts";
 import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
@@ -55,6 +55,8 @@ if (config === null) {
       github: createGithub(config),
       now: () => Date.now(),
       schedule: (ms, fire) => void setTimeout(fire, ms),
+      editorKind: loadEditorKind(localStorage),
+      setEditorKind: (kind) => saveEditorKind(localStorage, kind),
     },
     root,
   );

@@ -688,6 +688,17 @@ rule the delegated handler established, for the same reason.
 Easy to forget, and its absence is a silent functional regression rather than an
 error.
 
+**Refined during implementation.** A plain click that always follows the link is
+right for a preview, which cannot be typed into, and wrong for a single surface,
+where it would make the link text the one thing in the document you cannot put a
+caret in. The rule shipped instead: Ctrl/Cmd-click follows it outright, and
+without a modifier the first click places the caret and a second click — now
+from inside the link — follows it. Same gesture on a phone, where there is no
+modifier to hold.
+
+The rule for *what* following means is shared with the preview rather than
+rewritten beside it: `followLink` in `links.ts` (never duplicate rules).
+
 ### Escape
 
 `isTyping` already returns true for CM, since its content is contenteditable, so
@@ -756,10 +767,14 @@ textarea. **Device-local on purpose**, so during rollout the desktop can run CM
 while the phone stays on the textarea — which is also the honest fallback if the
 spike passes on desktop and disappoints on mobile.
 
-Cost to measure rather than assume: CM6 core plus the markdown parser is
-roughly 200–250 KB minified, well under half that gzipped, fetched once and then
-held by the service worker. Measure it on the real build; do not take that
-figure from this document.
+Cost, measured on the real build rather than estimated: the bundle went from
+81.4 KB minified / 26.8 KB gzipped to 577.8 / 199.7. **CodeMirror and the
+markdown parser cost ~496 KB minified, ~173 KB gzipped** — roughly double what
+this document guessed, and it is worth saying so rather than quietly moving on.
+Fetched once and then held by the service worker, so it is a first-load cost on
+a new device, not a per-visit one. If the phone gate fails on load time rather
+than on editing, that number is the reason and code-splitting the editor behind
+a dynamic import is the first thing to try.
 
 **Trigger to delete the textarea path: two weeks of daily use without reaching
 for the flag.** Written down because carrying two editors indefinitely is the

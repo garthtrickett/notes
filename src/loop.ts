@@ -16,7 +16,10 @@ import { render } from "lit-html";
 import { createModel, present, type Model, type Proposal } from "./model.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
-import { createPreviewCache, view } from "./view.ts";
+import { createPreviewCache, localImage, view } from "./view.ts";
+import { createEditor, type EditorHandle } from "./editor.ts";
+import { followLink } from "./links.ts";
+import type { EditorKind } from "./config.ts";
 
 export interface Deps {
   readonly db: IDBDatabase;
@@ -25,6 +28,10 @@ export interface Deps {
   readonly now: () => number;
   // Injected so tests can drive the cooldown without waiting for real seconds.
   readonly schedule: (ms: number, fire: () => void) => void;
+  // Which editing surface, and how to remember a change of mind. Read from
+  // localStorage by main, not reached for here (injected, not reached for).
+  readonly editorKind?: EditorKind;
+  readonly setEditorKind?: (kind: EditorKind) => void;
 }
 
 export interface Loop {
@@ -81,6 +88,7 @@ const syncEditorValue = (editor: HTMLTextAreaElement, body: string): void => {
 
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const { db, github, now, schedule, shrink } = deps;
+  const editorKind = deps.editorKind ?? "textarea";
   const model = createModel();
   let wakeScheduled = false;
 
@@ -105,23 +113,71 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     for (const p of actions.captureProposals(model.notes, text, now)) propose(p);
   };
 
-  const onPaste = (event: ClipboardEvent, path: string) => {
+  // Where the caret is differs by surface; what to do with a pasted image does
+  // not (never duplicate rules).
+  const pasteImage = (event: ClipboardEvent, path: string, caret: number | null) => {
     const file = [...(event.clipboardData?.items ?? [])]
       .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
       .map((item) => item.getAsFile())
       .find((f): f is File => f !== null);
-    if (!file) return; // a normal text paste; let the textarea handle it
+    if (!file) return; // a normal text paste; let the editor handle it
 
     event.preventDefault();
     const note = model.notes.get(path);
     if (!note) return;
-    const cursor = (event.target as HTMLTextAreaElement).selectionStart ?? note.body.length;
-    track(actions.attach(file, note, cursor, now, shrink).then(propose));
+    track(actions.attach(file, note, caret ?? note.body.length, now, shrink).then(propose));
+  };
+
+  const onPaste = (event: ClipboardEvent, path: string) =>
+    pasteImage(event, path, (event.target as HTMLTextAreaElement).selectionStart);
+
+  // Created once, before the first paint, and outlives every one of them. lit is
+  // handed an empty container and never touches what is inside it.
+  const cm: EditorHandle | null =
+    editorKind === "codemirror"
+      ? createEditor({
+          resolveImage: (src) => localImage(model, src),
+          onEdit: (body) => {
+            if (model.openPath !== null) {
+              propose({ kind: "edited", path: model.openPath, body });
+            }
+          },
+          onPaste: (event, caret) => {
+            if (model.openPath !== null) pasteImage(event, model.openPath, caret);
+          },
+          onWikilink: (target) => {
+            const proposal = followLink(target, model.notes);
+            if (proposal !== null) propose(proposal);
+          },
+        })
+      : null;
+
+  // Whether a picture can be drawn at all is what the decorations depend on, and
+  // it changes when an attachment arrives or goes. Cheaper than re-parsing on
+  // every paint, and it moves for both.
+  let lastImageKey = "";
+  const imageKey = (): string => {
+    let key = "";
+    for (const note of model.notes.values()) {
+      if (note.encoding === "base64" && !note.deleted) key += `${note.path};`;
+    }
+    return key;
   };
 
   const paint = () => {
     render(
-      view(model, { propose, now, onCapture: capture, onPaste, previewCache }),
+      view(model, {
+        propose,
+        now,
+        onCapture: capture,
+        onPaste,
+        previewCache,
+        editorKind,
+        onEditorKind: (kind) => {
+          deps.setEditorKind?.(kind);
+          location.reload();
+        },
+      }),
       root,
     );
 
@@ -143,7 +199,29 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       ? (model.notes.get(model.openPath)?.body ?? "")
       : "";
 
-    if (editor) {
+    const host = cm && root.querySelector<HTMLElement>("#editor-host");
+    if (cm && host) {
+      // lit rebuilds the host when the surrounding template changes shape, so
+      // re-attach rather than assume. Moving the same node is a no-op.
+      if (cm.dom.parentElement !== host) host.appendChild(cm.dom);
+
+      // A new note gets a whole new state so undo stops at the note boundary.
+      // Anything else — a pull, a rename rewriting links, a pasted image — is a
+      // change dispatched into the state we have, and CodeMirror maps the
+      // selection through it.
+      if (editorKey !== lastEditorKey) {
+        lastEditorKey = editorKey;
+        cm.reset(body);
+      } else if (cm.doc() !== body) {
+        cm.setDoc(body);
+      }
+
+      const images = imageKey();
+      if (images !== lastImageKey) {
+        lastImageKey = images;
+        cm.redecorate();
+      }
+    } else if (editor) {
       // Two reasons to push a value in. The element was replaced — a different
       // note, or preview toggled — or the model changed the body underneath a
       // live textarea, which is what pasting an image, pulling a remote edit and
