@@ -3,7 +3,7 @@ import { getAll, openDb } from "./idb.ts";
 import { boot, type Deps, type Loop } from "./loop.ts";
 import { err, ok } from "./result.ts";
 import type { Github, SyncError } from "./github.ts";
-import { pull } from "./actions.ts";
+import { conflictPath, pull } from "./actions.ts";
 import type { Note } from "./model.ts";
 
 // A GitHub that lives in a Map. Everything about sync is then testable with no
@@ -316,6 +316,27 @@ describe("conflict", () => {
     await settle(loop);
 
     expect(loop.model.openPath).toBe("a (conflict 2023-11-14).md");
+  });
+});
+
+describe("conflict naming", () => {
+  it("does not stack a second marker on an already-conflicted copy", () => {
+    const at = () => new Date("2026-09-07T10:00:00").getTime();
+    expect(conflictPath("a (conflict 2026-09-06).md", at)).toBe(
+      "a (conflict 2026-09-07).md",
+    );
+  });
+
+  it("marks a clean path normally", () => {
+    const at = () => new Date("2026-09-07T10:00:00").getTime();
+    expect(conflictPath("inbox/a.md", at)).toBe(
+      "inbox/a (conflict 2026-09-07).md",
+    );
+  });
+
+  it("handles a path with no extension", () => {
+    const at = () => new Date("2026-09-07T10:00:00").getTime();
+    expect(conflictPath("weird", at)).toBe("weird (conflict 2026-09-07)");
   });
 });
 

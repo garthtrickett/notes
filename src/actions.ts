@@ -138,12 +138,21 @@ export const pull = async (
   return { kind: "pulled", notes, gone };
 };
 
-// Where a losing local edit goes. Dated, so a second conflict on the same day
-// is the caller's problem to notice rather than a silent overwrite.
+const CONFLICT_SUFFIX = / \(conflict \d{4}-\d{2}-\d{2}\)$/;
+
+// Where a losing local edit goes.
+//
+// Replaces an existing conflict marker rather than appending another. A conflict
+// copy that conflicts again would otherwise grow a second suffix, and a third,
+// each retry adding one — a copy of a copy is never what anyone wanted, and the
+// cascade is unbounded.
 export const conflictPath = (path: string, now: () => number): string => {
   const date = new Date(now()).toISOString().slice(0, 10);
   const dot = path.lastIndexOf(".");
-  const stem = dot === -1 ? path : path.slice(0, dot);
+  const stem = (dot === -1 ? path : path.slice(0, dot)).replace(
+    CONFLICT_SUFFIX,
+    "",
+  );
   const ext = dot === -1 ? "" : path.slice(dot);
   return `${stem} (conflict ${date})${ext}`;
 };
