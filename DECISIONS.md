@@ -58,46 +58,54 @@ Everything enters at the top and leaves at the bottom. Nothing mutates outside
 
 ## Repo layout
 
-**One repo holds both the app and the notes.** Not two. If privacy is ever
-wanted, the whole thing goes private in one click — the notes being public is
-acceptable.
+**One repo, two branches with no shared history.**
 
-Notes live in folders under `vault/`, one `.md` per note, plus a daily dump for
-quick capture.
+- `main` — the app. Normal code history.
+- `vault` — an **orphan branch** holding the notes. Nothing else.
+
+One clone, one token, one privacy switch: if privacy is ever wanted, the whole
+repo goes private in one click. But `main`'s log stays readable, because the
+app's auto-commits land on a branch that shares no history with it.
+
+Notes live in folders at the **root of `vault`**, one `.md` per note, plus a
+daily dump for quick capture.
 
 ```
-notes/                         # the repo — github.com/garthtrickett/notes
-  src/                         # app source
+main                           # the app
+  src/
   package.json
   DECISIONS.md
-  vault/                       # ← everything the app syncs, and nothing else
-    inbox/
-      some-thought.md
-    projects/
-      gafu/
-        adaptive-media.md
-    reference/
-      japanese-grammar.md
-    dump/
-      2026-09-06.md            # today
-      2026-09-05.md            # immutable once the day ends
+
+vault                          # orphan branch — notes only, at the root
+  inbox/
+    some-thought.md
+  projects/
+    gafu/
+      adaptive-media.md
+  reference/
+    japanese-grammar.md
+  dump/
+    2026-09-06.md              # today
+    2026-09-05.md              # immutable once the day ends
 ```
 
-**The `vault/` prefix is load-bearing.** The Trees API returns *every* path in
-the repo, so the sync must filter the manifest to `vault/` or the app will try to
-sync its own source into IndexedDB. One prefix check, one place. `vault` rather
-than `notes` only to avoid a `notes/notes/` path — rename freely, but keep it a
-single prefix.
+**No path prefix, no manifest filtering.** Because the notes have a branch to
+themselves, everything the Trees API returns for `vault` *is* a note. The sync
+does not have to filter its own source out of the manifest — the branch is the
+boundary. This is the main reason to prefer a branch over a `vault/` directory.
 
-**Folders are not a data structure.** They are a path prefix. There is no folder
-entity, no tree table, no parent pointers — the Trees API manifest already
-returns every path, so the tree is derived from the paths on read. Creating a
-folder is creating a note inside it.
+The cost is one extra parameter on two calls:
 
-**Moving a note is a delete + a create.** The Contents API has no move, so a move
-is two calls and two commits, and the `sha` compare-and-swap covers each half
-separately. If that starts to feel wrong, the Git Data API does it as one commit.
-Also: a move changes the path, which is the identity — see open question 1.
+| Call | Parameter |
+|---|---|
+| Trees — `GET /git/trees/vault?recursive=1` | branch name as the tree ref |
+| Contents GET | `?ref=vault` |
+| Contents PUT | `"branch": "vault"` in the body |
+
+**Never merge `vault` into `main`.** GitHub will offer a PR after the first
+push; decline it. They are separate histories on purpose.
+
+**Folders are not a data structure.**
 
 ### The daily dump
 
@@ -252,18 +260,15 @@ Stated up front so they aren't surprises later.
   commit across files.
 - **Attachments.** Git never forgets a 4 MB pasted screenshot. Decide a policy
   before the first paste.
-- **One repo means one history.** Note commits and code commits interleave, and
-  auto-commit means notes will dominate `git log` heavily. Use
-  `git log -- ':!vault'` to read the code history. Accepted deliberately.
-- **CI would fire on every note save.** If a workflow or a deploy is ever added,
-  give it `paths-ignore: ['vault/**']` or every captured thought triggers a
-  build.
-- **Splitting later is a chore, not a disaster.** `git filter-repo --path vault/`
-  extracts the notes with history intact if the mixed log ever becomes
-  intolerable. Cheapest middle path, if it comes to that: keep one repo but move
-  `vault/` to an orphan branch — the Contents API takes a `branch` parameter and
-  the Trees API takes a `ref`, so it costs one extra parameter on two calls and
-  buys back a clean `main` history.
+- **`git clone` no longer gets the notes.** It gets `main`. Export is
+  `git clone -b vault <repo>`, or `git fetch origin vault` in an existing clone.
+  Slightly worse than the one-command story, and the price of a clean `main`.
+- **CI needs the right branch filter.** A workflow scoped to `main` will not fire
+  on note commits, which is the desired behaviour — but a workflow with a bare
+  `on: push` will fire on every captured thought. Scope it explicitly.
+- **Splitting into two repos later is now trivial**, if it ever comes to that:
+  `vault` is already an independent history, so it is one `git push` to a new
+  remote.
 
 ---
 
