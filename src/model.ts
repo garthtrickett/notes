@@ -243,6 +243,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return reject(`Cannot open ${p.path}: it is not a note.`);
       }
       m.openPath = p.path;
+      // Opening a note means showing it. The palette reaches here from the dump,
+      // where setting openPath alone changed nothing visible. Same rule as
+      // `created`, which already did this.
+      m.mode = "notes";
       return null;
     }
 

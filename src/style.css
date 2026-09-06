@@ -395,9 +395,18 @@ kbd {
   overflow-y: auto;
 }
 
+/* The same 20px the textarea and the preview use, so switching surface does not
+   move the text. CodeMirror's own 6px on .cm-line is zeroed rather than added
+   to, which keeps the left edge equal to the other two and gives the quote
+   indent a baseline of zero to work from. */
 .cm-host .cm-content {
-  padding: 0.5rem 0;
+  padding: 20px;
   caret-color: currentColor;
+}
+
+.cm-host .cm-line {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .cm-md-mark {

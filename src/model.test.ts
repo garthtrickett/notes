@@ -87,6 +87,23 @@ describe("present — accepting", () => {
     expect(m.openPath).toBeNull();
   });
 
+  it("shows the note it opens, even from the dump", () => {
+    const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "modeChanged", mode: "dump" });
+    present(m, { kind: "opened", path: "b.md" });
+    // Setting openPath alone left the dump on screen, so the open palette
+    // looked like it did nothing at all.
+    expect(m.openPath).toBe("b.md");
+    expect(m.mode).toBe("notes");
+  });
+
+  it("stays in the dump when the open is refused", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "modeChanged", mode: "dump" });
+    present(m, { kind: "opened", path: "ghost.md" });
+    expect(m.mode).toBe("dump");
+  });
+
   it("never opens a tombstone", () => {
     const m = hydrated(note("a.md"), note("b.md"));
     present(m, { kind: "deleted", path: "a.md" });
