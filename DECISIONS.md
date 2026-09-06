@@ -176,6 +176,27 @@ decoration: the auto-merge claim above depends on it. Untimestamped free text
 cannot be union-and-sorted back into a correct order, so without per-entry times
 the one safe auto-merge in the design stops working.
 
+#### The day rolls over at 04:00, not midnight
+
+A thought at 01:30 belongs to the night before, so it goes in the previous day's
+file. The rule is `dumpDate(t) = localDate(t - 4h)`, device-local, and it comes
+from the injected clock — never `Date.now()` inline (principle 5).
+
+Two consequences that are easy to get wrong.
+
+**The same rule orders entries, and must be reused rather than reimplemented.** A
+day now runs 04:00 → 03:59, so a naive sort on `HH:MM` puts a 01:30 entry *above*
+the 09:00 ones. Sort on the shifted hour, `(h - 4 + 24) % 24`, using the same
+function that picks the file — one rule, one place (principle 4). This also keeps
+the files simple: an entry displays a plain `01:30` and stores no extra timestamp.
+
+This applies to the conflict auto-merge too. Union-and-sort must use the shifted
+comparator, or resolving a conflict silently reorders the day.
+
+**The bottom day is labelled "Today", not its date.** At 02:00 the current dump
+day carries yesterday's date, which would otherwise read as a bug. Labelling the
+live day "Today" sidesteps it, and is nicer anyway.
+
 ---
 
 ## Deliberately not building
@@ -318,12 +339,8 @@ Stated up front so they aren't surprises later.
    `[[wikilink]]` (Obsidian's long-running pain). Stable ID in frontmatter with
    links by ID survives renames but makes the repo less human-browsable. Git
    tracks renames fine; the link graph doesn't. **Decide before 500 notes.**
-3. **When does the day roll over?** Local midnight is the obvious answer and the
-   wrong one for a capture tool — a thought at 01:30 usually belongs to the
-   previous day. A ~04:00 cutoff is common. Whatever it is, it comes from the
-   injected clock (principle 5), not `Date.now()` inline.
-4. Attachment policy — separate dir, size threshold, or don't commit binaries.
-5. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
+3. Attachment policy — separate dir, size threshold, or don't commit binaries.
+4. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
    find out whether it's actually missed.
 
 ---
