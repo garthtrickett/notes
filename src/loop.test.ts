@@ -124,11 +124,11 @@ describe("the loop", () => {
     expect(loop.model.notes.get("a.md")?.dirty).toBe(false);
   });
 
-  it("removes a deleted note from the model", async () => {
+  it("removes a purged note from the model", async () => {
     const loop = await boot(localOnly(), root);
     loop.propose({ kind: "created", path: "a.md" });
     await settle(loop);
-    loop.propose({ kind: "deleted", path: "a.md" });
+    loop.propose({ kind: "purged", path: "a.md" });
     await settle(loop);
     expect(loop.model.notes.size).toBe(0);
   });
@@ -258,7 +258,7 @@ afterEach(() => {
   db = undefined;
 });
 
-describe("deleting reaches the device, not just the model", () => {
+describe("deleting for good reaches the device, not just the model", () => {
   it("keeps a deleted note deleted across a reload", async () => {
     const first = await boot(localOnly(), root);
     first.propose({ kind: "created", path: "a.md" });
@@ -266,7 +266,7 @@ describe("deleting reaches the device, not just the model", () => {
     await settle(first);
     expect((await getAll(theDb())).map((r) => r.path)).toEqual(["a.md"]);
 
-    first.propose({ kind: "deleted", path: "a.md" });
+    first.propose({ kind: "purged", path: "a.md" });
     await settle(first);
 
     // Removing it from the map is not enough: nap() only writes notes it can
@@ -291,7 +291,7 @@ describe("deleting reaches the device, not just the model", () => {
     });
     await settle(loop);
 
-    loop.propose({ kind: "deleted", path: "a.md" });
+    loop.propose({ kind: "purged", path: "a.md" });
     await settle(loop);
     // Still a tombstone: the remote has not been told yet.
     expect((await getAll(theDb())).map((r) => [r.path, r.deleted])).toEqual([
@@ -307,7 +307,7 @@ describe("deleting reaches the device, not just the model", () => {
     const loop = await boot(localOnly(), root);
     loop.propose({ kind: "created", path: "a.md" });
     await settle(loop);
-    loop.propose({ kind: "deleted", path: "a.md" });
+    loop.propose({ kind: "purged", path: "a.md" });
     // Recreated before the forget has been written.
     loop.propose({ kind: "created", path: "a.md" });
     loop.propose({ kind: "edited", path: "a.md", body: "back" });

@@ -14,6 +14,15 @@ import { describeProblem, normalizePath, pathProblem, type PathProblem } from ".
 import { buildTree, type TreeNode } from "./tree.ts";
 import { isDumpPath } from "./dump.ts";
 import { isAttachmentPath } from "./attachments.ts";
+import {
+  ARCHIVE,
+  TRASH,
+  filedPath,
+  isFiledPath,
+  isTrashPath,
+  unfiledPath,
+  uniquePath,
+} from "./paths.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
@@ -41,7 +50,7 @@ export interface Note extends NoteRecord {
   readonly dirty: boolean;
 }
 
-export type Mode = "notes" | "dump";
+export type Mode = "notes" | "dump" | "archive" | "trash";
 // A discriminated union rather than a string, because a dialog that asks about
 // something has to carry what it is asking about.
 export type Modal =
@@ -120,6 +129,10 @@ export type Proposal =
   | { readonly kind: "created"; readonly path: string }
   | { readonly kind: "edited"; readonly path: string; readonly body: string }
   | { readonly kind: "deleted"; readonly path: string }
+  // Out of the vault for good, rather than into the bin.
+  | { readonly kind: "purged"; readonly path: string }
+  | { readonly kind: "archived"; readonly path: string }
+  | { readonly kind: "restored"; readonly path: string }
   | { readonly kind: "persisted"; readonly written: readonly NoteRecord[] }
   | { readonly kind: "forgot"; readonly paths: readonly string[] }
   | { readonly kind: "failed"; readonly error: LocalError }
@@ -164,7 +177,16 @@ export const visible = (m: Model): Note[] =>
 // editor that is not text you meant to edit. Defined here rather than in the
 // view so there is one answer to "is this a note" (never duplicate rules).
 export const openable = (m: Model): Note[] =>
-  visible(m).filter((n) => !isDumpPath(n.path) && !isAttachmentPath(n.path));
+  visible(m).filter(
+    (n) => !isDumpPath(n.path) && !isAttachmentPath(n.path) && !isFiledPath(n.path),
+  );
+
+// What the bin and the archive hold. Filed notes are ordinary files that the
+// note tree does not show, so this is the same question asked of a prefix.
+export const filedIn = (m: Model, folder: string): Note[] =>
+  visible(m)
+    .filter((n) => n.path.startsWith(`${folder}/`))
+    .sort((a, b) => a.path.localeCompare(b.path));
 
 // The tree exactly as the notes view draws it. The view renders this and the
 // number shortcuts index into it, so there is one ordering and the badges cannot
@@ -193,11 +215,35 @@ const findFolder = (nodes: readonly TreeNode[], path: string): TreeNode[] | null
   return null;
 };
 
+// A tombstone does not occupy its path — `checkPath` already ignores them, and
+// anything choosing a free name has to agree with it. When it did not, restoring
+// a note landed on `a (2).md` while `a.md` sat there apparently free.
+const occupied = (m: Model) => {
+  const paths = new Set(visible(m).map((n) => n.path));
+  return (candidate: string): boolean => paths.has(candidate);
+};
+
+// Filing a note is a move, which is why deleting is recoverable from any device
+// rather than from the one that did it: the file is still in the repo.
+const fileAway = (m: Model, note: Note, folder: string): Rejection | null => {
+  const to = uniquePath(filedPath(folder, note.path), occupied(m));
+  const rejection = present(m, { kind: "moved", from: note.path, to });
+  // `moved` follows the note to its new home, which for a filed note means
+  // opening the bin. Stay in the tree instead.
+  if (rejection === null && m.openPath !== null && isFiledPath(m.openPath)) {
+    m.openPath = firstVisiblePath(m);
+  }
+  return rejection;
+};
+
 const firstVisiblePath = (m: Model): string | null =>
   openable(m)[0]?.path ?? null;
 
 const isOpenable = (note: Note): boolean =>
-  !note.deleted && !isDumpPath(note.path) && !isAttachmentPath(note.path);
+  !note.deleted &&
+  !isDumpPath(note.path) &&
+  !isAttachmentPath(note.path) &&
+  !isFiledPath(note.path);
 
 // Asking whether a path is usable is a question, so it does not mutate anything.
 // Recording the refusal is a separate step, which is what lets each arm phrase
@@ -342,7 +388,39 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
 
     case "deleted": {
       const doomed = m.notes.get(p.path);
-      if (!doomed) return reject(`Cannot delete ${p.path}: no such note.`);
+      if (!doomed || doomed.deleted) {
+        return reject(`Cannot delete ${p.path}: no such note.`);
+      }
+      // Already in the bin, so there is nowhere further to move it to.
+      if (isTrashPath(p.path)) return present(m, { kind: "purged", path: p.path });
+      return fileAway(m, doomed, TRASH);
+    }
+
+    case "archived": {
+      const note = m.notes.get(p.path);
+      if (!note || note.deleted) {
+        return reject(`Cannot archive ${p.path}: no such note.`);
+      }
+      if (isFiledPath(p.path)) {
+        return reject(`${p.path} is already filed away.`);
+      }
+      return fileAway(m, note, ARCHIVE);
+    }
+
+    case "restored": {
+      const note = m.notes.get(p.path);
+      if (!note || note.deleted || !isFiledPath(p.path)) {
+        return reject(`Cannot restore ${p.path}: it is not filed away.`);
+      }
+      const to = uniquePath(unfiledPath(p.path), occupied(m));
+      return present(m, { kind: "moved", from: p.path, to });
+    }
+
+    case "purged": {
+      const doomed = m.notes.get(p.path);
+      if (!doomed || doomed.deleted) {
+        return reject(`Cannot delete ${p.path}: no such note.`);
+      }
       stopKeeping(m, doomed, p.path);
       m.persistBlocked = false;
       if (m.openPath === p.path) m.openPath = firstVisiblePath(m);
@@ -393,7 +471,12 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       if (doomed.length === 0) {
         return reject(`Cannot delete ${p.path}: no such folder.`);
       }
-      for (const note of doomed) stopKeeping(m, note, note.path);
+      for (const note of doomed) {
+        // The same rule one note at a time: into the bin, unless it is already
+        // there, in which case there is nowhere further to go.
+        if (isTrashPath(note.path)) stopKeeping(m, note, note.path);
+        else fileAway(m, note, TRASH);
+      }
       m.persistBlocked = false;
       m.expanded.delete(p.path);
       if (m.openPath !== null && m.openPath.startsWith(prefix)) {

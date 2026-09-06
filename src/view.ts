@@ -11,7 +11,9 @@
 // every other piece of state. This file has none of its own.
 
 import { html, nothing, type TemplateResult } from "lit-html";
+import { ARCHIVE, TRASH } from "./paths.ts";
 import {
+  filedIn,
   noteTree,
   numberedRows,
   openable,
@@ -152,6 +154,13 @@ const editor = (model: Model, ctx: ViewCtx) => {
           if (to !== path) propose({ kind: "renamed", from: path, to });
         }}
       />
+      <button
+        class="toggle"
+        title="Archive ${path}"
+        @click=${() => propose({ kind: "archived", path })}
+      >
+        Archive
+      </button>
       <button
         class="toggle ${model.preview ? "on" : ""}"
         title="Toggle preview (E)"
@@ -561,12 +570,80 @@ const tabs = (model: Model, propose: Propose) => html`
     >
       Dump <kbd>D</kbd>
     </button>
+    <button
+      class=${model.mode === "archive" ? "on" : ""}
+      title="Archive"
+      @click=${() => propose({ kind: "modeChanged", mode: "archive" })}
+    >
+      Archive
+    </button>
+    <button
+      class=${model.mode === "trash" ? "on" : ""}
+      title="Deleted notes"
+      @click=${() => propose({ kind: "modeChanged", mode: "trash" })}
+    >
+      Trash
+    </button>
   </div>
 `;
+
+// The bin and the archive are the same list with one button's difference, so
+// they are one component. Both show the note's original path, because that is
+// what you are looking for — not where it was filed.
+const filedView = (model: Model, propose: Propose, folder: string) => {
+  const notes = filedIn(model, folder);
+  const trash = folder === TRASH;
+  if (notes.length === 0) {
+    return html`<p class="empty">
+      ${trash ? "Nothing deleted." : "Nothing archived."}
+    </p>`;
+  }
+  return html`
+    <ul class="filed">
+      ${notes.map(
+        (note) => html`<li>
+          <span class="path" title=${note.path}>
+            ${note.path.slice(folder.length + 1)}
+          </span>
+          <button @click=${() => propose({ kind: "restored", path: note.path })}>
+            ${trash ? "Restore" : "Unarchive"}
+          </button>
+          ${trash
+            ? html`<button
+                class="delete"
+                title="Delete ${note.path} for good"
+                @click=${() =>
+                  propose({
+                    kind: "modalOpened",
+                    modal: { kind: "confirmDelete", path: note.path, folder: false },
+                  })}
+              >
+                ×
+              </button>`
+            : nothing}
+        </li>`,
+      )}
+    </ul>
+  `;
+};
 
 export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
   const { propose, now, onCapture, previewCache } = ctx;
   if (!model.hydrated) return html`<p class="empty">Loading…</p>`;
+
+  if (model.mode === "archive" || model.mode === "trash") {
+    return html`
+      <main class="single">
+        ${tabs(model, propose)}
+        ${filedView(model, propose, model.mode === "trash" ? TRASH : ARCHIVE)}
+        ${modal(model, propose, onCapture)}
+        ${status(model)}
+        ${model.error
+          ? html`<p class="error" role="alert">${model.error}</p>`
+          : nothing}
+      </main>
+    `;
+  }
 
   if (model.mode === "dump") {
     return html`

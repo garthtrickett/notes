@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { describeProblem, normalizePath, pathProblem } from "./paths.ts";
+import { describeProblem, normalizePath, pathProblem, isTrashPath, isArchivePath, isFiledPath, filedPath, unfiledPath, uniquePath, TRASH } from "./paths.ts";
 import { createModel, present } from "./model.ts";
 
 describe("normalizePath", () => {
@@ -168,5 +168,33 @@ describe("in the app", () => {
     present(m, { kind: "created", path: "a.md" });
     present(m, { kind: "renamed", from: "a.md", to: "reference/renamed" });
     expect(m.notes.has("reference/renamed.md")).toBe(true);
+  });
+});
+
+describe("the trash and the archive", () => {
+  it("recognises what is filed and what is not", () => {
+    expect(isTrashPath(".trash/a.md")).toBe(true);
+    expect(isArchivePath(".archive/deep/a.md")).toBe(true);
+    expect(isFiledPath("a.md")).toBe(false);
+    // A note whose name merely starts the same way is not in the bin.
+    expect(isTrashPath(".trashcan/a.md")).toBe(false);
+  });
+
+  it("keeps the whole path, so restoring is the prefix removed", () => {
+    expect(filedPath(TRASH, "folder/a.md")).toBe(".trash/folder/a.md");
+    expect(unfiledPath(".trash/folder/a.md")).toBe("folder/a.md");
+    expect(unfiledPath(".archive/a.md")).toBe("a.md");
+    // Idempotent on something that was never filed.
+    expect(unfiledPath("a.md")).toBe("a.md");
+  });
+
+  it("numbers around a name that is taken", () => {
+    const taken = new Set([".trash/a.md", ".trash/a (2).md"]);
+    expect(uniquePath(".trash/a.md", (c) => taken.has(c))).toBe(".trash/a (3).md");
+    expect(uniquePath(".trash/b.md", (c) => taken.has(c))).toBe(".trash/b.md");
+  });
+
+  it("numbers a name with a dot in its folder but not its file", () => {
+    expect(uniquePath(".trash/notes/readme", () => true).startsWith(".trash/notes/readme (")).toBe(true);
   });
 });

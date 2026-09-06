@@ -72,3 +72,50 @@ export const describeProblem = (
       return `${problem.file} is a note, so nothing can live inside it. Rename that note first.`;
   }
 };
+
+// Two folders the note tree does not show. Deleting moves a note into `.trash/`
+// and archiving into `.archive/`, which makes both of them renames — an
+// operation this vault already has, with sync, conflict handling and tombstones
+// already worked out. The alternative, a flag on the record, would have been a
+// second kind of existence for the rest of the app to remember.
+//
+// They live in the vault, so a note deleted on the laptop is in the bin on the
+// phone. A flag in IndexedDB would not have been.
+export const TRASH = ".trash";
+export const ARCHIVE = ".archive";
+
+const isUnder = (path: string, folder: string): boolean =>
+  path === folder || path.startsWith(`${folder}/`);
+
+export const isTrashPath = (path: string): boolean => isUnder(path, TRASH);
+export const isArchivePath = (path: string): boolean => isUnder(path, ARCHIVE);
+export const isFiledPath = (path: string): boolean =>
+  isTrashPath(path) || isArchivePath(path);
+
+// Filing keeps the whole original path, so restoring is the prefix removed and
+// nothing has to be remembered anywhere.
+export const filedPath = (folder: string, path: string): string =>
+  `${folder}/${path}`;
+
+export const unfiledPath = (path: string): string =>
+  path.replace(/^\.(trash|archive)\//, "");
+
+// Deleting the same note twice would otherwise collide in the bin, and the
+// second delete would be refused for a reason that reads like a bug.
+export const uniquePath = (
+  path: string,
+  taken: (candidate: string) => boolean,
+): string => {
+  if (!taken(path)) return path;
+  const dot = path.lastIndexOf(".");
+  const slash = path.lastIndexOf("/");
+  const hasExt = dot > slash;
+  const stem = hasExt ? path.slice(0, dot) : path;
+  const ext = hasExt ? path.slice(dot) : "";
+  for (let n = 2; n <= 999; n += 1) {
+    const candidate = `${stem} (${n})${ext}`;
+    if (!taken(candidate)) return candidate;
+  }
+  return `${stem} (${Date.now()})${ext}`;
+};
+

@@ -587,3 +587,37 @@ kbd {
   border-color: #ffb4b4;
 }
 
+/* The bin and the archive: one row per note, its original path and the way out. */
+.filed {
+  list-style: none;
+  margin: 0;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.filed li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.filed .path {
+  flex: 1;
+  color: var(--muted);
+  font: 13px ui-monospace, Menlo, monospace;
+}
+
+.filed button {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.filed button:hover { border-color: var(--accent); }
+

@@ -1,6 +1,6 @@
 import type { TreeNode } from "./tree.ts";
 import { describe, expect, it } from "bun:test";
-import { createModel, present, type Model, type Note, noteTree, numberedRows } from "./model.ts";
+import { createModel, present, type Model, type Note, noteTree, numberedRows, openable, filedIn } from "./model.ts";
 
 const note = (
   path: string,
@@ -193,8 +193,11 @@ describe("present — folders and number shortcuts", () => {
       note("keep.md"),
     );
     present(m, { kind: "folderDeleted", path: "examples" });
-    expect([...m.notes.keys()].filter((p) => !m.notes.get(p)?.deleted)).toEqual([
-      "keep.md",
+    // Gone from the tree, but in the bin rather than gone from the vault.
+    expect(openable(m).map((n) => n.path)).toEqual(["keep.md"]);
+    expect(filedIn(m, ".trash").map((n) => n.path)).toEqual([
+      ".trash/examples/deep/two.md",
+      ".trash/examples/one.md",
     ]);
   });
 
@@ -382,5 +385,84 @@ describe("present — numbers that follow you into a folder", () => {
     present(m, { kind: "jumped", index: 0 });
     present(m, { kind: "modeChanged", mode: "dump" });
     expect(m.numberScope).toBeNull();
+  });
+});
+
+describe("present — the bin and the archive", () => {
+  it("moves a deleted note into the bin rather than out of the vault", () => {
+    const m = hydrated(note("a.md", "precious"), note("b.md"));
+    present(m, { kind: "deleted", path: "a.md" });
+    expect(openable(m).map((n) => n.path)).toEqual(["b.md"]);
+    // Still in the repo, so it is in the bin on every device and not just this
+    // one.
+    expect(filedIn(m, ".trash").map((n) => n.path)).toEqual([".trash/a.md"]);
+    expect(m.notes.get(".trash/a.md")?.body).toBe("precious");
+  });
+
+  it("restores a note to where it came from", () => {
+    const m = hydrated(note("folder/a.md", "text"));
+    present(m, { kind: "deleted", path: "folder/a.md" });
+    present(m, { kind: "restored", path: ".trash/folder/a.md" });
+    expect(openable(m).map((n) => n.path)).toEqual(["folder/a.md"]);
+    expect(m.notes.get("folder/a.md")?.body).toBe("text");
+  });
+
+  it("deletes for good from the bin", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "deleted", path: "a.md" });
+    present(m, { kind: "deleted", path: ".trash/a.md" });
+    expect(filedIn(m, ".trash")).toEqual([]);
+    // It never reached GitHub under its trash path, so there is nothing to tell
+    // GitHub about and the record simply goes.
+    expect(m.notes.get(".trash/a.md")).toBeUndefined();
+  });
+
+  it("numbers around a name already in the bin", () => {
+    const m = hydrated(note("a.md", "first"));
+    present(m, { kind: "deleted", path: "a.md" });
+    present(m, { kind: "created", path: "a.md" });
+    present(m, { kind: "deleted", path: "a.md" });
+    expect(filedIn(m, ".trash").map((n) => n.path)).toEqual([
+      ".trash/a (2).md",
+      ".trash/a.md",
+    ]);
+  });
+
+  it("archives and unarchives", () => {
+    const m = hydrated(note("a.md", "keep"), note("b.md"));
+    present(m, { kind: "archived", path: "a.md" });
+    expect(openable(m).map((n) => n.path)).toEqual(["b.md"]);
+    expect(filedIn(m, ".archive").map((n) => n.path)).toEqual([".archive/a.md"]);
+    present(m, { kind: "restored", path: ".archive/a.md" });
+    expect(openable(m).map((n) => n.path)).toEqual(["a.md", "b.md"]);
+  });
+
+  it("does not follow the note into the bin", () => {
+    const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "opened", path: "a.md" });
+    present(m, { kind: "deleted", path: "a.md" });
+    // Opening the bin because you deleted something would be a strange place to
+    // be left standing.
+    expect(m.openPath).toBe("b.md");
+  });
+
+  it("keeps filed notes out of the palette and the number shortcuts", () => {
+    const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "deleted", path: "a.md" });
+    expect(numberedRows(m).map(label)).toEqual(["b.md"]);
+  });
+
+  it("refuses to archive something already filed", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "deleted", path: "a.md" });
+    present(m, { kind: "archived", path: ".trash/a.md" });
+    expect(filedIn(m, ".archive")).toEqual([]);
+  });
+
+  it("refuses to restore something that was never filed", () => {
+    const m = hydrated(note("a.md"));
+    // present returns the rejection; it is the loop that shows it.
+    expect(present(m, { kind: "restored", path: "a.md" })).not.toBeNull();
+    expect(openable(m).map((n) => n.path)).toEqual(["a.md"]);
   });
 });
