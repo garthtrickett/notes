@@ -7,6 +7,7 @@
 
 import type { SyncError } from "./github.ts";
 import { rewriteLinks } from "./links.ts";
+import { describeProblem, normalizePath, pathProblem } from "./paths.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
@@ -118,6 +119,22 @@ export const visible = (m: Model): Note[] =>
 const firstVisiblePath = (m: Model): string | null =>
   visible(m)[0]?.path ?? null;
 
+// A rejected path used to be a silent return, which is how someone ends up
+// typing into a note they did not mean to open. Every rejection now says why.
+const refusePath = (m: Model, raw: string): string | null => {
+  const path = normalizePath(raw);
+  const problem = pathProblem(
+    path,
+    [...m.notes.values()].filter((n) => !n.deleted).map((n) => n.path),
+  );
+  if (problem === null) {
+    m.error = null;
+    return path;
+  }
+  m.error = describeProblem(problem, path);
+  return null;
+};
+
 // Accepts or rejects. A rejection is a silent return — the proposal violated an
 // invariant, so the model declines it and nothing changes. Never throws.
 export const present = (m: Model, p: Proposal): void => {
@@ -137,10 +154,10 @@ export const present = (m: Model, p: Proposal): void => {
     }
 
     case "created": {
-      if (m.notes.has(p.path)) return; // reject: would clobber an existing note
-      if (p.path.trim() === "") return; // reject: unnameable
-      m.notes.set(p.path, {
-        path: p.path,
+      const path = refusePath(m, p.path);
+      if (path === null) return;
+      m.notes.set(path, {
+        path,
         body: "",
         baseSha: null,
         pending: true,
@@ -148,7 +165,7 @@ export const present = (m: Model, p: Proposal): void => {
         dirty: true,
         encoding: "utf8",
       });
-      m.openPath = p.path;
+      m.openPath = path;
       m.persistBlocked = false;
       return;
     }
@@ -255,14 +272,17 @@ export const present = (m: Model, p: Proposal): void => {
     case "renamed": {
       const note = m.notes.get(p.from);
       if (!note || note.deleted) return; // reject: nothing there
-      if (p.to.trim() === "" || m.notes.has(p.to)) return; // reject: bad target
+      // Checked before anything is rewritten, so a refused rename leaves no
+      // half-updated links behind.
+      const to = normalizePath(p.to);
+      if (refusePath(m, p.to) === null) return;
 
       // A rename changes the note's identity, so every inbound link has to move
       // with it. Doing that here means the whole rename is one synchronous state
       // change: either all of it happened or none of it did.
       for (const referrer of [...m.notes.values()]) {
         if (referrer.deleted || referrer.path === p.from) continue;
-        const rewritten = rewriteLinks(referrer.body, p.from, p.to);
+        const rewritten = rewriteLinks(referrer.body, p.from, to);
         // Comparing the result, rather than merely finding a link, is what keeps
         // a folder move free: the basename does not change, so every rewrite is
         // a no-op and nothing needs pushing.
@@ -275,19 +295,20 @@ export const present = (m: Model, p: Proposal): void => {
         });
       }
 
-      present(m, { kind: "moved", from: p.from, to: p.to });
+      present(m, { kind: "moved", from: p.from, to });
       return;
     }
 
     case "moved": {
       const note = m.notes.get(p.from);
       if (!note || note.deleted) return; // reject: nothing there
-      if (p.to.trim() === "" || m.notes.has(p.to)) return; // reject: bad target
+      const to = refusePath(m, p.to);
+      if (to === null) return;
 
       // A move is a create plus a delete, which the sync machinery already
       // expresses. Links match on basename, so nothing else needs touching.
-      m.notes.set(p.to, {
-        path: p.to,
+      m.notes.set(to, {
+        path: to,
         body: note.body,
         baseSha: null,
         pending: true,
@@ -306,7 +327,7 @@ export const present = (m: Model, p: Proposal): void => {
           dirty: true,
         });
       }
-      if (m.openPath === p.from) m.openPath = p.to;
+      if (m.openPath === p.from) m.openPath = to;
       m.persistBlocked = false;
       return;
     }
