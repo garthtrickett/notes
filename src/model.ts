@@ -7,7 +7,7 @@
 
 import type { SyncError } from "./github.ts";
 import { rewriteLinks } from "./links.ts";
-import { describeProblem, normalizePath, pathProblem } from "./paths.ts";
+import { describeProblem, normalizePath, pathProblem, type PathProblem } from "./paths.ts";
 import { isDumpPath } from "./dump.ts";
 import { isAttachmentPath } from "./attachments.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
@@ -139,20 +139,30 @@ const firstVisiblePath = (m: Model): string | null =>
 const isOpenable = (note: Note): boolean =>
   !note.deleted && !isDumpPath(note.path) && !isAttachmentPath(note.path);
 
+// Asking whether a path is usable is a question, so it does not mutate anything.
+// Recording the refusal is a separate step, which is what lets each arm phrase
+// its own rejection instead of fishing the sentence back out of the model.
+interface CheckedPath {
+  readonly path: string;
+  readonly problem: PathProblem | null;
+}
+
+const checkPath = (m: Model, raw: string): CheckedPath => {
+  const path = normalizePath(raw);
+  return {
+    path,
+    problem: pathProblem(
+      path,
+      [...m.notes.values()].filter((n) => !n.deleted).map((n) => n.path),
+    ),
+  };
+};
+
 // A rejected path used to be a silent return, which is how someone ends up
 // typing into a note they did not mean to open. Every rejection now says why.
-const refusePath = (m: Model, raw: string): string | null => {
-  const path = normalizePath(raw);
-  const problem = pathProblem(
-    path,
-    [...m.notes.values()].filter((n) => !n.deleted).map((n) => n.path),
-  );
-  if (problem === null) {
-    m.error = null;
-    return path;
-  }
+const refusePath = (m: Model, path: string, problem: PathProblem): Rejection => {
   m.error = describeProblem(problem, path);
-  return null;
+  return reject(m.error);
 };
 
 export interface Rejection {
@@ -171,7 +181,12 @@ const settleSync = (m: Model): void => {
   m.retryAt = 0;
 };
 
-// Accepts or rejects. A rejection returns a reason rather than a silent return — the proposal violated an
+// Accepts or rejects. A rejection returns a reason rather than a silent return
+//
+// `renamed` delegates to `moved` and returns its verdict. One delegation is
+// legible; verifying "a rename is one synchronous state change" already means
+// reading two arms. **At the third, this switch has become a dispatcher and the
+// arms want to be named functions** — extract then, not before. — the proposal violated an
 // invariant, so the model declines it and nothing changes. Never throws.
 export const present = (m: Model, p: Proposal): Rejection | null => {
   switch (p.kind) {
@@ -194,8 +209,12 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "created": {
-      const path = refusePath(m, p.path);
-      if (path === null) return reject(m.error ?? `Cannot create ${p.path}.`);
+      const checked = checkPath(m, p.path);
+      if (checked.problem !== null) {
+        return refusePath(m, checked.path, checked.problem);
+      }
+      const path = checked.path;
+      m.error = null;
       m.forgotten.delete(path);
       m.notes.set(path, {
         path,
@@ -342,11 +361,13 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return reject(`Cannot rename ${p.from}: no such note.`);
       }
       // Checked before anything is rewritten, so a refused rename leaves no
-      // half-updated links behind.
-      const to = normalizePath(p.to);
-      if (refusePath(m, p.to) === null) {
-        return reject(m.error ?? `Cannot rename to ${p.to}.`);
+      // half-updated links behind. Normalised once, not twice.
+      const checked = checkPath(m, p.to);
+      if (checked.problem !== null) {
+        return refusePath(m, checked.path, checked.problem);
       }
+      const to = checked.path;
+      m.error = null;
 
       // A rename changes the note's identity, so every inbound link has to move
       // with it. Doing that here means the whole rename is one synchronous state
@@ -375,8 +396,12 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       if (!note || note.deleted) {
         return reject(`Cannot move ${p.from}: no such note.`);
       }
-      const to = refusePath(m, p.to);
-      if (to === null) return reject(m.error ?? `Cannot move to ${p.to}.`);
+      const checked = checkPath(m, p.to);
+      if (checked.problem !== null) {
+        return refusePath(m, checked.path, checked.problem);
+      }
+      const to = checked.path;
+      m.error = null;
 
       // A move is a create plus a delete, which the sync machinery already
       // expresses. Links match on basename, so nothing else needs touching.

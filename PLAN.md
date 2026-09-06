@@ -14,8 +14,13 @@ known to hold.
 | 4. Documents | Rendered markdown, links, backlinks, rename, search |
 | 5. Attachments | Paste an image, get a resized WebP committed |
 
-Only phase 1 is fleshed out. The rest are one paragraph each and get expanded
-when we reach them — writing them out now would be guessing.
+All five phases are written out, and all five have shipped. Each was fleshed out
+immediately before being built rather than up front, so the detail describes what
+was actually done — including the deferrals, which carry triggers rather than
+good intentions.
+
+Anything still deferred is listed under its phase's "Not in phase N", and the
+standing costs live in `DECISIONS.md` under accepted costs.
 
 ---
 

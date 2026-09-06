@@ -1,5 +1,12 @@
-// Pure model -> DOM. No components, no classes, no state. lit-html patches only
-// what changed, so painting the whole tree on every microtask is cheap.
+// Model -> DOM. No components and no classes; lit-html patches only what
+// changed, so painting the whole tree on every microtask is cheap.
+//
+// One exception, stated rather than hidden: `preview()` builds a real element
+// imperatively and memoises it. It has to — markdown is handed to lit as a
+// sanitised *node*, never a string, so nothing can inject unfiltered markup —
+// and it has to be cached, because a fresh node each paint made lit tear the
+// rendered note down and rebuild it on every render. So this file does hold
+// state: two module-level variables, both of them that cache.
 
 import { html, nothing, type TemplateResult } from "lit-html";
 import { openable, visible, type Model, type Note, type Proposal } from "./model.ts";

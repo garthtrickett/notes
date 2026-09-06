@@ -200,14 +200,18 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     nap();
   }
 
-  // A test affordance living in production code, which is a compromise worth
-  // naming. It settles the loop: an action's proposal can start another action,
-  // so it drains until nothing is in flight.
+  // A test affordance. It settles the loop: an action's proposal can start
+  // another action, so it drains until nothing is in flight.
+  //
+  // The production build gets a no-op, so a user never runs a forty-iteration
+  // spin that can throw. Checking PROD rather than DEV matters: outside Vite —
+  // under `bun test` — neither is defined, and the tests need the real thing.
   //
   // It must check every in-flight flag. Checking only `persisting` meant it
   // returned while a push or pull was still running, which is why callers were
   // adding their own microtask hop afterwards — a flake waiting for a slow day.
   const flush = async (): Promise<void> => {
+    if (import.meta.env.PROD) return;
     for (let i = 0; i < 40; i += 1) {
       await idle;
       await new Promise<void>((r) => queueMicrotask(() => r()));
