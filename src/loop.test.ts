@@ -333,3 +333,41 @@ describe("deleting for good reaches the device, not just the model", () => {
     expect(await getAll(theDb())).toEqual([]);
   });
 });
+
+describe("the path box after a refused rename", () => {
+  it("goes back to naming the note that is actually open", async () => {
+    const loop = createLoop(localOnly(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [record("a.md", "A"), record("b.md", "B")],
+    });
+    await paint();
+
+    const field = root.querySelector("input.pathfield") as HTMLInputElement;
+    expect(field.value).toBe("a.md");
+
+    // What a refused rename leaves behind: the typed name in the box, and the
+    // original note still open. The box used to go on showing b.md.
+    field.value = "b.md";
+    loop.propose({ kind: "renamed", from: "a.md", to: "b.md" });
+    await paint();
+
+    expect(loop.model.openPath).toBe("a.md");
+    expect(field.value).toBe("a.md");
+  });
+
+  it("leaves the box alone while it is being typed in", async () => {
+    const loop = createLoop(localOnly(), root);
+    loop.propose({ kind: "hydrated", notes: [record("a.md", "A")] });
+    await paint();
+
+    const field = root.querySelector("input.pathfield") as HTMLInputElement;
+    field.focus();
+    field.value = "half-typed-na";
+    loop.propose({ kind: "edited", path: "a.md", body: "A!" });
+    await paint();
+
+    // Rewriting under the cursor mid-word would be worse than the bug.
+    expect(field.value).toBe("half-typed-na");
+  });
+});

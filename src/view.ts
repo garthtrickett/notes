@@ -205,6 +205,10 @@ const editor = (model: Model, ctx: ViewCtx) => {
           if (e.key !== "Enter") return;
           e.preventDefault();
           const to = (e.target as HTMLInputElement).value.trim();
+          // Leaving the field is what lets the loop put the real path back if
+          // the rename is refused. Without it the box went on showing a name
+          // the note does not have.
+          (e.target as HTMLInputElement).blur();
           // A rename carries its inbound links with it. Moving between folders
           // is the same proposal — it just finds nothing to rewrite, because
           // links match on basename.

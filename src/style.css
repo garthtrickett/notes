@@ -680,3 +680,67 @@ kbd {
   white-space: pre-wrap;
 }
 
+/* ---------------------------------------------------------------------------
+   Phones.
+
+   There was no breakpoint here at all, which for an app whose whole premise is
+   "web and my phone" was the largest thing wrong with it. `main` is a two-column
+   grid with a 200px minimum on the sidebar, so at 390px the document came out
+   472px wide: the editor started off the right-hand edge and the Preview button
+   sat past it entirely.
+
+   The tree stacks above the editor rather than beside it, capped so the editor
+   always has room, and the whole thing is told not to exceed the viewport.
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  main {
+    grid-template-columns: minmax(0, 1fr);
+    /* minmax(0, …) on both rows so a long note scrolls inside its row instead
+       of stretching the grid past the screen. */
+    grid-template-rows: minmax(0, 38dvh) minmax(0, 1fr);
+  }
+
+  main.single {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* Three buttons and a path no longer fit on one line, so let them wrap rather
+     than run off the edge. */
+  .pathbar {
+    flex-wrap: wrap;
+    padding: 8px 12px 0;
+  }
+
+  .pathfield {
+    flex: 1 1 100%;
+  }
+
+  .toggle {
+    padding: 4px 8px;
+  }
+
+  .cm-host .cm-content,
+  .preview,
+  #editor {
+    padding: 12px;
+  }
+
+  .filed {
+    padding: 12px;
+  }
+}
+
+/* Nothing may push the page wider than the phone it is on. A single long word,
+   a URL or a wide table used to be able to. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+

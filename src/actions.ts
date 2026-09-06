@@ -322,7 +322,10 @@ export const attach = async (
     path,
     base64: base64Of(shrunk.value),
     into: into.path,
-    body: insertAt(into.body, cursor, `![](${path})`),
+    // The model does the insertion, against the note as it is when the image is
+    // ready rather than as it was when the paste happened.
+    cursor,
+    ref: `![](${path})`,
   };
 };
 

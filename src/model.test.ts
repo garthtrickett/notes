@@ -604,3 +604,38 @@ describe("present — version history", () => {
     expect(m.notes.get("a.md")?.body).toBe("current");
   });
 });
+
+describe("present — a message about where you were", () => {
+  const refused = () => {
+    const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "opened", path: "a.md" });
+    present(m, { kind: "renamed", from: "a.md", to: "b.md" });
+    expect(m.error).toBe("b.md already exists.");
+    return m;
+  };
+
+  it("clears when a dialog opens", () => {
+    const m = refused();
+    present(m, { kind: "modalOpened", modal: { kind: "open" } });
+    expect(m.error).toBeNull();
+  });
+
+  it("clears when a dialog closes", () => {
+    const m = refused();
+    present(m, { kind: "modalOpened", modal: { kind: "open" } });
+    present(m, { kind: "modalClosed" });
+    expect(m.error).toBeNull();
+  });
+
+  it("clears when another note is opened", () => {
+    const m = refused();
+    present(m, { kind: "opened", path: "b.md" });
+    expect(m.error).toBeNull();
+  });
+
+  it("clears when the view changes", () => {
+    const m = refused();
+    present(m, { kind: "modeChanged", mode: "dump" });
+    expect(m.error).toBeNull();
+  });
+});

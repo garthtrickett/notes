@@ -134,6 +134,16 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       }
     }
 
+    // The path box is uncontrolled while it has focus, so lit will not rewrite
+    // what was typed into it. Once focus leaves, it has to agree with the note
+    // that is actually open — otherwise a refused rename leaves it naming a
+    // note you are not looking at.
+    const field = root.querySelector<HTMLInputElement>(".pathfield");
+    if (field !== null && document.activeElement !== field) {
+      const shown = model.openPath ?? "";
+      if (field.value !== shown) field.value = shown;
+    }
+
     const editorKey = `${model.mode}|${model.preview}|${model.openPath ?? ""}`;
     const body = model.openPath
       ? (model.notes.get(model.openPath)?.body ?? "")

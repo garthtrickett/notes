@@ -228,3 +228,25 @@ describe("i to start writing", () => {
     expect(keyAction(at(press("i"), search), model({ openPath: "a.md" }))).toBeNull();
   });
 });
+
+describe("a dialog is modal", () => {
+  // isTyping is not enough: the confirm dialog focuses a button, so every
+  // shortcut used to sail past it. `d` moved the app to the dump behind an open
+  // "Delete alpha.md?", and Space swapped the pending question for a different
+  // dialog.
+  const asking = () =>
+    model({ modal: { kind: "confirmDelete", path: "a.md", folder: false } });
+
+  for (const key of ["d", "n", "e", "a", "i", "o", " ", "3"]) {
+    it(`ignores ${JSON.stringify(key)} while a dialog is open`, () => {
+      expect(keyAction(press(key), asking())).toBeNull();
+    });
+  }
+
+  it("still lets Escape dismiss it", () => {
+    expect(keyAction(press("Escape"), asking())).toEqual({
+      kind: "propose",
+      proposal: { kind: "modalClosed" },
+    });
+  });
+});

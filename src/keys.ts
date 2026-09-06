@@ -38,6 +38,12 @@ export const keyAction = (
     return null;
   }
 
+  // A dialog is asking a question, so nothing else gets to happen. `isTyping`
+  // is not enough on its own: the confirm dialog focuses a *button*, so `d`
+  // moved the app to the dump behind an open "Delete alpha.md?" and Space
+  // swapped the pending question for a different dialog.
+  if (model.modal !== null) return null;
+
   if (isTyping(event.target)) return null;
 
   // Digits jump to a top-level row, numbered from zero to match the badges in

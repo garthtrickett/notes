@@ -77,7 +77,8 @@ describe("attach", () => {
     );
     if (proposal.kind !== "attached") throw new Error(proposal.kind);
     expect(proposal.into).toBe("inbox/a.md");
-    expect(proposal.body).toBe(`before ![](${proposal.path})after`);
+    expect(proposal.cursor).toBe("before ".length);
+    expect(proposal.ref).toBe(`![](${proposal.path})`);
     expect(proposal.base64).toBe(base64Of(bytes(128)));
   });
 
@@ -129,7 +130,8 @@ describe("the attached proposal", () => {
       path: "attachments/2026-09-06-abcd1234.webp",
       base64: "AAAA",
       into: "inbox/a.md",
-      body: "text![](attachments/2026-09-06-abcd1234.webp)",
+      cursor: "text".length,
+      ref: "![](attachments/2026-09-06-abcd1234.webp)",
     });
 
     const record = m.notes.get("attachments/2026-09-06-abcd1234.webp");
@@ -149,7 +151,8 @@ describe("the attached proposal", () => {
       path: "attachments/x.webp",
       base64: "AAAA",
       into: "ghost.md",
-      body: "x",
+      cursor: 0,
+      ref: "![](attachments/x.webp)",
     });
     expect(m.notes.size).toBe(0);
   });
@@ -282,7 +285,8 @@ describe("pasting the same image twice", () => {
       path: "attachments/2026-09-06-abcd.webp",
       base64: "AAAA",
       into: "a.md",
-      body: "one ![](attachments/2026-09-06-abcd.webp)",
+      cursor: "one ".length,
+      ref: "![](attachments/2026-09-06-abcd.webp)",
     });
     // pretend it synced
     const stored = m.notes.get("attachments/2026-09-06-abcd.webp") as Note;
@@ -297,7 +301,8 @@ describe("pasting the same image twice", () => {
       path: "attachments/2026-09-06-abcd.webp",
       base64: "AAAA",
       into: "a.md",
-      body: "one ![](x) two ![](attachments/2026-09-06-abcd.webp)",
+      cursor: 999, // clamped to the end of whatever the note holds now
+      ref: "![](attachments/2026-09-06-abcd.webp)",
     });
 
     const record = m.notes.get("attachments/2026-09-06-abcd.webp");
@@ -315,9 +320,10 @@ describe("pasting the same image twice", () => {
       path: "attachments/2026-09-06-abcd.webp",
       base64: "AAAA",
       into: "a.md",
-      body: "twice ![](attachments/2026-09-06-abcd.webp)",
+      cursor: 999, // clamped to the end of whatever the note holds now
+      ref: "![](attachments/2026-09-06-abcd.webp)",
     });
-    expect(m.notes.get("a.md")?.body).toBe("twice ![](attachments/2026-09-06-abcd.webp)");
+    expect(m.notes.get("a.md")?.body).toBe("one ![](attachments/2026-09-06-abcd.webp)![](attachments/2026-09-06-abcd.webp)");
     expect(m.notes.get("a.md")?.pending).toBe(true);
   });
 
@@ -328,7 +334,8 @@ describe("pasting the same image twice", () => {
       path: "attachments/2026-09-06-abcd.webp",
       base64: "BBBB",
       into: "a.md",
-      body: "x",
+      cursor: 999, // clamped to the end of whatever the note holds now
+      ref: "![](attachments/2026-09-06-abcd.webp)",
     });
     const record = m.notes.get("attachments/2026-09-06-abcd.webp");
     expect(record?.body).toBe("BBBB");
@@ -450,5 +457,49 @@ describe("what may become a data URL", () => {
     const moved = m.notes.get("foo.svg");
     expect(moved?.encoding).toBe("base64");
     expect(dataUrlOf(moved?.body ?? "", "foo.svg")).toBeNull();
+  });
+});
+
+describe("an image that takes a while to shrink", () => {
+  it("does not overwrite what was typed while it was being processed", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [note("a.md", "start")] });
+
+    // The paste happens here: the caret is at 5 and the note says "start".
+    // Shrinking a large image takes a second or more, and the writing carries on.
+    present(m, { kind: "edited", path: "a.md", body: "start and more typing" });
+
+    // Now the image is ready. The reference goes in at the caret, and the
+    // sentence typed in between is still there — it used to be replaced by a
+    // body computed before it was typed.
+    present(m, {
+      kind: "attached",
+      path: "attachments/2026-09-06-abcd.webp",
+      base64: "AAAA",
+      into: "a.md",
+      cursor: 5,
+      ref: "![](attachments/2026-09-06-abcd.webp)",
+    });
+
+    expect(m.notes.get("a.md")?.body).toBe(
+      "start![](attachments/2026-09-06-abcd.webp) and more typing",
+    );
+  });
+
+  it("clamps the caret when the note got shorter in the meantime", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [note("a.md", "a long piece of text")] });
+    present(m, { kind: "edited", path: "a.md", body: "cut" });
+    present(m, {
+      kind: "attached",
+      path: "attachments/x.webp",
+      base64: "AAAA",
+      into: "a.md",
+      cursor: 20,
+      ref: "![](attachments/x.webp)",
+    });
+    // At worst a few characters out of place. Never a lost sentence, and never
+    // a crash.
+    expect(m.notes.get("a.md")?.body).toBe("cut![](attachments/x.webp)");
   });
 });

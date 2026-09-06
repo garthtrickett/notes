@@ -13,7 +13,7 @@ import { rewriteLinks } from "./links.ts";
 import { describeProblem, normalizePath, pathProblem, type PathProblem } from "./paths.ts";
 import { buildTree, type TreeNode } from "./tree.ts";
 import { isDumpPath } from "./dump.ts";
-import { isAttachmentPath } from "./attachments.ts";
+import { insertAt, isAttachmentPath } from "./attachments.ts";
 import {
   ARCHIVE,
   TRASH,
@@ -203,7 +203,12 @@ export type Proposal =
       readonly path: string;
       readonly base64: string;
       readonly into: string;
-      readonly body: string;
+      // Where the caret was when the image was pasted, and what to put there.
+      // Deliberately *not* a finished body: shrinking a large image takes a
+      // second or more, and a body computed before that second overwrites
+      // everything typed during it.
+      readonly cursor: number;
+      readonly ref: string;
     };
 
 // A tombstone still exists as a record until the remote delete lands, but it is
@@ -373,6 +378,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return reject(`Cannot open ${p.path}: it is not a note.`);
       }
       m.openPath = p.path;
+      m.error = null;
       // The numbers go back to the top level: whatever folder they were counting
       // inside, you have left it.
       m.numberScope = null;
@@ -497,6 +503,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "modeChanged": {
+      m.error = null;
       m.numberScope = null;
       m.mode = p.mode;
       return null;
@@ -623,7 +630,18 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       }
       // The markdown reference and the bytes land together, so a note never
       // points at an attachment that was not added.
-      m.notes.set(p.into, { ...host, body: p.body, dirty: true, pending: true });
+      //
+      // Inserted into the note as it is *now*, not into the copy captured when
+      // the paste happened. Anything typed while the image was being shrunk is
+      // still there; the reference goes in at the caret, clamped, which is at
+      // worst a few characters out and never a lost sentence.
+      const at = Math.min(p.cursor, host.body.length);
+      m.notes.set(p.into, {
+        ...host,
+        body: insertAt(host.body, at, p.ref),
+        dirty: true,
+        pending: true,
+      });
       m.persistBlocked = false;
       return null;
     }
@@ -647,6 +665,9 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "modalOpened": {
+      // Moving somewhere clears the message about where you were. Without this a
+      // refusal stayed on screen through every unrelated action that followed.
+      m.error = null;
       m.modal = p.modal;
       return null;
     }
@@ -720,6 +741,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "modalClosed": {
+      m.error = null;
       m.history = null;
       m.modal = null;
       // The palette starts fresh next time rather than resuming someone else's

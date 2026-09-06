@@ -1104,3 +1104,80 @@ The site is public. That is not a leak: it holds no notes and no token. The toke
 is per-device in localStorage and the vault is a separate repo, so someone
 opening the URL gets the settings screen and nothing else.
 
+---
+
+# Phase 9 — five bugs found by driving it
+
+Found by working the app in a real browser rather than by reading it. Every one
+of them passed the whole unit suite, which is the point worth keeping: these are
+the failures that live between correct pieces.
+
+## 9.1 A dialog was not modal
+
+With "Delete alpha.md?" on screen, `d` moved the app to the dump **behind** the
+open dialog, and Space swapped the pending question for the new-note dialog. You
+could navigate somewhere else entirely and then confirm a delete for a note you
+could no longer see.
+
+`isTyping` was the only guard, and it looks for inputs, textareas and
+contenteditable. The confirm dialog focuses a *button*, so every shortcut went
+straight past it. The palette and quick capture were safe only by accident,
+because they happen to focus an input.
+
+`keyAction` now returns nothing but Escape while `model.modal !== null`.
+
+## 9.2 Typing during a paste was thrown away
+
+Paste a large image, carry on writing, and the sentence written while the image
+was being shrunk vanished.
+
+`attach` precomputed the **whole finished body** from a snapshot of the note
+taken when the paste happened, and the `attached` proposal then assigned it.
+Anything typed during the shrink — which is seconds for a phone photo — was
+overwritten by a body computed before it existed.
+
+The proposal now carries the caret and the reference, and the model inserts into
+the note **as it is when the image is ready**. The caret is clamped, so a note
+that got shorter in the meantime puts the picture a few characters off rather
+than throwing. A few characters out is a different class of wrong from a lost
+paragraph.
+
+The general shape is worth remembering: **an action that will finish later must
+not decide what the document will contain.** It says what to do; the model
+applies it to the state it finds.
+
+## 9.3 There was no phone layout
+
+No `@media` rule existed anywhere in the stylesheet. `main` is a two-column grid
+with a 200px minimum on the sidebar, so at 390px the document came out 472px
+wide: the editor pane started off the right-hand edge and the Preview button sat
+past it entirely.
+
+For an app whose stated premise is "web and my phone", this was the largest thing
+wrong with it, and it had been there since phase 1.
+
+Below 720px the tree stacks above the editor, capped at 38dvh so the editor
+always has room; the path bar's buttons wrap instead of running off; and the page
+is told it may not exceed the viewport, which a long URL or a wide table could
+otherwise force.
+
+## 9.4 The path box named a note that was not open
+
+Rename onto a name that exists, and the refusal was correct — but the box went on
+showing what had been typed while a different note stayed open. lit does not
+rewrite an input whose bound value has not changed, and the value it committed
+never did.
+
+Enter now blurs the field, and the loop keeps it in step with the open note
+**whenever it does not have focus**. Not while it does: rewriting under the
+cursor mid-word would be worse than the bug.
+
+## 9.5 A message outlived what it was about
+
+"b.md already exists." stayed on screen through every unrelated action that
+followed, including typing into the open palette.
+
+Cleared now by the things that mean you have moved on: opening a note, changing
+view, and opening or closing a dialog. Deliberately not cleared by background
+work — a sync landing should not wipe a message you have not read yet.
+
