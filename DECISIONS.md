@@ -102,15 +102,21 @@ at all.
 
 ### What it removes
 
-More than it adds, which is the only version worth doing: preview mode and its
-`E` shortcut, the preview node cache, `render-markdown.ts`, `marked`, and
+The textarea, the flag that chose between the two editors, and
 `syncEditorValue`'s hand-rolled caret arithmetic — CodeMirror maps selections
 through transactions itself.
 
-And almost the whole XSS surface, since nothing renders untrusted markdown to
-HTML any more. The exception is named in the plan: the image widget, whose `src`
-is a `data:` URL built from our own IndexedDB bytes, with the mime derived from
-the extension against a fixed allowlist that never includes `image/svg+xml`.
+**Less than this section originally claimed.** It said preview went too, and with
+it `render-markdown.ts`, `marked` and almost the whole XSS surface, since nothing
+would render untrusted markdown to HTML any more. That was the strongest argument
+for the phase and it is not what happened: in use, preview earns its place —
+rendered tables, real checkboxes, links that resolve — so it stays, and so does
+every sanitizer rule behind it. Recorded rather than quietly amended, because the
+security argument was load-bearing when the decision was made.
+
+The image widget's rule stands regardless: its `src` is a `data:` URL built from
+our own IndexedDB bytes, with the mime derived from the extension against a fixed
+allowlist that never includes `image/svg+xml`.
 
 ### Costs accepted, if it lands
 

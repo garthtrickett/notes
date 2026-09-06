@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { EditorView } from "@codemirror/view";
+import { EditorSelection } from "@codemirror/state";
 import { openDb } from "./idb.ts";
 import { boot, type Deps, type Loop } from "./loop.ts";
 import { createModel, present, visible, type Note } from "./model.ts";
@@ -246,23 +248,36 @@ describe("the sanitizer, adversarially", () => {
   });
 });
 
+// The editor is CodeMirror, so its text lives in an EditorState rather than on
+// an element. Everything below asks it the same two questions a textarea was
+// asked before: what does it hold, and where is the caret.
+const editorView = (): EditorView | null => {
+  const host = root.querySelector<HTMLElement>("#editor-host");
+  return host === null ? null : EditorView.findFromDOM(host);
+};
+const editorText = (): string => editorView()?.state.doc.toString() ?? "";
+const caretAt = (): number => editorView()?.state.selection.main.head ?? -1;
+const putCaret = (at: number): void => {
+  editorView()?.dispatch({ selection: EditorSelection.cursor(at) });
+};
+
 describe("preview and search in the app", () => {
   it("toggles between the editor and rendered markdown", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", "# Heading")] });
     await settle(loop);
-    expect(root.querySelector("#editor")).not.toBeNull();
+    expect(root.querySelector("#editor-host")).not.toBeNull();
     expect(root.querySelector(".preview h1")).toBeNull();
 
     loop.propose({ kind: "previewToggled" });
     await settle(loop);
-    expect(root.querySelector("#editor")).toBeNull();
+    expect(root.querySelector("#editor-host")).toBeNull();
     expect(root.querySelector(".preview h1")?.textContent).toBe("Heading");
   });
 
   it("restores the editor's text when preview is switched off", async () => {
-    // The editor is uncontrolled, so a recreated textarea has to be refilled —
-    // otherwise toggling preview silently blanks the note on screen.
+    // Leaving preview re-creates the host, and the editor has to be reattached
+    // and refilled — otherwise toggling preview silently blanks the note.
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", "important text")] });
     await settle(loop);
@@ -271,8 +286,7 @@ describe("preview and search in the app", () => {
     loop.propose({ kind: "previewToggled" });
     await settle(loop);
 
-    const editor = root.querySelector<HTMLTextAreaElement>("#editor");
-    expect(editor?.value).toBe("important text");
+    expect(editorText()).toBe("important text");
   });
 
   it("shows backlinks for the open note", async () => {
@@ -414,18 +428,16 @@ describe("the caret when a change lands elsewhere in the note", () => {
     loop.propose({ kind: "opened", path: "a.md" });
     await settle(loop);
 
-    const editor = root.querySelector<HTMLTextAreaElement>("#editor");
-    editor!.focus();
-    const caret = editor!.value.length - "down here.".length;
-    editor!.setSelectionRange(caret, caret);
+    const caret = editorText().length - "down here.".length;
+    putCaret(caret);
 
-    // The rewrite shortens text above the caret. A prefix-only heuristic would
-    // drag the caret by the whole delta and read as a phantom jump.
+    // The rewrite shortens text above the caret. CodeMirror maps the selection
+    // through the change; a whole-document replacement would not.
     loop.propose({ kind: "renamed", from: "older.md", to: "new.md" });
     await settle(loop);
 
-    expect(editor!.value).toContain("[[new]] intro");
+    expect(editorText()).toContain("[[new]] intro");
     const shortenedBy = "older".length - "new".length;
-    expect(editor!.selectionStart).toBe(caret - shortenedBy);
+    expect(caretAt()).toBe(caret - shortenedBy);
   });
 });

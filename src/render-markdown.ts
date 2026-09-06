@@ -1,8 +1,9 @@
 // Markdown to a safe DOM fragment.
 //
-// The editor stays a textarea; this is a preview. Rendering into an editable
-// surface would mean a markdown -> document tree -> markdown round trip, which
-// is lossy exactly where people notice and is the trap phase 1 avoided.
+// This is the preview, and it is only the preview. The editor shows markdown as
+// markdown and styles it in place; rendering into an editable surface would mean
+// a markdown -> document tree -> markdown round trip, which is lossy exactly
+// where people notice.
 
 import { marked } from "marked";
 import { basenameOf } from "./links.ts";

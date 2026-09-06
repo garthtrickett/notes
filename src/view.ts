@@ -24,10 +24,8 @@ import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { dataUrlOf } from "./attachments.ts";
 import { renderMarkdown } from "./render-markdown.ts";
-import type { EditorKind } from "./config.ts";
 
 type Propose = (p: Proposal) => void;
-export type PasteHandler = (event: ClipboardEvent, path: string) => void;
 
 // Everything the view is handed. The positional list grew by exactly one per
 // feature and had reached six.
@@ -35,12 +33,7 @@ export interface ViewCtx {
   readonly propose: Propose;
   readonly now: () => number;
   readonly onCapture: (text: string) => void;
-  readonly onPaste: PasteHandler;
   readonly previewCache: PreviewCache;
-  readonly editorKind: EditorKind;
-  // Flipping the surface reloads, because the flag is read once at boot. Goes
-  // away with the textarea path.
-  readonly onEditorKind: (kind: EditorKind) => void;
 }
 
 // Only the top ten rows carry a digit, because only ten digits exist. Anything
@@ -115,7 +108,7 @@ const treeNodes = (
   });
 
 const editor = (model: Model, ctx: ViewCtx) => {
-  const { propose, onPaste, previewCache: cache, editorKind } = ctx;
+  const { propose, previewCache: cache } = ctx;
   const path = model.openPath;
   if (path === null) {
     return html`<p class="empty">No note open.</p>`;
@@ -144,14 +137,6 @@ const editor = (model: Model, ctx: ViewCtx) => {
       >
         ${model.preview ? "Edit" : "Preview"} <kbd>E</kbd>
       </button>
-      <button
-        class="toggle ${editorKind === "codemirror" ? "on" : ""}"
-        title="Editing surface, this device only"
-        @click=${() =>
-          ctx.onEditorKind(editorKind === "codemirror" ? "textarea" : "codemirror")}
-      >
-        ${editorKind === "codemirror" ? "CM" : "Plain"}
-      </button>
     </div>
     ${model.preview
       ? html`<div
@@ -160,21 +145,9 @@ const editor = (model: Model, ctx: ViewCtx) => {
         >
           ${preview(model, path, cache)}
         </div>`
-      : editorKind === "codemirror"
-        ? // Empty on purpose. The loop holds the EditorView and attaches it here
-          // once; rebuilding it per paint would tear the editor down mid-keystroke.
-          html`<div id="editor-host"></div>`
-        : html`<textarea
-            id="editor"
-            spellcheck="false"
-            @paste=${(e: ClipboardEvent) => onPaste(e, path)}
-            @input=${(e: Event) =>
-              propose({
-                kind: "edited",
-                path,
-                body: (e.target as HTMLTextAreaElement).value,
-              })}
-          ></textarea>`}
+      : // Empty on purpose. The loop holds the EditorView and attaches it here
+        // once; rebuilding it per paint would tear the editor down mid-keystroke.
+        html`<div id="editor-host"></div>`}
     ${backlinks(model, path, propose)}
   `;
 };
@@ -535,7 +508,7 @@ const tabs = (model: Model, propose: Propose) => html`
 `;
 
 export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
-  const { propose, now, onCapture, onPaste, previewCache } = ctx;
+  const { propose, now, onCapture, previewCache } = ctx;
   if (!model.hydrated) return html`<p class="empty">Loading…</p>`;
 
   if (model.mode === "dump") {

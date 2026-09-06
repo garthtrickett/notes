@@ -158,8 +158,8 @@ const decorator = (hooks: EditorHooks) =>
   );
 
 // The smallest edit that turns one string into the other. CodeMirror maps the
-// selection through it, which is the whole reason the textarea's hand-rolled
-// caret arithmetic goes away.
+// selection through it, so keeping the change tight is what keeps the caret
+// still when the model writes underneath it.
 const minimalChange = (
   previous: string,
   next: string,

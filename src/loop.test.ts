@@ -1,3 +1,5 @@
+import { EditorView } from "@codemirror/view";
+import { EditorSelection } from "@codemirror/state";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getAll, openDb } from "./idb.ts";
 import { boot, createLoop, type Deps, type Loop } from "./loop.ts";
@@ -148,7 +150,20 @@ describe("the loop", () => {
     expect(root.textContent).toContain("b.md");
   });
 
-  it("keeps the editor uncontrolled so the cursor is never yanked", async () => {
+// The editor is CodeMirror, so its text lives in an EditorState rather than on
+// an element. Everything below asks it the same two questions a textarea was
+// asked before: what does it hold, and where is the caret.
+const editorView = (): EditorView | null => {
+  const host = root.querySelector<HTMLElement>("#editor-host");
+  return host === null ? null : EditorView.findFromDOM(host);
+};
+const editorText = (): string => editorView()?.state.doc.toString() ?? "";
+const caretAt = (): number => editorView()?.state.selection.main.head ?? -1;
+const putCaret = (at: number): void => {
+  editorView()?.dispatch({ selection: EditorSelection.cursor(at) });
+};
+
+  it("does not write over the editor while the model catches up", async () => {
     const loop = createLoop(localOnly(), root);
     loop.propose({
       kind: "hydrated",
@@ -156,18 +171,17 @@ describe("the loop", () => {
     });
     await paint();
 
-    const editor = root.querySelector("#editor") as HTMLTextAreaElement;
-    expect(editor.value).toBe("hello");
+    expect(editorText()).toBe("hello");
 
-    // Simulate typing: the DOM already holds the new text, and the model catches
-    // up. A re-render must not write back over the live field.
-    editor.value = "hello world";
-    editor.setSelectionRange(11, 11);
+    // Typing, as the editor sees it: it already holds the new text and the model
+    // is catching up. The paint that follows must leave both alone.
+    editorView()!.dispatch({ changes: { from: 5, insert: " world" } });
+    putCaret(11);
     loop.propose({ kind: "edited", path: "a.md", body: "hello world" });
     await paint();
 
-    expect(editor.value).toBe("hello world");
-    expect(editor.selectionStart).toBe(11);
+    expect(editorText()).toBe("hello world");
+    expect(caretAt()).toBe(11);
   });
 
   it("loads the note body when the open note changes", async () => {
@@ -183,8 +197,7 @@ describe("the loop", () => {
     loop.propose({ kind: "opened", path: "b.md" });
     await paint();
 
-    const editor = root.querySelector("#editor") as HTMLTextAreaElement;
-    expect(editor.value).toBe("B body");
+    expect(editorText()).toBe("B body");
   });
 
   it("surfaces a storage failure instead of dying silently", async () => {

@@ -19,7 +19,6 @@ import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
 import { followLink } from "./links.ts";
-import type { EditorKind } from "./config.ts";
 
 export interface Deps {
   readonly db: IDBDatabase;
@@ -28,10 +27,6 @@ export interface Deps {
   readonly now: () => number;
   // Injected so tests can drive the cooldown without waiting for real seconds.
   readonly schedule: (ms: number, fire: () => void) => void;
-  // Which editing surface, and how to remember a change of mind. Read from
-  // localStorage by main, not reached for here (injected, not reached for).
-  readonly editorKind?: EditorKind;
-  readonly setEditorKind?: (kind: EditorKind) => void;
 }
 
 export interface Loop {
@@ -43,60 +38,14 @@ export interface Loop {
 const FIRST_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
 
-// Replaces the text without throwing the caret away. Text inserted at or before
-// the caret carries it along; a change after it leaves it where it was.
-const syncEditorValue = (editor: HTMLTextAreaElement, body: string): void => {
-  const previous = editor.value;
-  const caret = editor.selectionStart ?? previous.length;
-
-  let shared = 0;
-  while (
-    shared < previous.length &&
-    shared < body.length &&
-    previous[shared] === body[shared]
-  ) {
-    shared += 1;
-  }
-
-  // The trailing match matters as much as the leading one. A rename rewriting
-  // [[old]] far above the caret changes length in the middle, and a prefix-only
-  // test would drag the caret by that delta and look like a phantom jump.
-  let tail = 0;
-  while (
-    tail < previous.length - shared &&
-    tail < body.length - shared &&
-    previous[previous.length - 1 - tail] === body[body.length - 1 - tail]
-  ) {
-    tail += 1;
-  }
-
-  const changeEnds = previous.length - tail;
-  // `caret < shared`, not `<=`: text inserted *at* the caret should carry it
-  // along, which is what makes typing continue after a pasted image reference
-  // rather than in front of it.
-  const moved =
-    caret < shared
-      ? caret // the change is entirely after the caret
-      : caret >= changeEnds
-        ? caret + (body.length - previous.length) // entirely before it
-        : shared; // the caret sat inside what changed
-  const next = Math.max(0, Math.min(moved, body.length));
-
-  editor.value = body;
-  if (document.activeElement === editor) editor.setSelectionRange(next, next);
-};
-
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const { db, github, now, schedule, shrink } = deps;
-  const editorKind = deps.editorKind ?? "textarea";
   const model = createModel();
   let wakeScheduled = false;
 
   let renderQueued = false;
-  // The editor is uncontrolled, so its value is pushed in only when the element
-  // it lives in has been replaced. That happens on more than an open-note change:
-  // toggling preview destroys and recreates the textarea, and without this it
-  // would come back empty.
+  // A change of note, or of preview, replaces the editor's contents wholesale.
+  // Anything else is a change dispatched into the state that is already there.
   let lastEditorKey: string | null = null;
   let lastModal: string | null = null;
   const previewCache = createPreviewCache();
@@ -128,14 +77,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     track(actions.attach(file, note, caret ?? note.body.length, now, shrink).then(propose));
   };
 
-  const onPaste = (event: ClipboardEvent, path: string) =>
-    pasteImage(event, path, (event.target as HTMLTextAreaElement).selectionStart);
-
   // Created once, before the first paint, and outlives every one of them. lit is
   // handed an empty container and never touches what is inside it.
-  const cm: EditorHandle | null =
-    editorKind === "codemirror"
-      ? createEditor({
+  const cm: EditorHandle = createEditor({
           resolveImage: (src) => localImage(model, src),
           onEdit: (body) => {
             if (model.openPath !== null) {
@@ -146,11 +90,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
             if (model.openPath !== null) pasteImage(event, model.openPath, caret);
           },
           onWikilink: (target) => {
-            const proposal = followLink(target, model.notes);
-            if (proposal !== null) propose(proposal);
-          },
-        })
-      : null;
+      const proposal = followLink(target, model.notes);
+      if (proposal !== null) propose(proposal);
+    },
+  });
 
   // Whether a picture can be drawn at all is what the decorations depend on, and
   // it changes when an attachment arrives or goes. Cheaper than re-parsing on
@@ -170,20 +113,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         propose,
         now,
         onCapture: capture,
-        onPaste,
         previewCache,
-        editorKind,
-        onEditorKind: (kind) => {
-          deps.setEditorKind?.(kind);
-          location.reload();
-        },
       }),
       root,
     );
 
-    // The editor is uncontrolled: its value is set when the open note changes,
-    // never on every render. Binding it to model state would fight the cursor,
-    // and worst on a mobile keyboard.
     // Focus a modal as it opens, and only then — refocusing on every paint would
     // fight the caret while typing. One rule, whichever modal it is.
     if (model.modal !== lastModal) {
@@ -194,13 +128,12 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
 
     const editorKey = `${model.mode}|${model.preview}|${model.openPath ?? ""}`;
-    const editor = root.querySelector<HTMLTextAreaElement>("#editor");
     const body = model.openPath
       ? (model.notes.get(model.openPath)?.body ?? "")
       : "";
 
-    const host = cm && root.querySelector<HTMLElement>("#editor-host");
-    if (cm && host) {
+    const host = root.querySelector<HTMLElement>("#editor-host");
+    if (host) {
       // lit rebuilds the host when the surrounding template changes shape, so
       // re-attach rather than assume. Moving the same node is a no-op.
       if (cm.dom.parentElement !== host) host.appendChild(cm.dom);
@@ -220,20 +153,6 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       if (images !== lastImageKey) {
         lastImageKey = images;
         cm.redecorate();
-      }
-    } else if (editor) {
-      // Two reasons to push a value in. The element was replaced — a different
-      // note, or preview toggled — or the model changed the body underneath a
-      // live textarea, which is what pasting an image, pulling a remote edit and
-      // rewriting links on rename all do.
-      //
-      // Typing is unaffected: present() stores exactly what the DOM had, so by
-      // the time this runs the two already agree and nothing is written.
-      if (editorKey !== lastEditorKey) {
-        lastEditorKey = editorKey;
-        editor.value = body;
-      } else if (editor.value !== body) {
-        syncEditorValue(editor, body);
       }
     } else {
       lastEditorKey = editorKey;

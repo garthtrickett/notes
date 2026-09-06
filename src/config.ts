@@ -32,19 +32,3 @@ export const loadConfig = (storage: Storage): Config | null => {
 export const saveConfig = (storage: Storage, config: Config): void => {
   storage.setItem(KEY, JSON.stringify(config));
 };
-
-// Which editing surface this device uses. Deliberately *not* in the vault
-// config: during the rollout the desktop can run CodeMirror while the phone
-// stays on the textarea, and either can be moved back without touching the
-// other. It goes away with the textarea path.
-
-export type EditorKind = "textarea" | "codemirror";
-
-const EDITOR_KEY = "notes.editor";
-
-export const loadEditorKind = (storage: Storage): EditorKind =>
-  storage.getItem(EDITOR_KEY) === "codemirror" ? "codemirror" : "textarea";
-
-export const saveEditorKind = (storage: Storage, kind: EditorKind): void => {
-  storage.setItem(EDITOR_KEY, kind);
-};

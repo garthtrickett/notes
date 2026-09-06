@@ -738,25 +738,29 @@ the single-letter shortcuts stay out of the way for free. Escape-to-blur needs
 
 ## 6.5 What this deletes
 
-A replacement, not an addition. If both survive, the phase failed.
+**Amended in phase 8, and the original is worth keeping in view.** This section
+said the preview went with the textarea, and with it `render-markdown.ts`,
+`marked`, the sanitizer, the HTML escaping and the `data:` allowlist — "almost
+the whole XSS surface". That was the strongest argument in the phase.
 
-- `preview` from the model, the `previewToggled` proposal, the `E` shortcut
-- the preview cache and its identity-keyed invalidation
-- `render-markdown.ts` entirely — and with it **almost the whole XSS surface**:
-  no sanitizer, no HTML escaping, no `data:` allowlist, no namespace holes.
-  Nothing renders untrusted markdown to HTML any more.
+It did not happen. In use, preview earns its place: rendered tables, real
+checkboxes and links that resolve are worth more than the code they cost. So:
 
-  One thing survives, and a claim this strong has to name it: the image widget.
-  It is the only element built from note content. Its rules — the constraint,
-  not an aspiration — are that `src` is a `data:` URL assembled from our own
-  IndexedDB bytes, the mime type is derived from the file extension against a
-  fixed allowlist, and **`image/svg+xml` is never one of them**. An SVG is a
-  document that can script; a WebP is not.
-- `marked` — CM6 parses markdown itself via Lezer
-- `syncEditorValue`
+**Deleted** — the textarea, the `editor` flag and its localStorage pair, the `CM`
+toggle, `syncEditorValue`'s hand-rolled caret arithmetic, and the loop's
+two-surface paint. One editor.
+
+**Kept** — preview, the `E` shortcut, the preview node cache,
+`render-markdown.ts`, `marked`, the sanitizer and every escaping rule around it.
+The XSS surface phase 6 hoped to delete is still here and still needs its tests.
+
+The image widget's rule stands either way, and it is a constraint rather than an
+aspiration: its `src` is a `data:` URL assembled from our own IndexedDB bytes,
+the mime type comes from the file extension against a fixed allowlist, and
+**`image/svg+xml` is never one of them**. An SVG is a document that can script; a
+WebP is not.
 
 Unaffected: the tree, search, backlinks, the dump, sync, attachments storage.
-The blast radius is the editor pane.
 
 ## 6.6 Scope, stated as refusals
 
@@ -936,4 +940,141 @@ emits a span the image replace would have to discard.
    rules.
 3. CSS for all of it in one pass.
 4. Look at it against `examples/kitchen-sink.md`, which is what it was written for.
+
+---
+
+# Phase 8 — the next-up list
+
+Nine items from `next-up.md` in the vault. The order below is mine, and the
+reasoning matters more than the sequence: each step is placed so the ones after
+it are written once rather than twice.
+
+## 8.0 Why this order
+
+**Deletions before additions.** Retiring the textarea removes a whole branch
+from the editor, the loop's paint and the view. Every later item touches at
+least one of those. Doing it first means nothing else is written against two
+editors and then reconciled.
+
+**Widen a type once.** The confirm dialog needs `Modal` to carry a payload.
+Trash and archive want dialogs too. Widening it early is free; widening it three
+times is not.
+
+**Mechanism before its second user.** Trash and archive are the same mechanism
+pointed at two folders, so trash lands first and archive is mostly a second
+path constant.
+
+**Riskiest last.** The concurrent pull is the only item that can lose data, and
+it is the only one with no visible surface to sanity-check. It goes last, when
+everything else is settled and a bad result is obvious against a full vault.
+
+1. Retire the textarea (7)
+2. Confirm before deleting (3)
+3. `i` to start writing (1)
+4. Numbers into nested rows (8)
+5. Deleted notes (5)
+6. Archive (4)
+7. Drag to move (2)
+8. Version history (6)
+9. Import without waiting in line (9)
+
+## 8.1 Retire the textarea (7)
+
+Deletes the `editor` flag and its localStorage pair, the `CM` toggle, the
+textarea branch of `editor()`, `syncEditorValue`, and the loop's two-surface
+paint. One editor, no flag, no device-local split.
+
+**This reverses 6.5, and not only cosmetically.** That section had the preview
+being deleted and with it `render-markdown.ts`, `marked`, the sanitizer, the
+HTML escaping and the `data:` allowlist — "almost the whole XSS surface". Keeping
+preview keeps every bit of that. It is a fair trade: rendered tables, real
+checkboxes and resolved links are worth something, and the sanitizer has tests
+and a scar history. But 6.5 is rewritten rather than left claiming a deletion
+that is not happening.
+
+**The dump keeps its textareas.** They are a different surface with a different
+job — one box per day, read-only until clicked — and nothing in the request
+asked for them. Stated so their survival is a decision and not an oversight.
+
+## 8.2 Confirm before deleting (3)
+
+`Modal` becomes a discriminated union so it can carry what it is asking about:
+
+    { kind: "capture" } | { kind: "newNote" } | { kind: "open" }
+    | { kind: "confirmDelete"; target: string; folder: boolean }
+
+The loop compares `modal.kind`, not the object, for its focus-on-open rule.
+Confirming proposes the delete it was holding, then closes.
+
+## 8.3 `i` to start writing (1)
+
+Escape leaves the editor so the single-letter shortcuts work; `i` is the way
+back in, with the caret at the top of the note. Focus is not model state, so
+this follows the existing `{ kind: "focus" }` key action rather than becoming a
+proposal — but CodeMirror needs a dispatch to place the caret, so the loop
+exposes the one thing only it can do.
+
+## 8.4 Numbers into nested rows (8)
+
+A digit on a folder expands it **and scopes the numbers to its children**, so the
+next digit indexes into that folder. The badges move with the scope, which is
+what makes it discoverable rather than something to memorise. Escape returns to
+the top level. Opening a note clears the scope.
+
+Consequence, stated: a digit on a folder now expands rather than toggles. There
+is no keyboard collapse; that is a click. Toggling would make the second digit
+ambiguous — collapse this folder, or select its second child?
+
+## 8.5 Deleted notes (5)
+
+Deleting stops meaning "tombstone it" and starts meaning **move it to
+`.trash/`** — which is a rename, an operation this vault already has. The file
+stays on GitHub, so it is recoverable from any device rather than from one
+device's IndexedDB.
+
+Permanently deleting from the trash view is what today's delete already does.
+Restoring is the rename back, and the original path is recoverable because it is
+the trash path minus its prefix.
+
+`.trash/` is hidden from the note tree the same way `attachments/` and the dump
+already are — one predicate, not a new mechanism.
+
+## 8.6 Archive (4)
+
+`.archive/`, the same mechanism as 8.5 with a different prefix and no permanent
+delete. Archived notes still sync; they are ordinary files that the tree does
+not show.
+
+## 8.7 Drag to move (2)
+
+Dragging a note or a folder onto a folder row moves it, which is a rename and
+therefore already carries its inbound links.
+
+**Reordering is not in this.** The tree's order is derived — folders first, then
+notes, alphabetical, nothing stored. Manual ordering needs a stored position
+per item, which is a new source of truth that has to live in the vault and
+survive two devices reordering the same folder. That is a design question, not
+an afternoon, and it is separable from moving things about.
+
+## 8.8 Version history (6)
+
+The vault is a git branch, so the history already exists and does not need
+inventing. `GET /commits?path=…&sha=vault` for the list, `GET /contents/…?ref=`
+for a version. Restoring writes the old body as a new edit, so history moves
+forward and nothing is rewritten.
+
+Read-only against the network, and it degrades to "no history" offline rather
+than to an error.
+
+## 8.9 Import without waiting in line (9)
+
+The pull fetches file bodies one at a time. For a vault someone has just filled
+with a thousand notes from the GitHub side, that is a thousand round trips in
+series.
+
+Bounded concurrency, not unbounded: a pool small enough to stay inside the rate
+limit, with the existing `rateLimited` handling still in charge of backing off.
+The manifest already carries a blob SHA per file, so anything whose SHA matches
+what is stored is skipped without a fetch at all — which is the larger win and
+the one that keeps working on the second sync.
 
