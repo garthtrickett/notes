@@ -58,21 +58,36 @@ Everything enters at the top and leaves at the bottom. Nothing mutates outside
 
 ## Repo layout
 
-Notes live in folders, one `.md` per note. Plus a daily dump for quick capture.
+**One repo holds both the app and the notes.** Not two. If privacy is ever
+wanted, the whole thing goes private in one click — the notes being public is
+acceptable.
+
+Notes live in folders under `vault/`, one `.md` per note, plus a daily dump for
+quick capture.
 
 ```
-notes/                       # the git repo
-  inbox/
-    some-thought.md
-  projects/
-    gafu/
-      adaptive-media.md
-  reference/
-    japanese-grammar.md
-  dump/
-    2026-09-06.md            # today
-    2026-09-05.md            # immutable once the day ends
+notes/                         # the repo — github.com/garthtrickett/notes
+  src/                         # app source
+  package.json
+  DECISIONS.md
+  vault/                       # ← everything the app syncs, and nothing else
+    inbox/
+      some-thought.md
+    projects/
+      gafu/
+        adaptive-media.md
+    reference/
+      japanese-grammar.md
+    dump/
+      2026-09-06.md            # today
+      2026-09-05.md            # immutable once the day ends
 ```
+
+**The `vault/` prefix is load-bearing.** The Trees API returns *every* path in
+the repo, so the sync must filter the manifest to `vault/` or the app will try to
+sync its own source into IndexedDB. One prefix check, one place. `vault` rather
+than `notes` only to avoid a `notes/notes/` path — rename freely, but keep it a
+single prefix.
 
 **Folders are not a data structure.** They are a path prefix. There is no folder
 entity, no tree table, no parent pointers — the Trees API manifest already
@@ -237,6 +252,18 @@ Stated up front so they aren't surprises later.
   commit across files.
 - **Attachments.** Git never forgets a 4 MB pasted screenshot. Decide a policy
   before the first paste.
+- **One repo means one history.** Note commits and code commits interleave, and
+  auto-commit means notes will dominate `git log` heavily. Use
+  `git log -- ':!vault'` to read the code history. Accepted deliberately.
+- **CI would fire on every note save.** If a workflow or a deploy is ever added,
+  give it `paths-ignore: ['vault/**']` or every captured thought triggers a
+  build.
+- **Splitting later is a chore, not a disaster.** `git filter-repo --path vault/`
+  extracts the notes with history intact if the mixed log ever becomes
+  intolerable. Cheapest middle path, if it comes to that: keep one repo but move
+  `vault/` to an orphan branch — the Contents API takes a `branch` parameter and
+  the Trees API takes a `ref`, so it costs one extra parameter on two calls and
+  buys back a clean `main` history.
 
 ---
 
