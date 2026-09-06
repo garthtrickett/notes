@@ -305,3 +305,12 @@ main.single .tabs { max-width: 720px; margin: 0 auto 12px; }
   padding: 2px 0;
   cursor: pointer;
 }
+
+kbd {
+  font: 11px ui-monospace, Menlo, monospace;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 4px;
+}

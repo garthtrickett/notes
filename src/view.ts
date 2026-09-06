@@ -106,10 +106,11 @@ const editor = (model: Model, propose: Propose, onPaste: PasteHandler) => {
       />
       <button
         class="toggle ${model.preview ? "on" : ""}"
-        title="Toggle preview"
+        title="Toggle preview (E)"
+        aria-keyshortcuts="E"
         @click=${() => propose({ kind: "previewToggled" })}
       >
-        ${model.preview ? "Edit" : "Preview"}
+        ${model.preview ? "Edit" : "Preview"} <kbd>E</kbd>
       </button>
     </div>
     ${model.preview
@@ -332,15 +333,19 @@ const tabs = (model: Model, propose: Propose) => html`
   <div class="tabs">
     <button
       class=${model.mode === "notes" ? "on" : ""}
+      title="Notes (N)"
+      aria-keyshortcuts="N"
       @click=${() => propose({ kind: "modeChanged", mode: "notes" })}
     >
-      Notes
+      Notes <kbd>N</kbd>
     </button>
     <button
       class=${model.mode === "dump" ? "on" : ""}
+      title="Dump (D)"
+      aria-keyshortcuts="D"
       @click=${() => propose({ kind: "modeChanged", mode: "dump" })}
     >
-      Dump
+      Dump <kbd>D</kbd>
     </button>
   </div>
 `;

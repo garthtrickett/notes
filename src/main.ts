@@ -6,6 +6,7 @@ import { createGithub } from "./github.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view.ts";
 import { canvasShrinker } from "./attachments.ts";
+import { isTyping, keyProposal } from "./keys.ts";
 
 // Worker lifecycle has nothing to do with whether a vault is configured, so it
 // runs before anything else. Putting it inside the configured branch left anyone
@@ -66,6 +67,19 @@ if (config === null) {
   // Without this the app pulls once per session, so a note written on the laptop
   // does not appear on the phone until a reload. Clearing the watermark is the
   // whole mechanism; nap() does the rest.
+  addEventListener("keydown", (event: KeyboardEvent) => {
+    // Escape leaves the editor, which is what makes the single-letter shortcuts
+    // reachable from a note you are writing in.
+    if (event.key === "Escape" && isTyping(event.target)) {
+      (event.target as HTMLElement).blur();
+      return;
+    }
+    const proposal = keyProposal(event, loop.model);
+    if (proposal === null) return;
+    event.preventDefault();
+    loop.propose(proposal);
+  });
+
   const resumed = () => loop.propose({ kind: "resumed" });
   addEventListener("focus", resumed);
   addEventListener("visibilitychange", () => {
