@@ -6,6 +6,7 @@
 // there is exactly one writer.
 
 import type { SyncError } from "./github.ts";
+import { rewriteLinks } from "./links.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
@@ -35,6 +36,8 @@ export interface Model {
   notes: Map<string, Note>;
   openPath: string | null;
   mode: Mode;
+  preview: boolean;
+  query: string;
   // Open folders. Session-lived UI state, deliberately not persisted.
   expanded: Set<string>;
   hydrated: boolean;
@@ -58,6 +61,8 @@ export const createModel = (): Model => ({
   notes: new Map(),
   openPath: null,
   mode: "notes",
+  preview: false,
+  query: "",
   expanded: new Set(),
   hydrated: false,
   persisting: false,
@@ -89,7 +94,10 @@ export type Proposal =
   | { readonly kind: "modeChanged"; readonly mode: Mode }
   | { readonly kind: "folderToggled"; readonly path: string }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
-  | { readonly kind: "refresh" };
+  | { readonly kind: "refresh" }
+  | { readonly kind: "renamed"; readonly from: string; readonly to: string }
+  | { readonly kind: "previewToggled" }
+  | { readonly kind: "searched"; readonly query: string };
 
 // A tombstone still exists as a record until the remote delete lands, but it is
 // not a note any more and must never be shown or opened.
@@ -200,6 +208,43 @@ export const present = (m: Model, p: Proposal): void => {
     case "refresh": {
       // Clearing the watermark is the whole mechanism; nap() notices and pulls.
       if (!m.syncing) m.lastSyncedAt = null;
+      return;
+    }
+
+    case "previewToggled": {
+      m.preview = !m.preview;
+      return;
+    }
+
+    case "searched": {
+      m.query = p.query;
+      return;
+    }
+
+    case "renamed": {
+      const note = m.notes.get(p.from);
+      if (!note || note.deleted) return; // reject: nothing there
+      if (p.to.trim() === "" || m.notes.has(p.to)) return; // reject: bad target
+
+      // A rename changes the note's identity, so every inbound link has to move
+      // with it. Doing that here means the whole rename is one synchronous state
+      // change: either all of it happened or none of it did.
+      for (const referrer of [...m.notes.values()]) {
+        if (referrer.deleted || referrer.path === p.from) continue;
+        const rewritten = rewriteLinks(referrer.body, p.from, p.to);
+        // Comparing the result, rather than merely finding a link, is what keeps
+        // a folder move free: the basename does not change, so every rewrite is
+        // a no-op and nothing needs pushing.
+        if (rewritten === referrer.body) continue;
+        m.notes.set(referrer.path, {
+          ...referrer,
+          body: rewritten,
+          dirty: true,
+          pending: true,
+        });
+      }
+
+      present(m, { kind: "moved", from: p.from, to: p.to });
       return;
     }
 

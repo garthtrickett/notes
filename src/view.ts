@@ -5,6 +5,8 @@ import { html, nothing, type TemplateResult } from "lit-html";
 import { visible, type Model, type Note, type Proposal } from "./model.ts";
 import { buildTree, type TreeNode } from "./tree.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
+import { backlinksTo, resolveLink, searchNotes } from "./links.ts";
+import { renderMarkdown } from "./render-markdown.ts";
 
 type Propose = (p: Proposal) => void;
 
@@ -94,22 +96,89 @@ const editor = (model: Model, propose: Propose) => {
           if (e.key !== "Enter") return;
           e.preventDefault();
           const to = (e.target as HTMLInputElement).value.trim();
-          // Moving is just a path change. Links match on basename, so nothing
-          // else has to be rewritten.
-          if (to !== path) propose({ kind: "moved", from: path, to });
+          // A rename carries its inbound links with it. Moving between folders
+          // is the same proposal — it just finds nothing to rewrite, because
+          // links match on basename.
+          if (to !== path) propose({ kind: "renamed", from: path, to });
         }}
       />
+      <button
+        class="toggle ${model.preview ? "on" : ""}"
+        title="Toggle preview"
+        @click=${() => propose({ kind: "previewToggled" })}
+      >
+        ${model.preview ? "Edit" : "Preview"}
+      </button>
     </div>
-    <textarea
-      id="editor"
-      spellcheck="false"
-      @input=${(e: Event) =>
-        propose({
-          kind: "edited",
-          path,
-          body: (e.target as HTMLTextAreaElement).value,
-        })}
-    ></textarea>
+    ${model.preview
+      ? html`<div class="preview">${preview(model, path, propose)}</div>`
+      : html`<textarea
+          id="editor"
+          spellcheck="false"
+          @input=${(e: Event) =>
+            propose({
+              kind: "edited",
+              path,
+              body: (e.target as HTMLTextAreaElement).value,
+            })}
+        ></textarea>`}
+    ${backlinks(model, path, propose)}
+  `;
+};
+
+// Rendered into a real fragment and sanitised, then handed to lit as a node —
+// never as a string, so there is no path that injects unfiltered markup.
+const preview = (model: Model, path: string, propose: Propose) => {
+  const body = model.notes.get(path)?.body ?? "";
+  const fragment = renderMarkdown(body, document);
+
+  // A wikilink became an ordinary anchor; make it navigate the vault instead of
+  // the page, and mark the ones that point at nothing yet.
+  for (const anchor of [...fragment.querySelectorAll("a")]) {
+    const href = anchor.getAttribute("href") ?? "";
+    if (!href.startsWith("#note:")) continue;
+    const target = decodeURIComponent(href.slice("#note:".length));
+    const resolved = resolveLink(target, model.notes);
+    if (resolved.kind === "found") {
+      anchor.addEventListener("click", (e) => {
+        e.preventDefault();
+        propose({ kind: "opened", path: resolved.path });
+      });
+    } else {
+      // Linking to a note you have not written yet is normal. Say so rather
+      // than failing silently.
+      anchor.classList.add(resolved.kind === "missing" ? "unresolved" : "ambiguous");
+      anchor.title =
+        resolved.kind === "missing"
+          ? "No note yet — click to create it"
+          : `Ambiguous: ${resolved.paths.join(", ")}`;
+      anchor.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (resolved.kind === "missing") {
+          propose({ kind: "created", path: `${target}.md`.replace(/\.md\.md$/, ".md") });
+        }
+      });
+    }
+  }
+  return fragment;
+};
+
+const backlinks = (model: Model, path: string, propose: Propose) => {
+  const referrers = backlinksTo(path, model.notes);
+  if (referrers.length === 0) return nothing;
+  return html`
+    <aside class="backlinks">
+      <h3>Linked from</h3>
+      <ul>
+        ${referrers.map(
+          (from) => html`<li>
+            <button @click=${() => propose({ kind: "opened", path: from })}>
+              ${from}
+            </button>
+          </li>`,
+        )}
+      </ul>
+    </aside>
   `;
 };
 
@@ -297,7 +366,32 @@ export const view = (
       <nav>
         ${tabs(model, propose)}
         ${newNoteField(propose)}
-        <ul>${treeNodes(buildTree(notes), model, propose, 0)}</ul>
+        <input
+          id="search"
+          class="search"
+          placeholder="Search"
+          autocomplete="off"
+          .value=${model.query}
+          @input=${(e: Event) =>
+            propose({
+              kind: "searched",
+              query: (e.target as HTMLInputElement).value,
+            })}
+        />
+        ${model.query.trim() === ""
+          ? html`<ul>${treeNodes(buildTree(notes), model, propose, 0)}</ul>`
+          : html`<ul class="results">
+              ${searchNotes(notes, model.query).map(
+                (n) => html`<li>
+                  <button
+                    class="row ${n.path === model.openPath ? "open" : ""}"
+                    @click=${() => propose({ kind: "opened", path: n.path })}
+                  >
+                    <span class="path">${n.path}</span>
+                  </button>
+                </li>`,
+              )}
+            </ul>`}
       </nav>
       <section>${editor(model, propose)}</section>
       ${status(model)}

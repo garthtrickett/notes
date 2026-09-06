@@ -34,7 +34,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let wakeScheduled = false;
 
   let renderQueued = false;
-  let lastRenderedPath: string | null = null;
+  // The editor is uncontrolled, so its value is pushed in only when the element
+  // it lives in has been replaced. That happens on more than an open-note change:
+  // toggling preview destroys and recreates the textarea, and without this it
+  // would come back empty.
+  let lastEditorKey: string | null = null;
   // Resolves when nothing is in flight and nothing is left to do. Tests await
   // it instead of sleeping.
   let idle: Promise<void> = Promise.resolve();
@@ -49,12 +53,15 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // The editor is uncontrolled: its value is set when the open note changes,
     // never on every render. Binding it to model state would fight the cursor,
     // and worst on a mobile keyboard.
-    if (model.mode === "notes" && model.openPath !== lastRenderedPath) {
-      lastRenderedPath = model.openPath;
+    const editorKey = `${model.mode}|${model.preview}|${model.openPath ?? ""}`;
+    if (editorKey !== lastEditorKey) {
+      lastEditorKey = editorKey;
       const editor = root.querySelector<HTMLTextAreaElement>("#editor");
-      if (editor) editor.value = model.openPath
-        ? (model.notes.get(model.openPath)?.body ?? "")
-        : "";
+      if (editor) {
+        editor.value = model.openPath
+          ? (model.notes.get(model.openPath)?.body ?? "")
+          : "";
+      }
     }
   };
 

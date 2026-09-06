@@ -213,3 +213,95 @@ main.single .tabs { max-width: 720px; margin: 0 auto 12px; }
   padding: 10px 16px;
   cursor: pointer;
 }
+
+/* search */
+.search {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 10px;
+}
+.search:focus { outline: none; border-color: var(--accent); }
+.results .row { width: 100%; padding-left: 8px; }
+
+/* path bar + preview toggle */
+.pathbar { display: flex; gap: 6px; align-items: center; }
+.toggle {
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.toggle:hover, .toggle.on { color: #fff; border-color: var(--accent); }
+
+/* preview */
+.preview {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  line-height: 1.7;
+}
+.preview h1, .preview h2, .preview h3 { margin: 1.2em 0 0.4em; line-height: 1.3; }
+.preview h1 { font-size: 1.6em; }
+.preview h2 { font-size: 1.3em; }
+.preview h3 { font-size: 1.1em; }
+.preview a { color: var(--accent); }
+.preview a.unresolved { color: #d08770; border-bottom: 1px dashed currentColor; }
+.preview a.ambiguous { color: #ebcb8b; border-bottom: 1px dashed currentColor; }
+.preview code {
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font: 0.9em ui-monospace, Menlo, monospace;
+}
+.preview pre {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+}
+.preview pre code { background: none; padding: 0; }
+.preview blockquote {
+  margin: 1em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+.preview img { max-width: 100%; }
+.preview table { border-collapse: collapse; }
+.preview th, .preview td { border: 1px solid var(--line); padding: 4px 8px; }
+
+/* backlinks */
+.backlinks {
+  border-top: 1px solid var(--line);
+  padding: 12px 20px;
+  max-height: 30%;
+  overflow-y: auto;
+}
+.backlinks h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.backlinks ul { list-style: none; margin: 0; padding: 0; }
+.backlinks button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+}
