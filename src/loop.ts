@@ -33,6 +33,9 @@ export interface Loop {
   readonly model: Model;
   readonly propose: (p: Proposal) => void;
   readonly flush: () => Promise<void>;
+  // Focus is not model state, so it is not a proposal. The loop holds the
+  // editor, so it is the only thing that can offer this.
+  readonly enterEditor: () => void;
 }
 
 const FIRST_BACKOFF_MS = 1_000;
@@ -120,10 +123,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
 
     // Focus a modal as it opens, and only then — refocusing on every paint would
     // fight the caret while typing. One rule, whichever modal it is.
-    if (model.modal !== lastModal) {
-      lastModal = model.modal;
+    // By kind, not by object: what matters is that a different dialog appeared.
+    const modalKind = model.modal?.kind ?? null;
+    if (modalKind !== lastModal) {
+      lastModal = modalKind;
       if (model.modal !== null) {
-        root.querySelector<HTMLInputElement>("#modal-input")?.focus();
+        // Not always an input: the confirm dialog puts it on Cancel, so the
+        // safe answer is the one already under your fingers.
+        root.querySelector<HTMLElement>("#modal-input")?.focus();
       }
     }
 
@@ -272,7 +279,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     throw new Error("Loop did not settle");
   };
 
-  return { model, propose, flush };
+  // The caret at the top, because the shortcut exists to start writing — not to
+  // resume wherever the last visit left off.
+  const enterEditor = () => cm.focusAt(0);
+
+  return { model, propose, flush, enterEditor };
 };
 
 export const boot = async (deps: Deps, root: HTMLElement): Promise<Loop> => {

@@ -13,6 +13,7 @@
 import { html, nothing, type TemplateResult } from "lit-html";
 import {
   noteTree,
+  numberedRows,
   openable,
   visible,
   type Model,
@@ -41,6 +42,18 @@ export interface ViewCtx {
 const badge = (index: number | null) =>
   index === null ? nothing : html`<kbd class="num">${index}</kbd>`;
 
+// Which rows wear a digit, keyed by path. Built from the same function the
+// digits index into, so a badge cannot point somewhere its key does not go.
+const badgesFor = (model: Model): Map<string, number> => {
+  const map = new Map<string, number>();
+  numberedRows(model)
+    .slice(0, 10)
+    .forEach((node, index) => {
+      map.set(node.kind === "folder" ? node.path : node.note.path, index);
+    });
+  return map;
+};
+
 const noteRow = (
   note: Note,
   openPath: string | null,
@@ -61,7 +74,11 @@ const noteRow = (
     <button
       class="delete"
       title="Delete ${note.path}"
-      @click=${() => propose({ kind: "deleted", path: note.path })}
+      @click=${() =>
+        propose({
+          kind: "modalOpened",
+          modal: { kind: "confirmDelete", path: note.path, folder: false },
+        })}
     >
       ×
     </button>
@@ -73,9 +90,11 @@ const treeNodes = (
   model: Model,
   propose: Propose,
   depth: number,
+  badges: Map<string, number>,
 ): TemplateResult[] =>
-  nodes.map((node, position) => {
-    const index = depth === 0 && position < 10 ? position : null;
+  nodes.map((node) => {
+    const index =
+      badges.get(node.kind === "folder" ? node.path : node.note.path) ?? null;
     if (node.kind === "note") {
       return html`<li style="--depth:${depth}">
         ${noteRow(node.note, model.openPath, propose, index)}
@@ -96,13 +115,17 @@ const treeNodes = (
         <button
           class="delete"
           title="Delete ${node.path} and everything in it"
-          @click=${() => propose({ kind: "folderDeleted", path: node.path })}
+          @click=${() =>
+            propose({
+              kind: "modalOpened",
+              modal: { kind: "confirmDelete", path: node.path, folder: true },
+            })}
         >
           ×
         </button>
       </div>
       ${open
-        ? html`<ul>${treeNodes(node.children, model, propose, depth + 1)}</ul>`
+        ? html`<ul>${treeNodes(node.children, model, propose, depth + 1, badges)}</ul>`
         : nothing}
     </li>`;
   });
@@ -393,6 +416,38 @@ const modalBox = (
   </form>
 `;
 
+// Deleting a folder takes everything under it, so the dialog says which it is
+// rather than asking the same bland question for both. Cancel is the default:
+// it is what the button is focused on and what Escape does.
+const confirmBox = (propose: Propose, path: string, folder: boolean) => html`
+  <form
+    class="capture floating confirm"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Confirm delete"
+    @submit=${(e: SubmitEvent) => {
+      e.preventDefault();
+      propose({ kind: "modalConfirmed" });
+    }}
+  >
+    <p>
+      Delete <strong>${path}</strong>${folder
+        ? html` and everything in it`
+        : nothing}?
+    </p>
+    <div class="confirm-actions">
+      <button
+        id="modal-input"
+        type="button"
+        @click=${() => propose({ kind: "modalClosed" })}
+      >
+        Cancel
+      </button>
+      <button class="danger" type="submit">Delete</button>
+    </div>
+  </form>
+`;
+
 // An empty query lists everything rather than nothing, so `o` then Enter is
 // useful without typing.
 const paletteResults = (model: Model): Note[] => {
@@ -468,13 +523,15 @@ const modal = (
 ) => {
   if (model.modal === null) return nothing;
   const inner =
-    model.modal === "capture"
+    model.modal.kind === "capture"
       ? modalBox(propose, "What's on your mind?", "Quick capture", "Add", onCapture)
-      : model.modal === "newNote"
+      : model.modal.kind === "newNote"
         ? modalBox(propose, "inbox/new-note.md", "New note", "Create", (path) =>
             propose({ kind: "created", path }),
           )
-        : openPalette(model, propose);
+        : model.modal.kind === "confirmDelete"
+          ? confirmBox(propose, model.modal.path, model.modal.folder)
+          : openPalette(model, propose);
 
   return html`<div
     class="scrim"
@@ -532,7 +589,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
     <main>
       <nav>
         ${tabs(model, propose)}
-        <ul>${treeNodes(noteTree(model), model, propose, 0)}</ul>
+        <ul>${treeNodes(noteTree(model), model, propose, 0, badgesFor(model))}</ul>
       </nav>
       <section>${editor(model, ctx)}</section>
       ${modal(model, propose, onCapture)}

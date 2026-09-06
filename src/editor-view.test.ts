@@ -138,3 +138,20 @@ describe("the model writing underneath the caret", () => {
     handle.destroy();
   });
 });
+
+describe("entering the editor", () => {
+  test("puts the caret at the top and takes focus", () => {
+    const { handle, view } = openEditor("first line\nsecond line");
+    view.dispatch({ selection: EditorSelection.cursor(view.state.doc.length) });
+    handle.focusAt(0);
+    expect(view.state.selection.main.head).toBe(0);
+    handle.destroy();
+  });
+
+  test("clamps a position past the end rather than throwing", () => {
+    const { handle, view } = openEditor("short");
+    handle.focusAt(9999);
+    expect(view.state.selection.main.head).toBe(5);
+    handle.destroy();
+  });
+});

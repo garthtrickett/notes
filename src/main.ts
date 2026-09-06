@@ -79,6 +79,9 @@ if (config === null) {
       case "focus":
         document.querySelector<HTMLElement>(action.selector)?.focus();
         return;
+      case "enterEditor":
+        loop.enterEditor();
+        return;
       case "blur":
         // Leaving the field is what makes the single-letter shortcuts reachable
         // from a note you are writing in.

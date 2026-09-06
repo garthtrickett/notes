@@ -43,6 +43,9 @@ export interface EditorHandle {
   readonly setDoc: (body: string) => void;
   readonly redecorate: () => void;
   readonly focus: () => void;
+  // Focus with the caret placed, which is a dispatch and therefore something
+  // only the editor can do.
+  readonly focusAt: (pos: number) => void;
   readonly destroy: () => void;
 }
 
@@ -256,6 +259,11 @@ export const createEditor = (hooks: EditorHooks): EditorHandle => {
       view.dispatch({ effects: rebuild.of(null), annotations: fromModel.of(true) });
     },
     focus: () => view.focus(),
+    focusAt: (pos) => {
+      const at = Math.max(0, Math.min(pos, view.state.doc.length));
+      view.dispatch({ selection: EditorSelection.cursor(at), scrollIntoView: true });
+      view.focus();
+    },
     destroy: () => view.destroy(),
   };
 };

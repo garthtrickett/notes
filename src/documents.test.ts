@@ -310,7 +310,7 @@ describe("preview and search in the app", () => {
     await settle(loop);
     expect(root.querySelector(".palette")).toBeNull();
 
-    loop.propose({ kind: "modalOpened", modal: "open" });
+    loop.propose({ kind: "modalOpened", modal: { kind: "open" } });
     loop.propose({ kind: "searched", query: "milk" });
     await settle(loop);
 

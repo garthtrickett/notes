@@ -7,6 +7,9 @@ import type { Model, Proposal } from "./model.ts";
 export type KeyAction =
   | { readonly kind: "propose"; readonly proposal: Proposal }
   | { readonly kind: "focus"; readonly selector: string }
+  // Back into the editor with the caret at the top. Not a selector, because
+  // placing a caret in CodeMirror takes a dispatch.
+  | { readonly kind: "enterEditor" }
   | { readonly kind: "blur" };
 
 // A single-letter shortcut must never fire while the user is writing, or typing
@@ -29,6 +32,9 @@ export const keyAction = (
     // in the box you just opened does nothing visible.
     if (model.modal !== null) return propose({ kind: "modalClosed" });
     if (isTyping(event.target)) return { kind: "blur" };
+    // Escape unwinds one thing at a time, and the scoped numbers are the last
+    // of them.
+    if (model.numberScope !== null) return propose({ kind: "unscoped" });
     return null;
   }
 
@@ -59,14 +65,20 @@ export const keyAction = (
       // would be theatre. Everywhere else, floating it is the whole point.
       return model.mode === "dump"
         ? { kind: "focus", selector: "#capture" }
-        : propose({ kind: "modalOpened", modal: "capture" });
+        : propose({ kind: "modalOpened", modal: { kind: "capture" } });
     case " ":
       // Space costs the browser's scroll-down. Accepted, because a new note is
       // then reachable from anywhere — including the dump, which has no button
       // for it.
-      return propose({ kind: "modalOpened", modal: "newNote" });
+      return propose({ kind: "modalOpened", modal: { kind: "newNote" } });
+    case "i":
+      // Escape leaves the editor so these shortcuts work at all; `i` is the way
+      // back in, without reaching for the mouse.
+      return model.mode === "notes" && model.openPath !== null && !model.preview
+        ? { kind: "enterEditor" }
+        : null;
     case "o":
-      return propose({ kind: "modalOpened", modal: "open" });
+      return propose({ kind: "modalOpened", modal: { kind: "open" } });
     default:
       return null;
   }

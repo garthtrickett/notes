@@ -42,7 +42,13 @@ export interface Note extends NoteRecord {
 }
 
 export type Mode = "notes" | "dump";
-export type Modal = "capture" | "newNote" | "open";
+// A discriminated union rather than a string, because a dialog that asks about
+// something has to carry what it is asking about.
+export type Modal =
+  | { readonly kind: "capture" }
+  | { readonly kind: "newNote" }
+  | { readonly kind: "open" }
+  | { readonly kind: "confirmDelete"; readonly path: string; readonly folder: boolean };
 export type Encoding = "utf8" | "base64";
 
 export interface Model {
@@ -59,6 +65,10 @@ export interface Model {
   paletteIndex: number;
   // Open folders. Session-lived UI state, deliberately not persisted.
   expanded: Set<string>;
+  // Which folder the number badges currently count inside, or null for the top
+  // level. A digit on a folder scopes to it, so the next digit reaches its
+  // children.
+  numberScope: string | null;
   hydrated: boolean;
   persisting: boolean;
   syncing: boolean;
@@ -90,6 +100,7 @@ export const createModel = (): Model => ({
   modal: null,
   paletteIndex: 0,
   expanded: new Set(),
+  numberScope: null,
   hydrated: false,
   persisting: false,
   persistBlocked: false,
@@ -124,6 +135,8 @@ export type Proposal =
   | { readonly kind: "folderDeleted"; readonly path: string }
   // Which top-level row, counting from zero, as shown in the tree.
   | { readonly kind: "jumped"; readonly index: number }
+  // Back to numbering the top level.
+  | { readonly kind: "unscoped" }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
   | { readonly kind: "resumed" }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
@@ -131,6 +144,7 @@ export type Proposal =
   | { readonly kind: "searched"; readonly query: string }
   | { readonly kind: "modalOpened"; readonly modal: Modal }
   | { readonly kind: "modalClosed" }
+  | { readonly kind: "modalConfirmed" }
   | { readonly kind: "paletteMoved"; readonly delta: number }
   | {
       readonly kind: "attached";
@@ -157,6 +171,27 @@ export const openable = (m: Model): Note[] =>
 // drift from what the digits do (never duplicate rules).
 export const noteTree = (m: Model): TreeNode[] =>
   buildTree(openable(m).sort((a, b) => a.path.localeCompare(b.path)));
+
+// The rows the digits currently address, and the rows that therefore wear the
+// badges. One function, so a badge can never point somewhere its digit does not
+// go (never duplicate rules).
+export const numberedRows = (m: Model): TreeNode[] => {
+  if (m.numberScope === null) return noteTree(m);
+  const found = findFolder(noteTree(m), m.numberScope);
+  // A scope whose folder has gone — deleted, renamed — falls back to the top
+  // level rather than leaving the digits pointing at nothing.
+  return found ?? noteTree(m);
+};
+
+const findFolder = (nodes: readonly TreeNode[], path: string): TreeNode[] | null => {
+  for (const node of nodes) {
+    if (node.kind !== "folder") continue;
+    if (node.path === path) return [...node.children];
+    const deeper = findFolder(node.children, path);
+    if (deeper !== null) return deeper;
+  }
+  return null;
+};
 
 const firstVisiblePath = (m: Model): string | null =>
   openable(m)[0]?.path ?? null;
@@ -253,6 +288,9 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return reject(`Cannot open ${p.path}: it is not a note.`);
       }
       m.openPath = p.path;
+      // The numbers go back to the top level: whatever folder they were counting
+      // inside, you have left it.
+      m.numberScope = null;
       // Opening a note means showing it. The palette reaches here from the dump,
       // where setting openPath alone changed nothing visible. Same rule as
       // `created`, which already did this.
@@ -342,6 +380,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "modeChanged": {
+      m.numberScope = null;
       m.mode = p.mode;
       return null;
     }
@@ -364,17 +403,26 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "jumped": {
-      const target = noteTree(m)[p.index];
+      const target = numberedRows(m)[p.index];
       // A digit with nothing in that slot is not a mistake worth reporting, it
       // is simply an empty row.
       if (target === undefined) return null;
-      // Pressing the number does what clicking the row does — one rule, and
-      // nothing new to learn.
       if (target.kind === "note") {
+        m.numberScope = null;
         return present(m, { kind: "opened", path: target.note.path });
       }
+      // A folder expands and takes the numbers with it, so the next digit
+      // reaches its children. Expand rather than toggle: with a scope, a second
+      // press of the same digit has to mean "the second child", not "close this".
       m.mode = "notes";
-      return present(m, { kind: "folderToggled", path: target.path });
+      m.expanded.add(target.path);
+      m.numberScope = target.path;
+      return null;
+    }
+
+    case "unscoped": {
+      m.numberScope = null;
+      return null;
     }
 
     case "folderToggled": {
@@ -426,6 +474,19 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "previewToggled": {
       m.preview = !m.preview;
       return null;
+    }
+
+    case "modalConfirmed": {
+      const asking = m.modal;
+      if (asking === null || asking.kind !== "confirmDelete") {
+        return reject("Nothing to confirm.");
+      }
+      m.modal = null;
+      // The dialog holds the question; the arms that already know how to delete
+      // do the deleting (never duplicate rules).
+      return asking.folder
+        ? present(m, { kind: "folderDeleted", path: asking.path })
+        : present(m, { kind: "deleted", path: asking.path });
     }
 
     case "modalOpened": {

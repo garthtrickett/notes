@@ -119,7 +119,7 @@ describe("quick capture", () => {
   it("A floats the box everywhere else", () => {
     expect(keyAction(press("a"), model())).toEqual({
       kind: "propose",
-      proposal: { kind: "modalOpened", modal: "capture" },
+      proposal: { kind: "modalOpened", modal: { kind: "capture" } },
     });
   });
 
@@ -131,7 +131,7 @@ describe("quick capture", () => {
   it("Escape dismisses capture, even from inside its own field", () => {
     const box = document.createElement("input");
     // Blurring instead would look like Escape did nothing.
-    expect(keyAction(at(press("Escape"), box), model({ modal: "capture" }))).toEqual({
+    expect(keyAction(at(press("Escape"), box), model({ modal: { kind: "capture" } }))).toEqual({
       kind: "propose",
       proposal: { kind: "modalClosed" },
     });
@@ -153,14 +153,14 @@ describe("new note and open", () => {
   it("Space opens the new-note box from anywhere", () => {
     expect(keyAction(press(" "), model({ mode: "dump" }))).toEqual({
       kind: "propose",
-      proposal: { kind: "modalOpened", modal: "newNote" },
+      proposal: { kind: "modalOpened", modal: { kind: "newNote" } },
     });
   });
 
   it("O opens the palette", () => {
     expect(keyAction(press("o"), model())).toEqual({
       kind: "propose",
-      proposal: { kind: "modalOpened", modal: "open" },
+      proposal: { kind: "modalOpened", modal: { kind: "open" } },
     });
   });
 
@@ -178,8 +178,8 @@ describe("new note and open", () => {
   });
 
   it("Escape closes whichever modal is open", () => {
-    for (const which of ["capture", "newNote", "open"] as const) {
-      expect(keyAction(press("Escape"), model({ modal: which }))).toEqual({
+    for (const kind of ["capture", "newNote", "open"] as const) {
+      expect(keyAction(press("Escape"), model({ modal: { kind } }))).toEqual({
         kind: "propose",
         proposal: { kind: "modalClosed" },
       });
@@ -201,5 +201,30 @@ describe("number shortcuts", () => {
   it("stands down while a field has focus", () => {
     const search = document.createElement("input");
     expect(keyAction(at(press("3"), search), model())).toBeNull();
+  });
+});
+
+describe("i to start writing", () => {
+  it("goes back into the editor when a note is open", () => {
+    expect(keyAction(press("i"), model({ openPath: "a.md" }))).toEqual({
+      kind: "enterEditor",
+    });
+  });
+
+  it("does nothing in preview, where there is no editor to enter", () => {
+    expect(keyAction(press("i"), model({ openPath: "a.md", preview: true }))).toBeNull();
+  });
+
+  it("does nothing in the dump", () => {
+    expect(keyAction(press("i"), model({ mode: "dump", openPath: "a.md" }))).toBeNull();
+  });
+
+  it("does nothing with no note open", () => {
+    expect(keyAction(press("i"), model({ openPath: null }))).toBeNull();
+  });
+
+  it("stands down while a field has focus", () => {
+    const search = document.createElement("input");
+    expect(keyAction(at(press("i"), search), model({ openPath: "a.md" }))).toBeNull();
   });
 });

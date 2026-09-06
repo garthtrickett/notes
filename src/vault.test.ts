@@ -238,7 +238,7 @@ describe("quick capture from anywhere", () => {
     await settle(loop);
     expect(root.querySelector("#modal-input")).toBeNull();
 
-    loop.propose({ kind: "modalOpened", modal: "capture" });
+    loop.propose({ kind: "modalOpened", modal: { kind: "capture" } });
     await settle(loop);
 
     const box = root.querySelector<HTMLInputElement>("#modal-input");
@@ -266,7 +266,7 @@ describe("quick capture from anywhere", () => {
   it("closes without capturing when dismissed", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
-    loop.propose({ kind: "modalOpened", modal: "capture" });
+    loop.propose({ kind: "modalOpened", modal: { kind: "capture" } });
     await settle(loop);
 
     loop.propose({ kind: "modalClosed" });
@@ -279,7 +279,7 @@ describe("quick capture from anywhere", () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [] });
     loop.propose({ kind: "modeChanged", mode: "dump" });
-    loop.propose({ kind: "modalOpened", modal: "capture" });
+    loop.propose({ kind: "modalOpened", modal: { kind: "capture" } });
     await settle(loop);
     expect(root.querySelector("#modal-input")).not.toBeNull();
   });
@@ -317,7 +317,7 @@ describe("the open palette", () => {
         note("attachments/x.webp", { body: "AAAA", encoding: "base64" }),
       ],
     });
-    loop.propose({ kind: "modalOpened", modal: "open" });
+    loop.propose({ kind: "modalOpened", modal: { kind: "open" } });
     await settle(loop);
     return loop;
   };
@@ -372,7 +372,7 @@ describe("creating from the dump", () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [] });
     loop.propose({ kind: "modeChanged", mode: "dump" });
-    loop.propose({ kind: "modalOpened", modal: "newNote" });
+    loop.propose({ kind: "modalOpened", modal: { kind: "newNote" } });
     await settle(loop);
 
     loop.propose({ kind: "created", path: "inbox/fresh.md" });

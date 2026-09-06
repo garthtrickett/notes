@@ -545,3 +545,45 @@ kbd {
   opacity: 0.55;
 }
 
+/* Confirm before deleting. Cancel is first and focused; the destructive button
+   has to be reached for. */
+.confirm p {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.confirm strong {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirm-actions button {
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.confirm-actions button:focus-visible,
+.confirm-actions button:hover {
+  border-color: var(--accent);
+}
+
+.confirm-actions .danger {
+  color: #ffb4b4;
+  border-color: #6b3b3b;
+}
+
+.confirm-actions .danger:hover {
+  border-color: #ffb4b4;
+}
+
