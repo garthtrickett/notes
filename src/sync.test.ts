@@ -327,6 +327,30 @@ describe("conflict naming", () => {
     );
   });
 
+  it("never returns the path it was given", () => {
+    // A conflict copy conflicting again on the same day would otherwise resolve
+    // to itself: push, collide, push, forever.
+    const at = () => new Date("2026-09-06T10:00:00").getTime();
+    const result = conflictPath("a (conflict 2026-09-06).md", at);
+    expect(result).not.toBe("a (conflict 2026-09-06).md");
+    expect(result).toBe("a (conflict 2026-09-06 2).md");
+  });
+
+  it("steps past names already in use", () => {
+    const at = () => new Date("2026-09-06T10:00:00").getTime();
+    const used = new Set(["a (conflict 2026-09-06).md", "a (conflict 2026-09-06 2).md"]);
+    expect(conflictPath("a.md", at, (c) => used.has(c))).toBe(
+      "a (conflict 2026-09-06 3).md",
+    );
+  });
+
+  it("strips a numbered marker rather than nesting one", () => {
+    const at = () => new Date("2026-09-07T10:00:00").getTime();
+    expect(conflictPath("a (conflict 2026-09-06 3).md", at)).toBe(
+      "a (conflict 2026-09-07).md",
+    );
+  });
+
   it("marks a clean path normally", () => {
     const at = () => new Date("2026-09-07T10:00:00").getTime();
     expect(conflictPath("inbox/a.md", at)).toBe(

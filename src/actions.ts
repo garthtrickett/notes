@@ -138,15 +138,21 @@ export const pull = async (
   return { kind: "pulled", notes, gone };
 };
 
-const CONFLICT_SUFFIX = / \(conflict \d{4}-\d{2}-\d{2}\)$/;
+const CONFLICT_SUFFIX = / \(conflict \d{4}-\d{2}-\d{2}( \d+)?\)$/;
 
 // Where a losing local edit goes.
 //
-// Replaces an existing conflict marker rather than appending another. A conflict
-// copy that conflicts again would otherwise grow a second suffix, and a third,
-// each retry adding one — a copy of a copy is never what anyone wanted, and the
-// cascade is unbounded.
-export const conflictPath = (path: string, now: () => number): string => {
+// Two things this must never do. It must not append a second marker to an
+// already-conflicted copy, because each retry would add another without bound.
+// And it must not return a path that is already taken — above all the note's
+// own path, which is what happens when a conflict copy conflicts again on the
+// same day. That one is worse than a long name: the copy collides with itself,
+// pushes, collides, and loops forever.
+export const conflictPath = (
+  path: string,
+  now: () => number,
+  taken: (candidate: string) => boolean = () => false,
+): string => {
   const date = new Date(now()).toISOString().slice(0, 10);
   const dot = path.lastIndexOf(".");
   const stem = (dot === -1 ? path : path.slice(0, dot)).replace(
@@ -154,13 +160,27 @@ export const conflictPath = (path: string, now: () => number): string => {
     "",
   );
   const ext = dot === -1 ? "" : path.slice(dot);
-  return `${stem} (conflict ${date})${ext}`;
+  // The number goes *inside* the parentheses, so CONFLICT_SUFFIX still matches
+  // it and a later conflict strips the whole marker instead of nesting one.
+  const candidateFor = (n?: number): string =>
+    `${stem} (conflict ${date}${n === undefined ? "" : ` ${n}`})${ext}`;
+
+  const free = (candidate: string): boolean =>
+    candidate !== path && !taken(candidate);
+
+  if (free(candidateFor())) return candidateFor();
+  for (let n = 2; n <= 99; n += 1) {
+    if (free(candidateFor(n))) return candidateFor(n);
+  }
+  // Unreachable in practice, and still terminating if it were not.
+  return candidateFor(now());
 };
 
 export const push = async (
   github: Github,
   note: Note,
   now: () => number,
+  known: ReadonlyMap<string, Note> = new Map(),
 ): Promise<Proposal> => {
   if (note.deleted) {
     if (note.baseSha === null) return { kind: "removed", path: note.path };
@@ -184,7 +204,7 @@ export const push = async (
       return {
         kind: "conflicted",
         path: note.path,
-        copyPath: conflictPath(note.path, now),
+        copyPath: conflictPath(note.path, now, (c) => known.has(c)),
         body,
       };
     }

@@ -124,7 +124,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     const pending = [...model.notes.values()].find((n) => n.pending && !n.dirty);
     if (pending) {
       model.syncing = true;
-      idle = actions.push(github, pending, now).then(propose);
+      idle = actions.push(github, pending, now, model.notes).then(propose);
       return;
     }
 
