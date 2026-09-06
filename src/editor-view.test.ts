@@ -15,6 +15,7 @@ const openEditor = (
 ): { handle: EditorHandle; view: EditorView } => {
   const handle = createEditor({
     resolveImage,
+    resolveWikilink: () => "found",
     onEdit: hooks.onEdit ?? (() => {}),
     onPaste: () => {},
     onWikilink: () => {},

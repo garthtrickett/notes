@@ -30,6 +30,16 @@ nav {
   padding: 12px;
 }
 
+/* A grid item's automatic minimum size is its content, so both panes grew to
+   fit a long note instead of scrolling inside it — `main` stayed one screen
+   tall and everything past the fold was simply unreachable. This is the whole
+   reason nav's `overflow-y: auto` never did anything. */
+nav,
+section {
+  min-height: 0;
+  min-width: 0;
+}
+
 .new { display: flex; gap: 6px; margin-bottom: 12px; }
 
 .new input, .new button, .row, .delete {
@@ -84,7 +94,12 @@ nav li { display: flex; gap: 4px; margin-bottom: 4px; }
 }
 .delete { color: var(--muted); }
 
-section { display: flex; }
+/* Column, so the path bar, the editor and the backlinks stack and the editor
+   takes what is left rather than everything it wants. */
+section {
+  display: flex;
+  flex-direction: column;
+}
 
 #editor {
   flex: 1;
@@ -396,9 +411,23 @@ kbd {
 /* CodeMirror. The rule for all of it: markup is dimmed, never hidden, so
    nothing appears or disappears as the caret moves and no line ever reflows. */
 
+/* The flex child of `section` is the container lit renders, not the editor's own
+   div inside it — styling the inner one left the outer one free to grow. It takes
+   the space the path bar and backlinks leave and no more; without `min-height: 0`
+   a flex item grows to its content and the scroller never gets a boundary to
+   scroll against. */
+#editor-host {
+  flex: 1;
+  min-height: 0;
+}
+
 .cm-host,
 .cm-host .cm-editor {
   height: 100%;
+}
+
+.cm-host .cm-scroller {
+  max-height: 100%;
 }
 
 .cm-host .cm-editor {
@@ -473,6 +502,18 @@ kbd {
 .cm-md-wikilink {
   color: var(--link, #3b6ea5);
   cursor: pointer;
+}
+
+/* The same vocabulary the preview already used, so a link means the same thing
+   whichever surface you are looking at. */
+.cm-md-wikilink-missing {
+  color: #d08770;
+  border-bottom: 1px dashed currentColor;
+}
+
+.cm-md-wikilink-ambiguous {
+  color: #ebcb8b;
+  border-bottom: 1px dashed currentColor;
 }
 
 /* Inline, so a selection can run text -> picture -> text in one drag. The drag

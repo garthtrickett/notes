@@ -24,11 +24,17 @@ import {
 } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { spansFor, wikilinkAt, type ResolveImage } from "./decorate.ts";
+import {
+  spansFor,
+  wikilinkAt,
+  type ResolveImage,
+  type ResolveWikilink,
+} from "./decorate.ts";
 
 export interface EditorHooks {
   // Live, because an attachment can arrive while the note is open.
   readonly resolveImage: ResolveImage;
+  readonly resolveWikilink: ResolveWikilink;
   readonly onEdit: (body: string) => void;
   readonly onPaste: (event: ClipboardEvent, caret: number) => void;
   readonly onWikilink: (target: string) => void;
@@ -105,13 +111,17 @@ interface Built {
   readonly atomics: DecorationSet;
 }
 
-const buildDecorations = (view: EditorView, resolve: ResolveImage): Built => {
+const buildDecorations = (
+  view: EditorView,
+  resolve: ResolveImage,
+  resolveLink: ResolveWikilink,
+): Built => {
   const doc = view.state.doc.toString();
   const { from, to } = view.viewport;
   const ranges: Range<Decoration>[] = [];
   const atomic: Range<Decoration>[] = [];
 
-  for (const span of spansFor(doc, resolve, { from, to })) {
+  for (const span of spansFor(doc, resolve, { from, to }, resolveLink)) {
     if (span.kind === "line") {
       // Anchor to the real line start: a heading may be indented, and a line
       // decoration anywhere but position zero of the line is rejected.
@@ -139,7 +149,7 @@ const decorator = (hooks: EditorHooks) =>
       built: Built;
 
       constructor(view: EditorView) {
-        this.built = buildDecorations(view, hooks.resolveImage);
+        this.built = buildDecorations(view, hooks.resolveImage, hooks.resolveWikilink);
       }
 
       update(update: ViewUpdate): void {
@@ -147,7 +157,11 @@ const decorator = (hooks: EditorHooks) =>
           tr.effects.some((e) => e.is(rebuild)),
         );
         if (update.docChanged || update.viewportChanged || forced) {
-          this.built = buildDecorations(update.view, hooks.resolveImage);
+          this.built = buildDecorations(
+            update.view,
+            hooks.resolveImage,
+            hooks.resolveWikilink,
+          );
         }
       }
     },

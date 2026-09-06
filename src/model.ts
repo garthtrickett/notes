@@ -9,7 +9,7 @@
 // writer.
 
 import type { Revision, SyncError } from "./github.ts";
-import { rewriteLinks } from "./links.ts";
+import { resolveLink, rewriteLinks } from "./links.ts";
 import { describeProblem, normalizePath, pathProblem, type PathProblem } from "./paths.ts";
 import { buildTree, type TreeNode } from "./tree.ts";
 import { isDumpPath } from "./dump.ts";
@@ -179,6 +179,8 @@ export type Proposal =
   | { readonly kind: "jumped"; readonly index: number }
   // Back to numbering the top level.
   | { readonly kind: "unscoped" }
+  // A wikilink that could not be followed, so the click can say why.
+  | { readonly kind: "linkRefused"; readonly target: string }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
   | { readonly kind: "resumed" }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
@@ -549,6 +551,15 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
+    case "linkRefused": {
+      const resolved = resolveLink(p.target, m.notes);
+      m.error =
+        resolved.kind === "ambiguous"
+          ? `More than one note is called ${p.target}. Links match on the name alone, so rename one of them.`
+          : `Cannot follow ${p.target}.`;
+      return reject(m.error);
+    }
+
     case "unscoped": {
       m.numberScope = null;
       return null;
@@ -741,7 +752,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "modalClosed": {
-      m.error = null;
+      // Deliberately *not* clearing the error here. The new-note dialog closes
+      // itself the instant it submits, so clearing on close swallowed every
+      // refusal it produced — an unusable path just made the dialog vanish with
+      // nothing said. Clearing on open is what handles staleness.
       m.history = null;
       m.modal = null;
       // The palette starts fresh next time rather than resuming someone else's

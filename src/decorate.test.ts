@@ -278,3 +278,31 @@ describe("the remaining constructs", () => {
     expect(spans).toContainEqual({ kind: "mark", from: 0, to: 21, class: "cm-md-link" });
   });
 });
+
+describe("what a wikilink points at", () => {
+  const doc = "see [[here]] and [[gone]] and [[both]]";
+  const state = (target: string) =>
+    target === "gone" ? "missing" : target === "both" ? "ambiguous" : "found";
+
+  test("colours the three states differently", () => {
+    const spans = spansFor(doc, noImages, { from: 0, to: doc.length }, state);
+    const classes = spans
+      .filter((s) => s.kind === "mark" && s.class.includes("cm-md-wikilink"))
+      .map((s) => (s.kind === "mark" ? s.class : ""));
+    // The preview has always distinguished these. The editor showed all three
+    // alike, so an ambiguous link looked exactly like a working one.
+    expect(classes).toEqual([
+      "cm-md-wikilink",
+      "cm-md-wikilink cm-md-wikilink-missing",
+      "cm-md-wikilink cm-md-wikilink-ambiguous",
+    ]);
+  });
+
+  test("treats everything as found when nothing is asked", () => {
+    const spans = spansFor(doc, noImages);
+    const classes = spans
+      .filter((s) => s.kind === "mark" && s.class.includes("cm-md-wikilink"))
+      .map((s) => (s.kind === "mark" ? s.class : ""));
+    expect(new Set(classes)).toEqual(new Set(["cm-md-wikilink"]));
+  });
+})

@@ -25,6 +25,12 @@ export type Span =
 
 export type ResolveImage = (src: string) => string | null;
 
+// What a wikilink points at. The preview has always coloured these three
+// differently; the editor showed them all alike, so an ambiguous link looked
+// exactly like a working one and clicking it did nothing with nothing said.
+export type LinkState = "found" | "missing" | "ambiguous";
+export type ResolveWikilink = (target: string) => LinkState;
+
 const HEADING = /^ATXHeading(\d)$/;
 
 const MARK_CLASS: Readonly<Record<string, string>> = {
@@ -103,6 +109,7 @@ export const spansFor = (
   doc: string,
   resolveImage: ResolveImage,
   range: { from: number; to: number } = { from: 0, to: doc.length },
+  resolveWikilink: ResolveWikilink = () => "found",
 ): Span[] => {
   const spans: Span[] = [];
   const tree = markdownLanguage.parser.parse(doc);
@@ -219,13 +226,18 @@ export const spansFor = (
   });
 
   // The parser has no concept of a wikilink, so it gets a scan of its own.
+  const LINK_CLASS: Readonly<Record<LinkState, string>> = {
+    found: "cm-md-wikilink",
+    missing: "cm-md-wikilink cm-md-wikilink-missing",
+    ambiguous: "cm-md-wikilink cm-md-wikilink-ambiguous",
+  };
   for (const match of doc.slice(range.from, range.to).matchAll(WIKILINK)) {
     const at = range.from + (match.index ?? 0);
     spans.push({
       kind: "mark",
       from: at,
       to: at + match[0].length,
-      class: "cm-md-wikilink",
+      class: LINK_CLASS[resolveWikilink((match[1] ?? "").trim())],
     });
   }
 

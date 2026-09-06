@@ -18,7 +18,7 @@ import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
-import { followLink } from "./links.ts";
+import { followLink, resolveLink } from "./links.ts";
 
 export interface Deps {
   readonly db: IDBDatabase;
@@ -51,6 +51,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // Anything else is a change dispatched into the state that is already there.
   let lastEditorKey: string | null = null;
   let lastModal: string | null = null;
+  let lastPaletteIndex: number | null = null;
   const previewCache = createPreviewCache();
   // Everything currently in flight, not merely the most recent thing started.
   // A push can begin while a persist is still running — the first block is
@@ -83,18 +84,27 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // Created once, before the first paint, and outlives every one of them. lit is
   // handed an empty container and never touches what is inside it.
   const cm: EditorHandle = createEditor({
-          resolveImage: (src) => localImage(model, src),
-          onEdit: (body) => {
-            if (model.openPath !== null) {
-              propose({ kind: "edited", path: model.openPath, body });
-            }
-          },
-          onPaste: (event, caret) => {
-            if (model.openPath !== null) pasteImage(event, model.openPath, caret);
-          },
-          onWikilink: (target) => {
+    resolveImage: (src) => localImage(model, src),
+    // Asked at paint time, so a link starts working the moment the note it
+    // points at exists.
+    resolveWikilink: (target) => resolveLink(target, model.notes).kind,
+    onEdit: (body) => {
+      if (model.openPath !== null) {
+        propose({ kind: "edited", path: model.openPath, body });
+      }
+    },
+    onPaste: (event, caret) => {
+      if (model.openPath !== null) pasteImage(event, model.openPath, caret);
+    },
+    onWikilink: (target) => {
       const proposal = followLink(target, model.notes);
-      if (proposal !== null) propose(proposal);
+      if (proposal !== null) {
+        propose(proposal);
+        return;
+      }
+      // followLink says nothing for an ambiguous target, and a click that
+      // silently does nothing is how someone concludes the app is broken.
+      propose({ kind: "linkRefused", target });
     },
   });
 
@@ -132,6 +142,15 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         // safe answer is the one already under your fingers.
         root.querySelector<HTMLElement>("#modal-input")?.focus();
       }
+    }
+
+    // Arrow keys move the palette's selection, and past the tenth result it was
+    // moving out of sight — you were choosing blind and Enter opened something
+    // you could not see.
+    const palettePos = model.modal?.kind === "open" ? model.paletteIndex : null;
+    if (palettePos !== lastPaletteIndex) {
+      lastPaletteIndex = palettePos;
+      root.querySelector(".results .row.open")?.scrollIntoView({ block: "nearest" });
     }
 
     // The path box is uncontrolled while it has focus, so lit will not rewrite

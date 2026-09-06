@@ -639,3 +639,32 @@ describe("present — a message about where you were", () => {
     expect(m.error).toBeNull();
   });
 });
+
+describe("present — a link that cannot be followed", () => {
+  it("says why when two notes share a name", () => {
+    const m = hydrated(note("one/dup.md"), note("two/dup.md"), note("a.md"));
+    present(m, { kind: "linkRefused", target: "dup" });
+    // A click that silently does nothing is how someone concludes the app is
+    // broken.
+    expect(m.error).toContain("More than one note is called dup");
+  });
+
+  it("says something even when the reason is not ambiguity", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "linkRefused", target: "whatever" });
+    expect(m.error).not.toBeNull();
+  });
+});
+
+describe("present — a dialog closing must not eat a fresh refusal", () => {
+  it("keeps the message the new-note dialog just produced", () => {
+    const m = hydrated(note("target.md"));
+    // What the dialog does: propose the create, then close itself.
+    present(m, { kind: "created", path: "target.md/child" });
+    expect(m.error).toContain("nothing can live inside it");
+    present(m, { kind: "modalClosed" });
+    // Clearing here made an unusable path just close the dialog with nothing
+    // said at all.
+    expect(m.error).toContain("nothing can live inside it");
+  });
+});

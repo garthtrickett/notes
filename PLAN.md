@@ -1181,3 +1181,52 @@ Cleared now by the things that mean you have moved on: opening a note, changing
 view, and opening or closing a dialog. Deliberately not cleared by background
 work — a sync landing should not wipe a message you have not read yet.
 
+# Phase 10 — a second driving pass
+
+Four more, one of which was mine from phase 9.
+
+## 10.1 Neither pane was bounded, so a long note could not be scrolled
+
+`main` is a grid one screen tall, but a grid item's automatic minimum size is its
+content — so `nav` and `section` grew to 1285px inside an 860px `main` and
+everything past the fold was **unreachable**. `nav`'s `overflow-y: auto` had never
+done anything, and CodeMirror's scroller had no boundary to scroll against.
+
+Pre-existing, on desktop as well as on the phone, and confirmed as pre-existing
+rather than assumed: removing phase 9's `overflow-x` rule at runtime changed
+nothing.
+
+`min-height: 0` on both panes, `section` a column, and `flex: 1; min-height: 0`
+on `#editor-host`. Worth naming the mistake in between: the first attempt styled
+`.cm-host`, which is the editor's own div *inside* the container lit renders, so
+the element that was actually free to grow was left alone. Bounded now on both
+viewports, and verified by scrolling it.
+
+## 10.2 The palette's selection went out of sight
+
+Arrow keys moved it and the list never scrolled, so past the tenth result you
+were choosing blind and Enter opened something you could not see. The loop now
+scrolls the selected row into view when the index changes — the same kind of
+imperative touch-up as focusing a dialog, and for the same reason.
+
+## 10.3 A dialog closing ate the refusal it had just produced
+
+**Mine, from 9.5.** Clearing the error on `modalClosed` looked symmetrical with
+clearing it on open. It was not: the new-note dialog closes itself the instant it
+submits, so every refusal it produced was wiped in the same turn. Typing an
+unusable path made the dialog vanish with nothing said at all — a silent failure,
+which is the exact thing this codebase keeps warning itself about.
+
+Only `modalOpened`, `opened` and `modeChanged` clear it now. Opening handles
+staleness; closing only ever destroyed fresh information.
+
+## 10.4 The editor showed every wikilink alike
+
+The preview has always coloured resolved, missing and ambiguous links
+differently. The editor coloured all three the same, so an ambiguous link looked
+exactly like a working one — and clicking it did nothing, said nothing, and left
+you to conclude the app was broken.
+
+`spansFor` now takes a resolver alongside the image one and emits the same three
+states the preview uses, and a click that cannot be followed says why.
+
