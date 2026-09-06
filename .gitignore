@@ -27,3 +27,7 @@ bun-debug.log*
 
 # bun
 bun.lockb
+
+# vercel
+.vercel/
+.vercel

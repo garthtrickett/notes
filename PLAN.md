@@ -1089,3 +1089,18 @@ simply not been fetched yet is not a delete. And a failed batch sets
 `pullRemaining` to zero, handing the retry back to the existing backoff instead
 of letting nap spin against whatever just failed.
 
+## 8.10 Deployed
+
+Live at **https://notes-rust-iota.vercel.app** — a static Vite build on Vercel,
+no server side and nothing to configure there.
+
+`vercel.json` sets `bun run build` and one header: `Cache-Control: no-cache` on
+`/sw.js`. The worker is cache-first for assets, which is right when their URLs
+are content-hashed and wrong for the worker itself — a cached worker is a device
+that never gets a new version, and that is the failure this app already hit once
+in development.
+
+The site is public. That is not a leak: it holds no notes and no token. The token
+is per-device in localStorage and the vault is a separate repo, so someone
+opening the URL gets the settings screen and nothing else.
+
