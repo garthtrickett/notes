@@ -4,7 +4,11 @@
 // manifest. That is avoidable: hashed asset names are immutable, so caching them
 // as they are requested is correct and needs no build step.
 
-const CACHE = "notes-shell-v1";
+const CACHE = "notes-shell-v2";
+
+// Take over straight away rather than waiting for every tab to close, so a fix
+// to this file reaches people on their next reload.
+self.addEventListener("install", () => void self.skipWaiting());
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
@@ -54,12 +58,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Assets are hashed, so a cache hit is by definition the right bytes.
+  // Cache-first is only safe where the URL is content-hashed, which is exactly
+  // the build output and nothing else. Anything served from a stable path can
+  // change under the same URL, so serving a cached copy would pin it forever.
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      caches.match(request).then(
+        (hit) =>
+          hit ?? fetch(request).then((response) => cachePut(request, response)),
+      ),
+    );
+    return;
+  }
+
+  // Everything else: fresh when there is a network, cached when there is not.
   event.respondWith(
-    caches.match(request).then(
-      (hit) =>
-        hit ??
-        fetch(request).then((response) => cachePut(request, response)),
-    ),
+    fetch(request)
+      .then((response) => cachePut(request, response))
+      .then((response) => response ?? caches.match(request))
+      .catch(() => caches.match(request)),
   );
 });

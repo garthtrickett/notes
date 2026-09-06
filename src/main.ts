@@ -7,6 +7,30 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view.ts";
 import { canvasShrinker } from "./attachments.ts";
 
+// Worker lifecycle has nothing to do with whether a vault is configured, so it
+// runs before anything else. Putting it inside the configured branch left anyone
+// on the settings screen stuck with a stale worker and no way out.
+if ("serviceWorker" in navigator) {
+  if (import.meta.env.PROD) {
+    void navigator.serviceWorker.register("/sw.js");
+  } else {
+    // Never in dev. The worker is cache-first for assets, which is correct when
+    // their URLs are content-hashed and catastrophic when they are not: Vite
+    // serves modules from stable paths like /src/main.ts, so a cached copy is
+    // returned forever and a rebuilt app never reaches the browser.
+    //
+    // Tearing down whatever a previous production build registered means a dev
+    // reload heals itself instead of needing site data cleared by hand.
+    void navigator.serviceWorker
+      .getRegistrations()
+      .then((registrations) =>
+        Promise.all(registrations.map((r) => r.unregister())),
+      )
+      .then(() => caches.keys())
+      .then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
+  }
+}
+
 const root = document.getElementById("app");
 if (!root) throw new Error("#app is missing from index.html");
 
@@ -48,7 +72,4 @@ if (config === null) {
     if (document.visibilityState === "visible") refresh();
   });
 
-  if ("serviceWorker" in navigator) {
-    void navigator.serviceWorker.register("/sw.js");
-  }
 }
