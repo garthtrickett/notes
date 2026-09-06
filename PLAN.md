@@ -1230,3 +1230,72 @@ you to conclude the app was broken.
 `spansFor` now takes a resolver alongside the image one and emits the same three
 states the preview uses, and a click that cannot be followed says why.
 
+# Phase 11 — a third driving pass
+
+Four more, and the two most interesting are not in the app's own code.
+
+## 11.1 A dropped image did nothing
+
+Pasting a picture attached it; dragging the same file in from a file manager did
+nothing at all. CodeMirror's drop handler reads a dropped file with
+`readAsText`, then discards the result if it contains consecutive control
+characters — so a PNG was quietly thrown away. Verified live rather than assumed:
+dropping a `.txt` file inserted its contents, which is the same path.
+
+The lucky part is that the guard existed. Without it the drop would have pasted
+mojibake into the note.
+
+`drop` now goes to the same place a paste does, and only when an image is in the
+payload — anything else is still CodeMirror's to handle.
+
+## 11.2 The shell cache grew with every deploy
+
+Hashed asset names are immutable, which is what makes caching them safe, and also
+means each release adds a set that nothing removes. Ten entries had accumulated
+in a day of building.
+
+This matters more than housekeeping. **Cache Storage shares a quota with
+IndexedDB**, and this app's unsynced notes live in IndexedDB. A big enough shell
+cache brings eviction of the whole origin closer, and eviction takes the notes
+with it.
+
+Each navigation now prunes `/assets/` entries the freshly fetched page does not
+name. The page itself is the manifest — no build step, nothing to keep in step.
+Pruning is wrapped so it can never break the navigation it rode in on.
+
+And `navigator.storage.persist()` is now asked for at boot. It is a request the
+browser grants on its own terms, not a guarantee, which is exactly why it is
+worth asking and not worth waiting for.
+
+## 11.3 Naming a note into the bin filed it away silently
+
+`.trash/anything` in the new-note box created the note, put it somewhere the tree
+does not show, and said nothing — you typed a name, pressed Enter, and as far as
+the screen was concerned nothing happened.
+
+Creating and renaming into `.trash/` and `.archive/` are refused with a message.
+`moved` stays unguarded on purpose: it is the primitive filing itself is built
+from.
+
+## 11.4 The offline banner outlived being offline
+
+`online: true` cleared the retry cooldown but not the error, so "Offline — your
+edits are saved here and will sync later" stayed on screen until some later sync
+happened to succeed. Only that message is cleared: a rejected token is a rejected
+token whether or not there is a network.
+
+## Checked and sound
+
+Two tabs on one vault: no loss, both converge on reload. Offline load from the
+service worker. Restoring a note whose name has been taken since (`droptest (2).md`).
+Emptying the vault entirely — no crash, and `i` and the digits no-op safely.
+
+## Two things for the vault, not the code
+
+`examples/known-quirks.md` says pressing Enter in a list does not continue it.
+Under CodeMirror it does. The note is describing the app as it was.
+
+Nothing collects orphaned attachments: undo a pasted image and the bytes stay in
+the vault forever. Deliberate for now — deleting bytes because no note currently
+references them is how a link that was about to be pasted back loses its picture.
+

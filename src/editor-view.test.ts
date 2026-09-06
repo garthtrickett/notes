@@ -18,6 +18,7 @@ const openEditor = (
     resolveWikilink: () => "found",
     onEdit: hooks.onEdit ?? (() => {}),
     onPaste: () => {},
+    onDropFiles: () => false,
     onWikilink: () => {},
   });
   document.body.appendChild(handle.dom);

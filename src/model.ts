@@ -397,6 +397,14 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return refusePath(m, checked.path, checked.problem);
       }
       const path = checked.path;
+      // The bin and the archive are the app's, not places to file things by
+      // hand. Creating one here used to succeed silently and put the note
+      // somewhere the tree does not show — you typed a name, pressed Enter, and
+      // nothing appeared to happen.
+      if (isFiledPath(path)) {
+        m.error = `${path} is inside a folder this app manages. Pick another name.`;
+        return reject(m.error);
+      }
       m.error = null;
       m.forgotten.delete(path);
       m.notes.set(path, {
@@ -789,6 +797,12 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return refusePath(m, checked.path, checked.problem);
       }
       const to = checked.path;
+      // Same rule as creating. `moved` stays unguarded on purpose — it is the
+      // primitive filing itself is built from.
+      if (isFiledPath(to)) {
+        m.error = `${to} is inside a folder this app manages. Pick another name.`;
+        return reject(m.error);
+      }
       m.error = null;
 
       // A rename changes the note's identity, so every inbound link has to move
@@ -848,6 +862,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       if (p.online) {
         m.retryAt = 0;
         m.retryDelay = 0;
+        // And stop saying "offline", which the banner went on doing until some
+        // later sync happened to succeed. Only that message: an auth failure is
+        // still true whether or not there is a network.
+        if (m.syncError?.kind === "offline") m.syncError = null;
       }
       return null;
     }

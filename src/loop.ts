@@ -68,6 +68,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
 
   // Where the caret is differs by surface; what to do with a pasted image does
   // not (never duplicate rules).
+  // The clipboard and a drag hand over an image differently; what happens to it
+  // afterwards is the same (never duplicate rules).
+  const attachImage = (file: File, path: string, caret: number | null) => {
+    const note = model.notes.get(path);
+    if (!note) return;
+    track(actions.attach(file, note, caret ?? note.body.length, now, shrink).then(propose));
+  };
+
   const pasteImage = (event: ClipboardEvent, path: string, caret: number | null) => {
     const file = [...(event.clipboardData?.items ?? [])]
       .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
@@ -76,9 +84,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (!file) return; // a normal text paste; let the editor handle it
 
     event.preventDefault();
-    const note = model.notes.get(path);
-    if (!note) return;
-    track(actions.attach(file, note, caret ?? note.body.length, now, shrink).then(propose));
+    attachImage(file, path, caret);
   };
 
   // Created once, before the first paint, and outlives every one of them. lit is
@@ -95,6 +101,13 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     },
     onPaste: (event, caret) => {
       if (model.openPath !== null) pasteImage(event, model.openPath, caret);
+    },
+    onDropFiles: (files, caret) => {
+      const image = [...files].find((f) => f.type.startsWith("image/"));
+      // Anything else is left to CodeMirror, which will drop its text in.
+      if (image === undefined || model.openPath === null) return false;
+      attachImage(image, model.openPath, caret);
+      return true;
     },
     onWikilink: (target) => {
       const proposal = followLink(target, model.notes);

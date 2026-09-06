@@ -668,3 +668,49 @@ describe("present — a dialog closing must not eat a fresh refusal", () => {
     expect(m.error).toContain("nothing can live inside it");
   });
 });
+
+describe("present — the folders the app manages", () => {
+  it("refuses to create a note inside the bin", () => {
+    const m = hydrated(note("a.md"));
+    // This used to succeed: the note went straight into the bin, invisible in
+    // the tree, with nothing said. You typed a name and nothing happened.
+    expect(present(m, { kind: "created", path: ".trash/sneaky" })).not.toBeNull();
+    expect(m.error).toContain("a folder this app manages");
+    expect(filedIn(m, ".trash")).toEqual([]);
+  });
+
+  it("refuses to rename a note into the archive", () => {
+    const m = hydrated(note("a.md"));
+    expect(
+      present(m, { kind: "renamed", from: "a.md", to: ".archive/hidden.md" }),
+    ).not.toBeNull();
+    expect(openable(m).map((n) => n.path)).toEqual(["a.md"]);
+  });
+
+  it("still lets the app file things away itself", () => {
+    const m = hydrated(note("a.md"));
+    // `moved` is the primitive filing is built from, so it stays unguarded.
+    present(m, { kind: "archived", path: "a.md" });
+    expect(filedIn(m, ".archive").map((n) => n.path)).toEqual([".archive/a.md"]);
+  });
+});
+
+describe("present — coming back online", () => {
+  it("stops saying offline", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "syncFailed", error: { kind: "offline" } });
+    expect(m.syncError?.kind).toBe("offline");
+    present(m, { kind: "online", online: true });
+    // The banner used to go on claiming offline until some later sync happened
+    // to succeed.
+    expect(m.syncError).toBeNull();
+  });
+
+  it("leaves a message that is still true", () => {
+    const m = hydrated(note("a.md"));
+    present(m, { kind: "syncFailed", error: { kind: "auth" } });
+    present(m, { kind: "online", online: true });
+    // A rejected token is a rejected token whether or not there is a network.
+    expect(m.syncError?.kind).toBe("auth");
+  });
+});

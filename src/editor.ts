@@ -37,6 +37,9 @@ export interface EditorHooks {
   readonly resolveWikilink: ResolveWikilink;
   readonly onEdit: (body: string) => void;
   readonly onPaste: (event: ClipboardEvent, caret: number) => void;
+  // A file dragged in from outside. Same destination as a paste; only the
+  // gesture differs.
+  readonly onDropFiles: (files: FileList, caret: number) => boolean;
   readonly onWikilink: (target: string) => void;
 }
 
@@ -221,6 +224,20 @@ export const createEditor = (hooks: EditorHooks): EditorHandle => {
       paste: (event, view) => {
         hooks.onPaste(event, view.state.selection.main.head);
         return false; // a text paste is CodeMirror's business, not ours
+      },
+      // CodeMirror reads a dropped file with readAsText, which for an image
+      // means either mojibake or — because it rejects text with consecutive
+      // control characters — nothing at all. Dropping a picture did nothing
+      // while pasting the same picture worked.
+      drop: (event, view) => {
+        const files = event.dataTransfer?.files;
+        if (files === undefined || files.length === 0) return false;
+        const at =
+          view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+          view.state.selection.main.head;
+        if (!hooks.onDropFiles(files, at)) return false;
+        event.preventDefault();
+        return true;
       },
       // mousedown, not click: the caret has not moved yet, so this can still see
       // where it was.

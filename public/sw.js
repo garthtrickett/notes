@@ -32,6 +32,34 @@ const cachePut = (request, response) => {
   return response;
 };
 
+// Hashed asset names are immutable, which is what makes caching them safe — and
+// also means every deploy adds a new set that nothing ever removes. Left alone
+// the cache grew by the size of the app on each release, and Cache Storage
+// shares its quota with IndexedDB: a big enough shell cache brings eviction of
+// the whole origin closer, and this app's unsynced notes live in IndexedDB.
+//
+// The freshly fetched page names exactly the assets that are still wanted.
+// Anything else under /assets/ belongs to a build nobody is running.
+const pruneAssets = async (response) => {
+  if (!response || !response.ok) return response;
+  try {
+    const html = await response.clone().text();
+    const wanted = new Set(
+      [...html.matchAll(/\/assets\/[A-Za-z0-9._-]+/g)].map((m) => m[0]),
+    );
+    const cache = await caches.open(CACHE);
+    for (const request of await cache.keys()) {
+      const path = new URL(request.url).pathname;
+      if (path.startsWith("/assets/") && !wanted.has(path)) {
+        await cache.delete(request);
+      }
+    }
+  } catch {
+    // Pruning is housekeeping. Never let it break the navigation it rode in on.
+  }
+  return response;
+};
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -45,6 +73,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => cachePut(request, response))
+        .then((response) => pruneAssets(response))
         .catch(
           async () =>
             (await caches.match(request)) ??
