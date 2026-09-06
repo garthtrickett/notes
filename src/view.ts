@@ -114,7 +114,12 @@ const editor = (model: Model, propose: Propose, onPaste: PasteHandler) => {
       </button>
     </div>
     ${model.preview
-      ? html`<div class="preview">${preview(model, path, propose)}</div>`
+      ? html`<div
+          class="preview"
+          @click=${(e: Event) => onPreviewClick(e, model, propose)}
+        >
+          ${preview(model, path)}
+        </div>`
       : html`<textarea
           id="editor"
           spellcheck="false"
@@ -130,48 +135,90 @@ const editor = (model: Model, propose: Propose, onPaste: PasteHandler) => {
   `;
 };
 
-// Rendered into a real fragment and sanitised, then handed to lit as a node —
+// Rendered into a real element and sanitised, then handed to lit as a node —
 // never as a string, so there is no path that injects unfiltered markup.
-const preview = (model: Model, path: string, propose: Propose) => {
-  const body = model.notes.get(path)?.body ?? "";
-  const fragment = renderMarkdown(body, document, (src) => {
-    // A relative source is an attachment in this vault; anything absolute is
-    // somebody else's problem and left alone.
-    if (/^[a-z]+:/i.test(src) || src.startsWith("//")) return null;
-    const record = model.notes.get(src.replace(/^\.?\//, ""));
-    if (!record || record.deleted || record.encoding !== "base64") return null;
-    return dataUrlOf(record.body, record.path);
-  });
+//
+// The node is cached, and that is not an optimisation. lit-html re-inserts a
+// Node value whenever its identity changes, so returning a fresh fragment each
+// paint tore the whole preview down and rebuilt it on *every* render — several
+// times per sync, re-decoding every image. That is the flash.
+let cachedKey: string | null = null;
+let cachedNode: HTMLElement | null = null;
 
-  // A wikilink became an ordinary anchor; make it navigate the vault instead of
-  // the page, and mark the ones that point at nothing yet.
-  for (const anchor of [...fragment.querySelectorAll("a")]) {
+const WIKILINK_SCAN = /\[\[([^\]\n]+)\]\]/g;
+const IMAGE_SCAN = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+
+// A relative source is an attachment in this vault; anything absolute is
+// somebody else's problem and left alone.
+const localImage = (model: Model, src: string): string | null => {
+  if (/^[a-z]+:/i.test(src) || src.startsWith("//")) return null;
+  const record = model.notes.get(src.replace(/^\.?\//, ""));
+  if (!record || record.deleted || record.encoding !== "base64") return null;
+  return dataUrlOf(record.body, record.path);
+};
+
+// Everything the rendered node depends on. The body is not enough: a link
+// resolves against the whole vault, so a note appearing elsewhere changes how
+// this one should look without changing a character of it.
+const previewKey = (model: Model, path: string, body: string): string => {
+  const links = [...body.matchAll(WIKILINK_SCAN)].map(
+    (m) => `${m[1]}=${resolveLink((m[1] ?? "").trim(), model.notes).kind}`,
+  );
+  const images = [...body.matchAll(IMAGE_SCAN)].map(
+    (m) => `${m[1]}=${localImage(model, m[1] ?? "") === null ? "0" : "1"}`,
+  );
+  return [path, body, ...links, ...images].join("\u0000");
+};
+
+const preview = (model: Model, path: string): HTMLElement => {
+  const body = model.notes.get(path)?.body ?? "";
+  const key = previewKey(model, path, body);
+  if (key === cachedKey && cachedNode !== null) return cachedNode;
+
+  const container = document.createElement("div");
+  container.className = "preview-body";
+  container.append(renderMarkdown(body, document, (src) => localImage(model, src)));
+
+  // A wikilink became an ordinary anchor. It carries its target as data and no
+  // listener at all: one delegated handler on the container resolves at click
+  // time, against the model as it is then rather than as it was when this was
+  // built. That is what makes caching the node safe.
+  for (const anchor of [...container.querySelectorAll("a")]) {
     const href = anchor.getAttribute("href") ?? "";
     if (!href.startsWith("#note:")) continue;
     const target = decodeURIComponent(href.slice("#note:".length));
+    anchor.dataset.note = target;
+
     const resolved = resolveLink(target, model.notes);
-    if (resolved.kind === "found") {
-      anchor.addEventListener("click", (e) => {
-        e.preventDefault();
-        propose({ kind: "opened", path: resolved.path });
-      });
-    } else {
-      // Linking to a note you have not written yet is normal. Say so rather
-      // than failing silently.
-      anchor.classList.add(resolved.kind === "missing" ? "unresolved" : "ambiguous");
-      anchor.title =
-        resolved.kind === "missing"
-          ? "No note yet — click to create it"
-          : `Ambiguous: ${resolved.paths.join(", ")}`;
-      anchor.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (resolved.kind === "missing") {
-          propose({ kind: "created", path: `${target}.md`.replace(/\.md\.md$/, ".md") });
-        }
-      });
-    }
+    if (resolved.kind === "found") continue;
+    // Linking to a note you have not written yet is normal. Say so rather than
+    // failing silently.
+    anchor.classList.add(resolved.kind === "missing" ? "unresolved" : "ambiguous");
+    anchor.title =
+      resolved.kind === "missing"
+        ? "No note yet — click to create it"
+        : `Ambiguous: ${resolved.paths.join(", ")}`;
   }
-  return fragment;
+
+  cachedKey = key;
+  cachedNode = container;
+  return container;
+};
+
+const onPreviewClick = (event: Event, model: Model, propose: Propose): void => {
+  const anchor = (event.target as HTMLElement | null)?.closest?.("a[data-note]");
+  if (!(anchor instanceof HTMLAnchorElement)) return;
+  event.preventDefault();
+
+  const target = anchor.dataset.note ?? "";
+  const resolved = resolveLink(target, model.notes);
+  if (resolved.kind === "found") {
+    propose({ kind: "opened", path: resolved.path });
+    return;
+  }
+  if (resolved.kind === "missing") {
+    propose({ kind: "created", path: target });
+  }
 };
 
 const backlinks = (model: Model, path: string, propose: Propose) => {

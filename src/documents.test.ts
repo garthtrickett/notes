@@ -342,3 +342,102 @@ describe("the editor when the model changes underneath it", () => {
     expect(editor.selectionStart).toBe(5);
   });
 });
+
+describe("the preview does not thrash the DOM", () => {
+  // Scoped to the preview, not the whole app: a pull that adds a note is
+  // *supposed* to add a row to the tree. The claim here is only that the
+  // rendered note is left alone.
+  const churn = async (loop: Loop, act: () => void) => {
+    const watched = root.querySelector(".preview");
+    if (!watched) throw new Error("not in preview");
+    let removed = 0;
+    let added = 0;
+    const observer = new MutationObserver((records) => {
+      for (const r of records) {
+        removed += r.removedNodes.length;
+        added += r.addedNodes.length;
+      }
+    });
+    observer.observe(watched, { childList: true, subtree: true });
+    act();
+    await settle(loop);
+    observer.disconnect();
+    return { removed, added };
+  };
+
+  const inPreview = async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("a.md", "# Title\n\nSome text with [[b]].\n"), note("b.md", "")],
+    });
+    loop.propose({ kind: "previewToggled" });
+    await settle(loop);
+    return loop;
+  };
+
+  it("touches nothing when a proposal changes nothing it renders", async () => {
+    const loop = await inPreview();
+    // A sync fires several proposals. Rebuilding the preview on each is the
+    // flash: images are re-decoded every time.
+    const churned = await churn(loop, () => loop.propose({ kind: "resumed" }));
+    expect(churned).toEqual({ removed: 0, added: 0 });
+  });
+
+  it("touches nothing when an unrelated note arrives from a pull", async () => {
+    const loop = await inPreview();
+    const churned = await churn(loop, () =>
+      loop.propose({
+        kind: "pulled",
+        notes: [{ ...note("elsewhere.md", "theirs"), baseSha: "s2" }],
+        gone: [],
+      }),
+    );
+    expect(churned).toEqual({ removed: 0, added: 0 });
+  });
+
+  it("does rebuild when the note itself changes", async () => {
+    const loop = await inPreview();
+    const churned = await churn(loop, () =>
+      loop.propose({ kind: "edited", path: "a.md", body: "# Different\n" }),
+    );
+    expect(churned.added).toBeGreaterThan(0);
+  });
+
+  it("rebuilds when a link's target appears, since it should stop looking broken", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md", "see [[ghost]]")] });
+    loop.propose({ kind: "previewToggled" });
+    await settle(loop);
+    expect(root.querySelector("a.unresolved")).not.toBeNull();
+
+    // The body did not change, but what it means did.
+    loop.propose({
+      kind: "pulled",
+      notes: [{ ...note("ghost.md", ""), baseSha: "s2" }],
+      gone: [],
+    });
+    await settle(loop);
+    expect(root.querySelector("a.unresolved")).toBeNull();
+  });
+
+  it("follows a link through the delegated handler", async () => {
+    const loop = await inPreview();
+    const link = root.querySelector<HTMLAnchorElement>("a[data-note]");
+    expect(link).not.toBeNull();
+    link!.click();
+    await settle(loop);
+    expect(loop.model.openPath).toBe("b.md");
+  });
+
+  it("offers to create a note that does not exist yet", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md", "see [[ghost]]")] });
+    loop.propose({ kind: "previewToggled" });
+    await settle(loop);
+
+    root.querySelector<HTMLAnchorElement>("a[data-note]")!.click();
+    await settle(loop);
+    expect(loop.model.notes.has("ghost.md")).toBe(true);
+  });
+});
