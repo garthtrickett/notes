@@ -48,6 +48,15 @@ const decode = (base64: string): string => {
   return new TextDecoder().decode(bytes);
 };
 
+// An allowlist, not a denylist. A symlink is reported as a blob whose content is
+// the path it points at, so treating one as a note would show that path as the
+// body — and saving it would replace the link with a plain file. Submodules are
+// worse. Anything that is not an ordinary file is not a note.
+const REGULAR_FILE_MODES = new Set(["100644", "100755"]);
+
+const isRegularFile = (entry: { type?: string; mode?: string }): boolean =>
+  entry.type === "blob" && REGULAR_FILE_MODES.has(entry.mode ?? "");
+
 const statusToError = (status: number): SyncError => {
   if (status === 401 || status === 403) return { kind: "auth" };
   if (status === 404) return { kind: "notFound" };
@@ -90,12 +99,12 @@ export const createGithub = (config: Config): Github => {
       if (!res.value.ok) return err(statusToError(res.value.status));
 
       const body = await json<{
-        tree?: { path?: string; sha?: string; type?: string }[];
+        tree?: { path?: string; sha?: string; type?: string; mode?: string }[];
       }>(res.value);
       if (!body.ok) return body;
 
       const entries: RemoteEntry[] = (body.value.tree ?? [])
-        .filter((e) => e.type === "blob" && e.path && e.sha)
+        .filter((e) => e.path && e.sha && isRegularFile(e))
         .map((e) => ({ path: e.path as string, sha: e.sha as string }));
       return ok(entries);
     },
