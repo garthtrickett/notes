@@ -1,4 +1,5 @@
 import type { TreeNode } from "./tree.ts";
+import { dropTarget } from "./view.ts";
 import { describe, expect, it } from "bun:test";
 import { createModel, present, type Model, type Note, noteTree, numberedRows, openable, filedIn } from "./model.ts";
 
@@ -464,5 +465,67 @@ describe("present — the bin and the archive", () => {
     // present returns the rejection; it is the loop that shows it.
     expect(present(m, { kind: "restored", path: "a.md" })).not.toBeNull();
     expect(openable(m).map((n) => n.path)).toEqual(["a.md"]);
+  });
+});
+
+describe("present — moving things about", () => {
+  it("moves a folder and everything under it", () => {
+    const m = hydrated(
+      note("apple/one.md"),
+      note("apple/deep/two.md"),
+      note("zebra/keep.md"),
+    );
+    present(m, { kind: "folderMoved", from: "apple", to: "zebra/apple" });
+    expect(openable(m).map((n) => n.path).sort()).toEqual([
+      "zebra/apple/deep/two.md",
+      "zebra/apple/one.md",
+      "zebra/keep.md",
+    ]);
+  });
+
+  it("keeps an open folder open where it lands", () => {
+    const m = hydrated(note("apple/one.md"), note("zebra/keep.md"));
+    present(m, { kind: "folderToggled", path: "apple" });
+    present(m, { kind: "folderMoved", from: "apple", to: "zebra/apple" });
+    expect(m.expanded.has("zebra/apple")).toBe(true);
+    expect(m.expanded.has("apple")).toBe(false);
+  });
+
+  it("refuses to move a folder inside itself", () => {
+    const m = hydrated(note("apple/one.md"));
+    expect(
+      present(m, { kind: "folderMoved", from: "apple", to: "apple/inner" }),
+    ).not.toBeNull();
+    expect(openable(m).map((n) => n.path)).toEqual(["apple/one.md"]);
+  });
+
+  it("carries the open note with a folder move", () => {
+    const m = hydrated(note("apple/one.md"), note("zebra/keep.md"));
+    present(m, { kind: "opened", path: "apple/one.md" });
+    present(m, { kind: "folderMoved", from: "apple", to: "zebra/apple" });
+    expect(m.openPath).toBe("zebra/apple/one.md");
+  });
+});
+
+describe("where a dragged row lands", () => {
+  it("puts a note inside the folder it was dropped on", () => {
+    expect(dropTarget("a.md", "apple")).toBe("apple/a.md");
+    expect(dropTarget("apple/a.md", "zebra")).toBe("zebra/a.md");
+  });
+
+  it("puts it at the root when dropped on nothing", () => {
+    expect(dropTarget("apple/a.md", null)).toBe("a.md");
+  });
+
+  it("does nothing when it would not move", () => {
+    expect(dropTarget("apple/a.md", "apple")).toBeNull();
+    expect(dropTarget("a.md", null)).toBeNull();
+  });
+
+  it("refuses to put a folder inside itself or its own child", () => {
+    expect(dropTarget("apple", "apple")).toBeNull();
+    expect(dropTarget("apple", "apple/deep")).toBeNull();
+    // Somewhere else is fine.
+    expect(dropTarget("apple", "zebra")).toBe("zebra/apple");
   });
 });

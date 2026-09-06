@@ -44,6 +44,57 @@ export interface ViewCtx {
 const badge = (index: number | null) =>
   index === null ? nothing : html`<kbd class="num">${index}</kbd>`;
 
+// Dragging a row moves what it stands for. The payload is the path, and the drop
+// target works out the rest — so a note and a folder are dragged the same way.
+const DRAG_TYPE = "text/x-note-path";
+
+// The payload says what is being dragged as well as where it came from: a
+// folder move is every note under it, which is a different proposal.
+const dragSource = (path: string, folder: boolean) => (event: DragEvent) => {
+  event.dataTransfer?.setData(DRAG_TYPE, `${folder ? "folder" : "note"}:${path}`);
+  event.dataTransfer?.setData("text/plain", path);
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  event.stopPropagation();
+};
+
+// Where a dragged path lands if dropped on `folder` — null when the move would
+// be a no-op or nonsense, which is also what stops a folder being dropped into
+// itself.
+export const dropTarget = (from: string, folder: string | null): string | null => {
+  const name = from.slice(from.lastIndexOf("/") + 1);
+  const to = folder === null ? name : `${folder}/${name}`;
+  if (to === from) return null;
+  // A folder cannot become its own descendant, and a note cannot land inside
+  // itself either.
+  if (folder !== null && (folder === from || folder.startsWith(`${from}/`))) {
+    return null;
+  }
+  return to;
+};
+
+const dropZone = (folder: string | null, propose: Propose) => ({
+  onDragOver: (event: DragEvent) => {
+    if (event.dataTransfer?.types.includes(DRAG_TYPE) !== true) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  },
+  onDrop: (event: DragEvent) => {
+    const payload = event.dataTransfer?.getData(DRAG_TYPE) ?? "";
+    const [kind, ...rest] = payload.split(":");
+    const from = rest.join(":");
+    if (from === "") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const to = dropTarget(from, folder);
+    if (to === null) return;
+    propose(
+      kind === "folder"
+        ? { kind: "folderMoved", from, to }
+        : { kind: "renamed", from, to },
+    );
+  },
+});
+
 // Which rows wear a digit, keyed by path. Built from the same function the
 // digits index into, so a badge cannot point somewhere its key does not go.
 const badgesFor = (model: Model): Map<string, number> => {
@@ -65,6 +116,8 @@ const noteRow = (
   <div class="leaf">
     <button
       class="row ${note.path === openPath ? "open" : ""}"
+      draggable="true"
+      @dragstart=${dragSource(note.path, false)}
       @click=${() => propose({ kind: "opened", path: note.path })}
     >
       ${badge(index)}
@@ -108,6 +161,10 @@ const treeNodes = (
         <button
           class="row folder"
           aria-expanded=${open ? "true" : "false"}
+          draggable="true"
+          @dragstart=${dragSource(node.path, true)}
+          @dragover=${dropZone(node.path, propose).onDragOver}
+          @drop=${dropZone(node.path, propose).onDrop}
           @click=${() => propose({ kind: "folderToggled", path: node.path })}
         >
           ${badge(index)}
@@ -666,7 +723,13 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
     <main>
       <nav>
         ${tabs(model, propose)}
-        <ul>${treeNodes(noteTree(model), model, propose, 0, badgesFor(model))}</ul>
+        <ul
+          class="tree"
+          @dragover=${dropZone(null, propose).onDragOver}
+          @drop=${dropZone(null, propose).onDrop}
+        >
+          ${treeNodes(noteTree(model), model, propose, 0, badgesFor(model))}
+        </ul>
       </nav>
       <section>${editor(model, ctx)}</section>
       ${modal(model, propose, onCapture)}

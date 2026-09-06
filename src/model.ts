@@ -146,6 +146,7 @@ export type Proposal =
   | { readonly kind: "modeChanged"; readonly mode: Mode }
   | { readonly kind: "folderToggled"; readonly path: string }
   | { readonly kind: "folderDeleted"; readonly path: string }
+  | { readonly kind: "folderMoved"; readonly from: string; readonly to: string }
   // Which top-level row, counting from zero, as shown in the tree.
   | { readonly kind: "jumped"; readonly index: number }
   // Back to numbering the top level.
@@ -504,6 +505,41 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "unscoped": {
+      m.numberScope = null;
+      return null;
+    }
+
+    case "folderMoved": {
+      const prefix = `${p.from}/`;
+      // Snapshotted before anything moves: each note is renamed once, and the
+      // list must not shift underneath the loop.
+      const moving = visible(m).filter((n) => n.path.startsWith(prefix));
+      if (moving.length === 0) {
+        return reject(`Cannot move ${p.from}: no such folder.`);
+      }
+      if (p.to === p.from || p.to.startsWith(prefix)) {
+        return reject(`Cannot move ${p.from} inside itself.`);
+      }
+      for (const note of moving) {
+        // Each one is a rename, so links come along. Folder moves leave
+        // basenames alone, so in practice nothing needs rewriting — the rule is
+        // shared rather than assumed away.
+        const rejection = present(m, {
+          kind: "renamed",
+          from: note.path,
+          to: `${p.to}/${note.path.slice(prefix.length)}`,
+        });
+        // A refusal partway leaves the notes already moved where they are. That
+        // is honest: they moved, and the message says which one stopped.
+        if (rejection !== null) return rejection;
+      }
+      // Whatever was open stays open, and open folders stay open.
+      for (const open of [...m.expanded]) {
+        if (open !== p.from && !open.startsWith(prefix)) continue;
+        m.expanded.delete(open);
+        const suffix = open === p.from ? "" : open.slice(prefix.length);
+        m.expanded.add(suffix === "" ? p.to : `${p.to}/${suffix}`);
+      }
       m.numberScope = null;
       return null;
     }

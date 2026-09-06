@@ -621,3 +621,11 @@ kbd {
 
 .filed button:hover { border-color: var(--accent); }
 
+/* Dragging a row moves it. The grab cursor is the only affordance; a drop
+   highlight would need state the tree does not otherwise keep. */
+.row[draggable="true"] { cursor: grab; }
+.row[draggable="true"]:active { cursor: grabbing; }
+/* The empty space below the tree is the root, so something can be moved out of
+   a folder without another folder to aim at. */
+ul.tree { min-height: 100%; }
+
