@@ -48,13 +48,93 @@ Everything enters at the top and leaves at the bottom. Nothing mutates outside
 | Architecture | SAM (State-Action-Model) | One mutation point, serialized. Structurally prevents the concurrent read-modify-write class of bug. The NAP is where the sync engine lives. |
 | View | `lit-html` standalone | Pure function from model to DOM — exactly the `S` SAM wants. No web components, no shadow DOM, no base class. ~5 KB. |
 | Errors | Hand-rolled `Result<T, E>` | ~20 lines. Typed errors + exhaustive handling with no runtime and nothing to cast away at a boundary. |
-| Editor | `<textarea>`, **uncontrolled** | Native control behaves correctly on mobile keyboards. No WYSIWYG: the markdown → doc-tree → markdown round trip is lossy exactly where people notice, and it costs more than every other feature combined. |
+| Editor | `<textarea>`, **uncontrolled** — see *The editor, revisited* below | Native control behaves correctly on mobile keyboards. No WYSIWYG: the markdown → doc-tree → markdown round trip is lossy exactly where people notice, and it costs more than every other feature combined. That reasoning still stands and is not reversed; what follows is a third option it did not consider. |
 | Markdown → HTML | `marked` + a hand-rolled sanitizer | An earlier row here specified `remark` and rejected `marked`, on the grounds that finding `[[wikilinks]]` needed an AST. It does not — a wikilink is a three-line regex — so the only remaining job is rendering, which `marked` does in a third of the weight. Raw HTML is stripped from the output rather than trusted, since an agent may summarise a web page into a note. |
 | Search | `Array.filter` | 1,000 notes × 2 KB is 2 MB. Add FTS when it's measurably slow, not before. |
 | Toolchain | Bun | Fast install, runs TS directly, built-in test runner and `.env`. Low stakes — there is no production runtime, so the compat surface is Vite + tests. `npm i && node` is a one-command exit. |
 | Build | Vite → PWA | |
 
 ---
+
+
+## The editor, revisited
+
+**Decision: one editing surface, on CodeMirror 6 — conditional on a mobile
+spike.** Build detail is `PLAN.md` phase 6; this records what was chosen and why,
+and is the only copy of the reasoning.
+
+### This is not the WYSIWYG the row above rejects
+
+Worth stating plainly, because otherwise the two read as a contradiction.
+
+The original decision rejected a **document model**: parse markdown into a tree,
+edit the tree, serialise back. The round trip is lossy at whitespace, list
+markers, code fences and footnotes, and it would destroy semantic line breaks,
+which two other decisions depend on.
+
+CodeMirror is not that. The document **is** the markdown text, always. Styling is
+decoration painted over it — headings drawn larger, `##` dimmed rather than
+removed, images drawn as widgets over their own source. Nothing parses to a tree
+and writes back, so nothing round-trips, so the original objection simply does
+not apply. The earlier reasoning survives intact; it was answering a different
+question.
+
+### What forced a library, when nothing else did
+
+Selecting text → an inline image → text as one range, then moving it.
+
+Every cheaper option was examined and each has a ceiling. A textarea with a
+styled overlay cannot change font size, because the overlay must match its
+metrics character for character. The Custom Highlight API is paint-only by
+design, for the same reason. A block editor — rendered blocks, a textarea for
+the focused one — needs no library at all, and cross-block selection is precisely
+its one stated weakness.
+
+So the requirement is what decides it, not the aesthetic.
+
+### The Ulysses rules, which are the scope
+
+Markup stays **visible** and subordinate rather than hidden. That is the design,
+not a limitation, and it removes the largest source of complexity in a live
+preview editor: nothing appears or disappears as the caret moves, so nothing
+reflows. Preview stops being a mode; a rendered view becomes export, if it exists
+at all.
+
+### What it removes
+
+More than it adds, which is the only version worth doing: preview mode and its
+`E` shortcut, the preview node cache, `render-markdown.ts`, `marked`, and
+`syncEditorValue`'s hand-rolled caret arithmetic — CodeMirror maps selections
+through transactions itself.
+
+And almost the whole XSS surface, since nothing renders untrusted markdown to
+HTML any more. The exception is named in the plan: the image widget, whose `src`
+is a `data:` URL built from our own IndexedDB bytes, with the mime derived from
+the extension against a fixed allowlist that never includes `image/svg+xml`.
+
+### Costs accepted, if it lands
+
+- **~200–250 KB minified**, fetched once and held by the service worker. Measure
+  on the real build rather than trusting that figure.
+- **A contenteditable surface on mobile.** CodeMirror 6 was rewritten with mobile
+  as a goal and Obsidian ships it at scale, so this is a risk to test rather than
+  a known problem — but it is the risk.
+- **Accessibility.** A `<textarea>` is natively accessible; CodeMirror relies on
+  its own ARIA. Check with a screen reader *before* deleting the textarea path.
+- **Two editors during rollout**, behind a device-local flag. The trigger for
+  removing it is written into the plan, because drifting into keeping both is the
+  likeliest bad outcome — worse than either editor alone.
+
+### The condition
+
+An hour-long spike on a real phone decides it: drag-select across an inline
+image, copy, paste. If that fails on a touch device the decision is void and the
+textarea stays, with the cheap consolation prize of dimming markup and colouring
+headings via an overlay — no size hierarchy, no inline images, no library.
+
+The mobile question has already been asserted in both directions in this project
+without evidence. It gets answered by a thumb, not by argument.
+
 
 ## Repo layout
 
