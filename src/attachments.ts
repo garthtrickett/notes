@@ -8,10 +8,14 @@ const QUALITY = 0.85;
 // than commit it.
 export const MAX_BYTES = 1_000_000;
 
-// The one list of what an image is: which extensions count as binary, and what
-// mime each becomes. Two lists would be a rule written twice, and the pair that
-// matters most is that neither of them says svg — an SVG is a document that can
-// carry script, and nothing in a vault needs one.
+// The one list of what a media file is: which extensions count as binary, and
+// what mime each becomes. Two lists would be a rule written twice, and the pair
+// that matters most is that neither of them says svg — an SVG is a document
+// that can carry script, and nothing in a vault needs one.
+//
+// Video is here because a vault of surfing clips is a real thing to keep, and
+// because the alternative — a link out to somewhere else — breaks the moment
+// the repo is private. Neither mp4 nor webm can carry script.
 const IMAGE_MIME: Readonly<Record<string, string>> = {
   webp: "image/webp",
   png: "image/png",
@@ -21,9 +25,21 @@ const IMAGE_MIME: Readonly<Record<string, string>> = {
   avif: "image/avif",
 };
 
+const VIDEO_MIME: Readonly<Record<string, string>> = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+};
+
+const MEDIA_MIME: Readonly<Record<string, string>> = { ...IMAGE_MIME, ...VIDEO_MIME };
+
 const BINARY_EXTENSIONS = new Set(
-  Object.keys(IMAGE_MIME).map((ext) => `.${ext}`),
+  Object.keys(MEDIA_MIME).map((ext) => `.${ext}`),
 );
+
+export const isVideoPath = (path: string): boolean => {
+  const dot = path.lastIndexOf(".");
+  return dot !== -1 && `${path.slice(dot + 1).toLowerCase()}` in VIDEO_MIME;
+};
 
 // Decided by extension, not folder, so an image is an image wherever it sits.
 export const isBinaryPath = (path: string): boolean => {
@@ -73,7 +89,7 @@ export const base64Of = (bytes: ArrayBuffer): string => {
 export const dataUrlOf = (base64: string, path: string): string | null => {
   const dot = path.lastIndexOf(".");
   const ext = dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
-  const mime = IMAGE_MIME[ext];
+  const mime = MEDIA_MIME[ext];
   return mime === undefined ? null : `data:${mime};base64,${base64}`;
 };
 

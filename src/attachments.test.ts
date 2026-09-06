@@ -8,6 +8,7 @@ import {
   isBinaryPath,
   MAX_BYTES,
   shortHash,
+  isVideoPath,
 } from "./attachments.ts";
 import { attach } from "./actions.ts";
 import { createModel, present, visible, type Note } from "./model.ts";
@@ -501,5 +502,27 @@ describe("an image that takes a while to shrink", () => {
     // At worst a few characters out of place. Never a lost sentence, and never
     // a crash.
     expect(m.notes.get("a.md")?.body).toBe("cut![](attachments/x.webp)");
+  });
+});
+
+describe("video attachments", () => {
+  it("counts mp4 and webm as binary, so they sync as bytes not text", () => {
+    // Read as utf8 they would arrive corrupted, silently.
+    expect(isBinaryPath("attachments/clip.mp4")).toBe(true);
+    expect(isBinaryPath("attachments/clip.webm")).toBe(true);
+    expect(isVideoPath("attachments/clip.mp4")).toBe(true);
+    expect(isVideoPath("attachments/shot.webp")).toBe(false);
+  });
+
+  it("gives them a data URL the renderer can use", () => {
+    expect(dataUrlOf("AAAA", "attachments/clip.mp4")).toBe("data:video/mp4;base64,AAAA");
+    expect(dataUrlOf("AAAA", "attachments/clip.webm")).toBe("data:video/webm;base64,AAAA");
+  });
+
+  it("still refuses anything that can carry script", () => {
+    // The reason this list is a list and not a rule about "media".
+    expect(dataUrlOf("AAAA", "a.svg")).toBeNull();
+    expect(dataUrlOf("AAAA", "a.html")).toBeNull();
+    expect(isBinaryPath("a.svg")).toBe(false);
   });
 });

@@ -534,6 +534,19 @@ kbd {
   border-bottom: 1px dashed currentColor;
 }
 
+.cm-md-video {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  border-radius: 4px;
+}
+
+.preview video {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 6px;
+}
+
 /* Inline, so a selection can run text -> picture -> text in one drag. The drag
    properties are the CSS half of img.draggable = false: without them Safari and
    iOS still start a native image drag, which drops the data URL in as text. */

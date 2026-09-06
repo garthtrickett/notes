@@ -63,9 +63,12 @@ const FORBIDDEN_TAGS = new Set([
 const SAFE_URL = /^(https?:|mailto:|#)/i;
 
 // Attachments render from the local copy as a data URL, so they work offline and
-// in a private repo. Narrowed to images on purpose: allowing `data:` in general
-// would readmit data:text/html and with it the whole class this exists to stop.
-const SAFE_DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp|avif);base64,/i;
+// in a private repo. Narrowed to a named list on purpose: allowing `data:` in
+// general would readmit data:text/html and with it the whole class this exists
+// to stop. mp4 and webm are containers for encoded frames — neither can carry
+// script the way an SVG can, which is why svg is still absent.
+const SAFE_DATA_MEDIA =
+  /^data:(?:image\/(?:png|jpe?g|gif|webp|avif)|video\/(?:mp4|webm));base64,/i;
 
 // Any attribute can carry a URL — href, src, srcset, xlink:href, formaction,
 // poster, data. Allowlisting two names is how xlink:href walked straight past
@@ -79,7 +82,7 @@ const isDangerousValue = (name: string, value: string): boolean => {
   if (name === "srcset" || name === "imagesrcset") return true;
 
   const trimmed = value.trim();
-  if (name === "src" && SAFE_DATA_IMAGE.test(trimmed)) return false;
+  if (name === "src" && SAFE_DATA_MEDIA.test(trimmed)) return false;
   if (SAFE_URL.test(trimmed)) return false;
   // Any scheme that is not on the allowlist, whatever attribute carries it.
   return LOOKS_LIKE_URL.test(trimmed);
@@ -125,7 +128,19 @@ export const renderMarkdown = (
     const src = img.getAttribute("src");
     if (src === null) continue;
     const resolved = resolveImage(src);
-    if (resolved !== null) img.setAttribute("src", resolved);
+    if (resolved === null) continue;
+    if (resolved.startsWith("data:video/")) {
+      // Markdown has one syntax for embedded media, so a clip arrives as an
+      // <img>. Swapped before sanitising, so what the sanitiser checks is what
+      // ends up on the page.
+      const video = doc.createElement("video");
+      video.setAttribute("src", resolved);
+      video.setAttribute("controls", "");
+      video.setAttribute("preload", "metadata");
+      img.replaceWith(video);
+      continue;
+    }
+    img.setAttribute("src", resolved);
   }
 
   sanitize(template.content);

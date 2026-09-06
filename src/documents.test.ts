@@ -443,3 +443,26 @@ describe("the caret when a change lands elsewhere in the note", () => {
     expect(caretAt()).toBe(caret - shortenedBy);
   });
 });
+
+describe("a clip in the preview", () => {
+  const clip = (src: string, resolved: string) =>
+    renderMarkdown(`![](${src})`, document, () => resolved);
+
+  it("becomes a video element, not a broken image", () => {
+    const html = clip("attachments/a.mp4", "data:video/mp4;base64,AAAA");
+    const el = html.querySelector("video");
+    expect(el).not.toBeNull();
+    expect(el?.getAttribute("src")).toBe("data:video/mp4;base64,AAAA");
+    expect(html.querySelector("img")).toBeNull();
+  });
+
+  it("keeps its src through the sanitiser, which is why the swap happens first", () => {
+    const html = clip("attachments/a.webm", "data:video/webm;base64,AAAA");
+    expect(html.querySelector("video")?.hasAttribute("src")).toBe(true);
+  });
+
+  it("does not open the door to data: in general", () => {
+    const html = clip("x.png", "data:text/html;base64,AAAA");
+    expect(html.querySelector("img")?.hasAttribute("src")).toBe(false);
+  });
+});

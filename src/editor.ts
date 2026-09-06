@@ -89,6 +89,18 @@ class ImageWidget extends WidgetType {
   }
 
   override toDOM(): HTMLElement {
+    // A video is still one atomic thing in the document, so it is the same
+    // widget with a different element inside it.
+    if (this.src.startsWith("data:video/")) {
+      const video = document.createElement("video");
+      video.className = "cm-md-image cm-md-video";
+      video.src = this.src;
+      video.controls = true;
+      // The first frame without fetching the whole clip to find it.
+      video.preload = "metadata";
+      video.draggable = true;
+      return video;
+    }
     const img = document.createElement("img");
     img.className = "cm-md-image";
     img.src = this.src;
