@@ -43,10 +43,13 @@ export const persist = async (
 ): Promise<Proposal> => {
   // Snapshot before the await: these exact bodies are what the write covers, and
   // present() compares against them to decide what is still dirty.
+  // An attachment record carries no bytes, and writing it must not be how the
+  // bytes in the blob store come to be replaced by nothing. Two stores is
+  // precisely so this cannot happen by accident.
   const written: NoteRecord[] = notes.map(
     ({ path, body, baseSha, pending, deleted, encoding }) => ({
       path,
-      body,
+      body: encoding === "base64" ? "" : body,
       baseSha,
       pending,
       deleted,
@@ -116,6 +119,26 @@ const inPool = async <T, R>(
   );
   return results;
 };
+
+// Bytes arriving from anywhere — a pull, a paste, a drop — land here before the
+// proposal that mentions them is made. By the time the model sees the record,
+// the bytes it refers to are already stored.
+export const storeBlobs = async (
+  db: IDBDatabase,
+  notes: readonly { path: string; body: string; encoding: Encoding }[],
+): Promise<void> => {
+  const blobs = notes
+    .filter((n) => n.encoding === "base64" && n.body !== "")
+    .map((n) => ({ path: n.path, body: n.body }));
+  if (blobs.length === 0) return;
+  await idb.putBlobs(db, blobs);
+};
+
+// Pushing an attachment needs the bytes the model does not hold.
+export const bodyToPush = async (db: IDBDatabase, note: Note): Promise<string> =>
+  note.encoding === "base64" && note.body === ""
+    ? ((await idb.getBlob(db, note.path)) ?? "")
+    : note.body;
 
 export const pull = async (
   github: Github,
@@ -233,6 +256,7 @@ export const push = async (
   note: Note,
   now: () => number,
   known: ReadonlyMap<string, Note> = new Map(),
+  bodyOverride: string | null = null,
 ): Promise<Proposal> => {
   if (note.deleted) {
     if (note.baseSha === null) return { kind: "removed", path: note.path };
@@ -242,8 +266,9 @@ export const push = async (
   }
 
   // Snapshot before the await, so present() can tell whether the note moved on
-  // while this was in flight.
-  const body = note.body;
+  // while this was in flight. An attachment's bytes come from the blob store,
+  // because the model does not carry them.
+  const body = bodyOverride ?? note.body;
   const written = await github.write(
     note.path,
     body,

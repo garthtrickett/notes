@@ -68,6 +68,7 @@ class ImageWidget extends WidgetType {
   constructor(
     readonly src: string,
     readonly alt: string,
+    readonly video: boolean,
   ) {
     super();
   }
@@ -75,7 +76,9 @@ class ImageWidget extends WidgetType {
   // Without this every rebuild would swap the element and the browser would
   // re-decode the picture, which is visible as a flicker while typing.
   override eq(other: ImageWidget): boolean {
-    return other.src === this.src && other.alt === this.alt;
+    return (
+      other.src === this.src && other.alt === this.alt && other.video === this.video
+    );
   }
 
   // CodeMirror discards every event that starts inside a widget by default. The
@@ -91,7 +94,7 @@ class ImageWidget extends WidgetType {
   override toDOM(): HTMLElement {
     // A video is still one atomic thing in the document, so it is the same
     // widget with a different element inside it.
-    if (this.src.startsWith("data:video/")) {
+    if (this.video) {
       const video = document.createElement("video");
       video.className = "cm-md-image cm-md-video";
       video.src = this.src;
@@ -147,7 +150,9 @@ const buildDecorations = (
     } else {
       // Replace, not remove: the markdown is still in the document, so a
       // selection dragged across the picture copies the reference with it.
-      const replace = Decoration.replace({ widget: new ImageWidget(span.src, span.alt) });
+      const replace = Decoration.replace({
+        widget: new ImageWidget(span.src, span.alt, span.video),
+      });
       ranges.push(replace.range(span.from, span.to));
       atomic.push(replace.range(span.from, span.to));
     }

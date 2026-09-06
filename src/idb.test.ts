@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { deleteMany, getAll, NOTES_STORE, openDb, putMany } from "./idb.ts";
+import { deleteMany, getAll, NOTES_STORE, openDb, putMany, getBlob, putBlobs } from "./idb.ts";
 import type { NoteRecord } from "./model.ts";
 
 const rec = (path: string, body: string): NoteRecord => ({
@@ -111,4 +111,50 @@ afterEach(() => {
   // sharing this process — so never leave one behind.
   db?.close();
   db = undefined;
+});
+
+describe("attachment bytes live apart from note metadata", () => {
+  it("stores and reads them back", async () => {
+    await putBlobs(db!, [{ path: "attachments/a.webp", body: "AAAA" }]);
+    expect(await getBlob(db!, "attachments/a.webp")).toBe("AAAA");
+  });
+
+  it("says null for bytes this device has never had", async () => {
+    expect(await getBlob(db!, "attachments/never.webp")).toBeNull();
+  });
+
+  it("writing the record does not disturb the bytes", async () => {
+    await putBlobs(db!, [{ path: "attachments/a.webp", body: "AAAA" }]);
+    // What persist does: metadata only, with an empty body on the record. The
+    // whole reason for two stores is that this cannot reach the bytes.
+    await putMany(db!, [
+      {
+        path: "attachments/a.webp",
+        body: "",
+        baseSha: "s1",
+        pending: false,
+        deleted: false,
+        encoding: "base64",
+      },
+    ]);
+    expect(await getBlob(db!, "attachments/a.webp")).toBe("AAAA");
+  });
+
+  it("deleting a note takes its bytes with it", async () => {
+    await putBlobs(db!, [{ path: "attachments/gone.webp", body: "AAAA" }]);
+    await putMany(db!, [
+      {
+        path: "attachments/gone.webp",
+        body: "",
+        baseSha: null,
+        pending: true,
+        deleted: false,
+        encoding: "base64",
+      },
+    ]);
+    await deleteMany(db!, ["attachments/gone.webp"]);
+    // Bytes with no record is a leak nothing would ever collect.
+    expect(await getBlob(db!, "attachments/gone.webp")).toBeNull();
+    expect((await getAll(db!)).some((r) => r.path === "attachments/gone.webp")).toBe(false);
+  });
 });

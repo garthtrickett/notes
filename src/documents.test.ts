@@ -466,3 +466,22 @@ describe("a clip in the preview", () => {
     expect(html.querySelector("img")?.hasAttribute("src")).toBe(false);
   });
 });
+
+describe("blob URLs in the preview", () => {
+  const origin = globalThis.location.origin;
+
+  it("lets through an attachment this page made", () => {
+    const html = renderMarkdown("![](a.webp)", document, () => `blob:${origin}/abc-123`);
+    expect(html.querySelector("img")?.getAttribute("src")).toBe(`blob:${origin}/abc-123`);
+  });
+
+  it("refuses a blob URL from anywhere else", () => {
+    const html = renderMarkdown("![](a.webp)", document, () => "blob:https://evil.example/x");
+    expect(html.querySelector("img")?.hasAttribute("src")).toBe(false);
+  });
+
+  it("still refuses blob: on anything but src", () => {
+    const html = renderMarkdown(`[go](blob:${origin}/abc)`, document);
+    expect(html.querySelector("a")?.hasAttribute("href")).toBe(false);
+  });
+});

@@ -86,6 +86,13 @@ export const base64Of = (bytes: ArrayBuffer): string => {
 // Previously safe only because encoding is set from the same extension list —
 // but `moved` inherits encoding, so renaming x.webp to foo.svg walked straight
 // past that. The check belongs where the URL is built.
+// The mime a path implies, or null when it is not media this app will render.
+export const mimeOf = (path: string): string | null => {
+  const dot = path.lastIndexOf(".");
+  const ext = dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
+  return MEDIA_MIME[ext] ?? null;
+};
+
 export const dataUrlOf = (base64: string, path: string): string | null => {
   const dot = path.lastIndexOf(".");
   const ext = dot === -1 ? "" : path.slice(dot + 1).toLowerCase();

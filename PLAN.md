@@ -1402,3 +1402,60 @@ So they are listed in the bin, which is where you go to get space back, and
 removing one is something you do on purpose and confirm. Notes in the bin and the
 archive count as referring: restoring a note should not find its pictures gone.
 
+# Phase 14 — attachments stop living in memory
+
+The deferred item, triggered by an import that brings 25 MB of media with it.
+
+## 14.1 What was wrong
+
+The model holds every note, and an attachment's bytes were on its note. So the
+whole vault's media was resident base64 for as long as the tab was open — a
+third larger again than the bytes themselves — on a phone.
+
+## 14.2 A second store, not a discipline
+
+Bytes move to a `blobs` store keyed by path; `notes` keeps metadata and text.
+Structural rather than careful: with one store, `persist` writing a record with
+an empty body would have erased the bytes beside it, and the only thing standing
+between the vault and that is a rule someone has to keep remembering.
+
+The upgrade moves existing bytes across rather than making the next sync fetch
+every attachment again, and deleting a note now removes both in one transaction —
+bytes with no record is a leak nothing would collect.
+
+Bytes reach the store *before* the proposal that mentions them, from every
+direction they can arrive: a pull, a paste, a drop. By the time the model sees a
+record, the bytes it refers to are already somewhere the renderer can find them.
+
+## 14.3 Object URLs, not data URLs
+
+`media.ts` reads bytes on demand and hands back a `blob:` URL, so the bytes sit
+in the browser's blob store rather than the JavaScript heap. Asking for one that
+is not loaded starts the read and returns null; the repaint that follows finds
+it. A path that is genuinely absent is remembered as absent, or every paint
+starts another read that will not find it either.
+
+## 14.4 Three bugs this created, all found by driving it
+
+**Attachments pushed forever.** `pushed` cleared `pending` only if the note's
+body still matched what went to GitHub. An attachment's body is now `""` and the
+pushed body is the bytes, so it never matched — the same file went to GitHub
+again on every nap, for as long as the tab stayed open. An attachment is settled
+by definition: its path is the hash of its bytes.
+
+**The picture stopped appearing.** The media cache repaints when bytes arrive,
+but CodeMirror only rebuilds decorations on a document or viewport change. The
+widget asked once, got null, and never asked again. The count of loaded
+attachments now feeds the key that triggers a rebuild.
+
+**Video became an image.** The widget decided what to draw by reading
+`data:video/` off the front of the URL, and the URL is a `blob:` now. The span
+carries the kind, decided from the path.
+
+## 14.5 And one in the sanitiser
+
+A `blob:` URL is not on the scheme allowlist, so the preview stripped every
+`src` and rendered nothing. Allowed now for `src` only, and only when the origin
+in the URL is ours — nothing in a note can produce one of those, because a blob
+URL exists only where `createObjectURL` was called.
+

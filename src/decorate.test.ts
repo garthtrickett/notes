@@ -69,6 +69,7 @@ describe("spansFor", () => {
       to: doc.indexOf(") after") + 1,
       src: "data:image/png;base64,vault/img/cat.png",
       alt: "a cat",
+      video: false,
     });
   });
 
@@ -306,3 +307,14 @@ describe("what a wikilink points at", () => {
     expect(new Set(classes)).toEqual(new Set(["cm-md-wikilink"]));
   });
 })
+
+describe("a clip is not a picture", () => {
+  test("the span says so, because the URL no longer can", () => {
+    // The URL used to start `data:video/`; it is a blob: URL now, so the widget
+    // cannot tell what to draw from the URL and is told instead.
+    const clip = spansFor("![](a.mp4)", anyImage).find((s) => s.kind === "image");
+    const still = spansFor("![](a.webp)", anyImage).find((s) => s.kind === "image");
+    expect(clip?.kind === "image" && clip.video).toBe(true);
+    expect(still?.kind === "image" && still.video).toBe(false);
+  });
+});

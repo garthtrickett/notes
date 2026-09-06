@@ -7,6 +7,7 @@
 
 import { marked } from "marked";
 import { basenameOf } from "./links.ts";
+import { isVideoPath } from "./attachments.ts";
 
 // Turned into ordinary markdown links before parsing, so the renderer needs no
 // plugin: [[japanese-grammar]] becomes [japanese-grammar](#note:japanese-grammar).
@@ -75,6 +76,11 @@ const SAFE_DATA_MEDIA =
 // the check, so the test is on the *value* rather than the name.
 const LOOKS_LIKE_URL = /^\s*[a-z][a-z0-9+.-]*:/i;
 
+const isOwnBlob = (value: string): boolean => {
+  const origin = globalThis.location?.origin;
+  return origin !== undefined && value.startsWith(`blob:${origin}/`);
+};
+
 const isDangerousValue = (name: string, value: string): boolean => {
   // srcset goes unconditionally, before any allowlist can rescue it. Markdown
   // cannot produce one — an image is src and alt — so any srcset came from raw
@@ -83,6 +89,12 @@ const isDangerousValue = (name: string, value: string): boolean => {
 
   const trimmed = value.trim();
   if (name === "src" && SAFE_DATA_MEDIA.test(trimmed)) return false;
+  // An attachment is served from a blob this page made, so its URL is
+  // `blob:<our origin>/<uuid>`. Nothing in a note can produce one: the origin
+  // is checked, and a blob URL only exists because createObjectURL was called
+  // here. Restricted to `src` for the same reason `data:` is — an href could
+  // navigate to it.
+  if (name === "src" && isOwnBlob(trimmed)) return false;
   if (SAFE_URL.test(trimmed)) return false;
   // Any scheme that is not on the allowlist, whatever attribute carries it.
   return LOOKS_LIKE_URL.test(trimmed);
@@ -129,7 +141,7 @@ export const renderMarkdown = (
     if (src === null) continue;
     const resolved = resolveImage(src);
     if (resolved === null) continue;
-    if (resolved.startsWith("data:video/")) {
+    if (isVideoPath(src)) {
       // Markdown has one syntax for embedded media, so a clip arrives as an
       // <img>. Swapped before sanitising, so what the sanitiser checks is what
       // ends up on the page.

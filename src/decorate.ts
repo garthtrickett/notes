@@ -10,6 +10,7 @@
 
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import type { SyntaxNode } from "@lezer/common";
+import { isVideoPath } from "./attachments.ts";
 
 export type Span =
   // A whole line, for things that change its metrics — only headings do.
@@ -21,6 +22,10 @@ export type Span =
       readonly to: number;
       readonly src: string;
       readonly alt: string;
+      // Decided by the path, not by the URL. The URL used to say `data:video/`
+      // and now says `blob:`, and a widget that reads the scheme to know what
+      // to draw silently became an <img> around a video.
+      readonly video: boolean;
     };
 
 export type ResolveImage = (src: string) => string | null;
@@ -208,6 +213,7 @@ export const spansFor = (
             to: node.to,
             src: resolved,
             alt: parts?.[1] ?? "",
+            video: isVideoPath(src),
           });
           // Skip the children. The brackets and URL are about to be covered by
           // the picture, and a mark inside a replaced range is a decoration the

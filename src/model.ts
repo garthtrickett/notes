@@ -232,6 +232,12 @@ export type Proposal =
 
 // A tombstone still exists as a record until the remote delete lands, but it is
 // not a note any more and must never be shown or opened.
+// An attachment's bytes live in the blob store, never on the record the model
+// holds. `body` on a base64 record is always "" above this line.
+export const withoutBytes = <T extends { encoding: Encoding; body: string }>(
+  record: T,
+): T => (record.encoding === "base64" ? { ...record, body: "" } : record);
+
 export const visible = (m: Model): Note[] =>
   [...m.notes.values()].filter((n) => !n.deleted);
 
@@ -445,7 +451,7 @@ const settleSync = (m: Model): void => {
 export const present = (m: Model, p: Proposal): Rejection | null => {
   switch (p.kind) {
     case "hydrated": {
-      m.notes = new Map(p.notes.map((n) => [n.path, n]));
+      m.notes = new Map(p.notes.map((n) => [n.path, withoutBytes(n)]));
       m.hydrated = true;
       m.openPath = firstVisiblePath(m);
       return null;
@@ -728,13 +734,17 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // which is a conflict, which produced a spurious conflict copy. An
       // identical attachment is already there; only the reference is new.
       const already = m.notes.get(p.path);
-      const unchanged =
-        already !== undefined && !already.deleted && already.body === p.base64;
+      // The name is the hash of the bytes, so a path that is already here with
+      // the same name is already the same picture. That used to be checked by
+      // comparing bodies, which the record no longer carries.
+      const unchanged = already !== undefined && !already.deleted;
 
       if (!unchanged) {
         m.notes.set(p.path, {
           path: p.path,
-          body: p.base64,
+          // The bytes were written to the blob store before this proposal was
+          // made. The record is what the model keeps.
+          body: "",
           baseSha: already?.deleted === false ? already.baseSha : null,
           pending: true,
           deleted: false,
@@ -977,7 +987,9 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         // the pull. Never overwrite it here.
         if (local?.pending) continue;
         m.forgotten.delete(incoming.path);
-        m.notes.set(incoming.path, { ...incoming, dirty: true });
+        // Bytes are already in the blob store by the time this runs, and the
+        // model must not hold a second copy of them.
+        m.notes.set(incoming.path, { ...withoutBytes(incoming), dirty: true });
       }
       for (const path of p.gone) {
         const local = m.notes.get(path);
@@ -1005,7 +1017,12 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       }
       // Same rule as persistence: only clear pending if the body still matches
       // what went to GitHub. An edit that landed mid-flight stays pending.
-      const settled = note.body === p.body;
+      //
+      // An attachment is settled by definition. Its bytes are not on the record
+      // — they are in the blob store — so comparing them here compared "" with
+      // the pushed bytes, never matched, and pushed the same file to GitHub for
+      // as long as the tab stayed open.
+      const settled = note.encoding === "base64" || note.body === p.body;
       m.notes.set(p.path, {
         ...note,
         baseSha: p.sha,

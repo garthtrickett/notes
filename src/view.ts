@@ -27,7 +27,8 @@ import {
 import type { TreeNode } from "./tree.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
-import { dataUrlOf } from "./attachments.ts";
+import { mimeOf } from "./attachments.ts";
+import type { Media } from "./media.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 import { settingsView, type VaultConfig } from "./view-settings.ts";
 
@@ -40,6 +41,7 @@ export interface ViewCtx {
   readonly now: () => number;
   readonly onCapture: (text: string) => void;
   readonly previewCache: PreviewCache;
+  readonly media: Media;
   // Saving the vault config is ambient state, so it belongs to main rather than
   // to the loop; the view only asks.
   readonly onSaveConfig: (config: VaultConfig) => void;
@@ -259,7 +261,7 @@ const editor = (model: Model, ctx: ViewCtx) => {
           class="preview"
           @click=${(e: Event) => onPreviewClick(e, model, propose)}
         >
-          ${preview(model, path, cache)}
+          ${preview(model, ctx.media, path, cache)}
         </div>`
       : // Empty on purpose. The loop holds the EditorView and attaches it here
         // once; rebuilding it per paint would tear the editor down mid-keystroke.
@@ -287,38 +289,56 @@ const IMAGE_SCAN = /!\[[^\]]*\]\(([^)\s]+)\)/g;
 
 // A relative source is an attachment in this vault; anything absolute is
 // somebody else's problem and left alone.
-export const localImage = (model: Model, src: string): string | null => {
+//
+// The record says whether the attachment exists; the media cache says whether
+// its bytes are here yet. Null from the second is temporary — asking is what
+// starts the read, and the repaint that follows finds the URL.
+export const localImage = (
+  model: Model,
+  media: Media,
+  src: string,
+): string | null => {
   if (/^[a-z]+:/i.test(src) || src.startsWith("//")) return null;
-  const record = model.notes.get(src.replace(/^\.?\//, ""));
+  const path = src.replace(/^\.?\//, "");
+  const record = model.notes.get(path);
   if (!record || record.deleted || record.encoding !== "base64") return null;
-  return dataUrlOf(record.body, record.path);
+  const mime = mimeOf(path);
+  return mime === null ? null : media.urlFor(path, mime);
 };
 
 // Everything the rendered node depends on. The body is not enough: a link
 // resolves against the whole vault, so a note appearing elsewhere changes how
 // this one should look without changing a character of it.
-const previewKey = (model: Model, path: string, body: string): string => {
+const previewKey = (
+  model: Model,
+  media: Media,
+  path: string,
+  body: string,
+): string => {
   const links = [...body.matchAll(WIKILINK_SCAN)].map(
     (m) => `${m[1]}=${resolveLink((m[1] ?? "").trim(), model.notes).kind}`,
   );
   const images = [...body.matchAll(IMAGE_SCAN)].map(
-    (m) => `${m[1]}=${localImage(model, m[1] ?? "") === null ? "0" : "1"}`,
+    (m) => `${m[1]}=${localImage(model, media, m[1] ?? "") === null ? "0" : "1"}`,
   );
   return [path, body, ...links, ...images].join("\u0000");
 };
 
 const preview = (
   model: Model,
+  media: Media,
   path: string,
   cache: PreviewCache,
 ): HTMLElement => {
   const body = model.notes.get(path)?.body ?? "";
-  const key = previewKey(model, path, body);
+  const key = previewKey(model, media, path, body);
   if (key === cache.key && cache.node !== null) return cache.node;
 
   const container = document.createElement("div");
   container.className = "preview-body";
-  container.append(renderMarkdown(body, document, (src) => localImage(model, src)));
+  container.append(
+    renderMarkdown(body, document, (src) => localImage(model, media, src)),
+  );
 
   // A wikilink became an ordinary anchor. It carries its target as data and no
   // listener at all: one delegated handler on the container resolves at click

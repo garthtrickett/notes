@@ -137,8 +137,10 @@ describe("the attached proposal", () => {
 
     const record = m.notes.get("attachments/2026-09-06-abcd1234.webp");
     expect(record?.encoding).toBe("base64");
-    expect(record?.body).toBe("AAAA");
     expect(record?.pending).toBe(true);
+    // The bytes are not here: they went to the blob store before this proposal
+    // was made, and the model holds the record rather than the picture.
+    expect(record?.body).toBe("");
     // A note must never point at an attachment that was not added.
     expect(m.notes.get("inbox/a.md")?.body).toContain("![](attachments/");
     expect(m.notes.get("inbox/a.md")?.pending).toBe(true);
@@ -328,21 +330,20 @@ describe("pasting the same image twice", () => {
     expect(m.notes.get("a.md")?.pending).toBe(true);
   });
 
-  it("re-adds it if the bytes at that path really did change", () => {
+  it("adds the record back when the attachment had been deleted", () => {
     const m = withAttachment();
+    present(m, { kind: "purged", path: "attachments/2026-09-06-abcd.webp" });
     present(m, {
       kind: "attached",
       path: "attachments/2026-09-06-abcd.webp",
-      base64: "BBBB",
+      base64: "AAAA",
       into: "a.md",
-      cursor: 999, // clamped to the end of whatever the note holds now
+      cursor: 999,
       ref: "![](attachments/2026-09-06-abcd.webp)",
     });
     const record = m.notes.get("attachments/2026-09-06-abcd.webp");
-    expect(record?.body).toBe("BBBB");
+    expect(record?.deleted).toBe(false);
     expect(record?.pending).toBe(true);
-    // Keeps the sha, so the push is an update rather than a create.
-    expect(record?.baseSha).toBe("sha-1");
   });
 });
 

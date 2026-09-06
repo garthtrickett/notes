@@ -17,6 +17,7 @@ import { createModel, present, type Model, type Proposal } from "./model.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
+import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
 import { followLink, resolveLink } from "./links.ts";
@@ -58,6 +59,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let lastModal: string | null = null;
   let lastPaletteIndex: number | null = null;
   const previewCache = createPreviewCache();
+  // Bytes are read from the blob store when something needs to show them, and
+  // held as object URLs rather than on the notes themselves.
+  const media = createMedia(db, () => scheduleRender());
   // Everything currently in flight, not merely the most recent thing started.
   // A push can begin while a persist is still running — the first block is
   // skipped rather than returned from — so assigning would drop the persist's
@@ -78,7 +82,21 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const attachImage = (file: File, path: string, caret: number | null) => {
     const note = model.notes.get(path);
     if (!note) return;
-    track(actions.attach(file, note, caret ?? note.body.length, now, shrink).then(propose));
+    track(
+      actions
+        .attach(file, note, caret ?? note.body.length, now, shrink)
+        .then(async (p) => {
+          // Store the bytes first. The proposal that follows describes a record
+          // whose bytes are already somewhere the renderer can find them.
+          if (p.kind === "attached") {
+            await actions.storeBlobs(db, [
+              { path: p.path, body: p.base64, encoding: "base64" },
+            ]);
+          }
+          return p;
+        })
+        .then(propose),
+    );
   };
 
   const pasteImage = (event: ClipboardEvent, path: string, caret: number | null) => {
@@ -95,7 +113,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // Created once, before the first paint, and outlives every one of them. lit is
   // handed an empty container and never touches what is inside it.
   const cm: EditorHandle = createEditor({
-    resolveImage: (src) => localImage(model, src),
+    resolveImage: (src) => localImage(model, media, src),
     // Asked at paint time, so a link starts working the moment the note it
     // points at exists.
     resolveWikilink: (target) => resolveLink(target, model.notes).kind,
@@ -135,7 +153,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     for (const note of model.notes.values()) {
       if (note.encoding === "base64" && !note.deleted) key += `${note.path};`;
     }
-    return key;
+    // How many attachments have their bytes to hand, which changes as they
+    // arrive. A repaint alone does not rebuild decorations, so without this the
+    // widget asked once, got null, and never asked again — the picture stayed
+    // missing until the note was edited.
+    return `${key}|${media.size()}`;
   };
 
   const paint = () => {
@@ -145,6 +167,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         now,
         onCapture: capture,
         previewCache,
+        media,
         config: deps.config ?? null,
         onSaveConfig: (next) => deps.saveConfig?.(next),
       }),
@@ -289,7 +312,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     const pending = [...model.notes.values()].find((n) => n.pending && !n.dirty);
     if (pending) {
       model.syncing = true;
-      track(actions.push(github, pending, now, model.notes).then(propose));
+      // An attachment's bytes are not on the record, so they are fetched for
+      // the push and thrown away again afterwards.
+      track(
+        actions
+          .bodyToPush(db, pending)
+          .then((body) => actions.push(github, pending, now, model.notes, body))
+          .then(propose),
+      );
       return;
     }
 
@@ -298,7 +328,15 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (model.lastSyncedAt === null || model.pullRemaining > 0) {
       model.syncing = true;
       model.lastSyncedAt = now();
-      track(actions.pull(github, model.notes).then(propose));
+      track(
+        actions
+          .pull(github, model.notes)
+          .then(async (p) => {
+            if (p.kind === "pulled") await actions.storeBlobs(db, p.notes);
+            return p;
+          })
+          .then(propose),
+      );
     }
   };
 

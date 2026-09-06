@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { getAll, openDb } from "./idb.ts";
+import { getAll, getBlob, openDb } from "./idb.ts";
 import * as actions from "./actions.ts";
 import { boot, type Deps, type Loop } from "./loop.ts";
 import { err, ok } from "./result.ts";
@@ -634,5 +634,86 @@ describe("importing a vault someone filled from the GitHub side", () => {
     }
     expect(loop.model.notes.size).toBe(450);
     expect(loop.model.pullRemaining).toBe(0);
+  });
+});
+
+describe("attachment bytes stay out of the model", () => {
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  it("pushes bytes it never held in memory", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+
+    await actions.storeBlobs(db as IDBDatabase, [
+      { path: "attachments/x.webp", body: png, encoding: "base64" },
+    ]);
+    loop.propose({
+      kind: "attached",
+      path: "attachments/x.webp",
+      base64: png,
+      into: "a.md",
+      cursor: 0,
+      ref: "![](attachments/x.webp)",
+    });
+    await settle(loop);
+    await settle(loop);
+
+    // The model carries the record and not the picture...
+    expect(loop.model.notes.get("attachments/x.webp")?.body).toBe("");
+    // ...and the push still sent the bytes, fetched from the blob store.
+    expect(remote.files.get("attachments/x.webp")?.body).toBe(png);
+  });
+
+  it("puts pulled bytes in the blob store, not on the record", async () => {
+    remote.put("attachments/y.webp", png);
+    remote.put("note.md", "![](attachments/y.webp)");
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    await settle(loop);
+
+    expect(loop.model.notes.get("attachments/y.webp")?.encoding).toBe("base64");
+    expect(loop.model.notes.get("attachments/y.webp")?.body).toBe("");
+    expect(await getBlob(db as IDBDatabase, "attachments/y.webp")).toBe(png);
+  });
+
+  it("persisting a note never erases the bytes beside it", async () => {
+    remote.put("attachments/z.webp", png);
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    await settle(loop);
+    // Several rounds of persist and push, which is where an empty body on the
+    // record would have overwritten the real one.
+    for (let i = 0; i < 3; i++) await settle(loop);
+    expect(await getBlob(db as IDBDatabase, "attachments/z.webp")).toBe(png);
+  });
+});
+
+describe("an attachment push settles", () => {
+  it("does not push the same bytes over and over", async () => {
+    const png = "AAAA";
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    await actions.storeBlobs(db as IDBDatabase, [
+      { path: "attachments/p.webp", body: png, encoding: "base64" },
+    ]);
+    loop.propose({
+      kind: "attached",
+      path: "attachments/p.webp",
+      base64: png,
+      into: "a.md",
+      cursor: 0,
+      ref: "![](attachments/p.webp)",
+    });
+    for (let i = 0; i < 4; i++) await settle(loop);
+
+    // The bytes are not on the record, so comparing them to what was pushed
+    // never matched and the note never stopped being pending.
+    expect(loop.model.notes.get("attachments/p.webp")?.pending).toBe(false);
+    const writes = remote.calls.filter((c) => c === "write attachments/p.webp");
+    expect(writes.length).toBe(1);
   });
 });
