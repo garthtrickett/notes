@@ -152,3 +152,129 @@ describe("spans inside a replaced image", () => {
     expect(spans.some((s) => s.kind === "mark" && s.class === "cm-md-url")).toBe(true);
   });
 });
+
+// Phase 7. Every construct below appears in examples/ and was styled as nothing
+// before this. The node names were read off the real parser, not the spec.
+describe("tables", () => {
+  const doc = "| A | B |\n|---|---|\n| 1 | 2 |";
+
+  test("every line is monospaced, so the columns line up", () => {
+    const lines = spansFor(doc, noImages).filter(
+      (s) => s.kind === "line" && s.class === "cm-md-table",
+    );
+    expect(lines.map((s) => s.from)).toEqual([0, 10, 20]);
+  });
+
+  test("the pipes and the delimiter row are dimmed", () => {
+    const spans = spansFor(doc, noImages);
+    const marks = spans.filter((s) => s.kind === "mark" && s.class === "cm-md-mark");
+    // Six single pipes plus the whole `|---|---|` row.
+    expect(marks.some((s) => s.kind === "mark" && s.from === 10 && s.to === 19)).toBe(true);
+    expect(marks.length).toBe(7);
+  });
+
+  test("header cells are bold and body cells are not", () => {
+    const spans = spansFor(doc, noImages);
+    const th = spans.filter((s) => s.kind === "mark" && s.class === "cm-md-th");
+    expect(th.map((s) => (s.kind === "mark" ? [s.from, s.to] : null))).toEqual([
+      [2, 3],
+      [6, 7],
+    ]);
+  });
+});
+
+describe("tasks", () => {
+  const doc = "- [x] done thing\n- [ ] todo thing";
+
+  test("the brackets dim and the mark inside does not", () => {
+    const spans = spansFor(doc, noImages);
+    expect(spans).toContainEqual({ kind: "mark", from: 2, to: 3, class: "cm-md-mark" });
+    expect(spans).toContainEqual({ kind: "mark", from: 3, to: 4, class: "cm-md-task-done" });
+    expect(spans).toContainEqual({ kind: "mark", from: 4, to: 5, class: "cm-md-mark" });
+  });
+
+  test("an open box is styled differently from a done one", () => {
+    const spans = spansFor(doc, noImages);
+    expect(spans).toContainEqual({ kind: "mark", from: 20, to: 21, class: "cm-md-task-open" });
+  });
+
+  test("a completed item's text is struck, and its box is not", () => {
+    const spans = spansFor(doc, noImages);
+    const struck = spans.filter((s) => s.kind === "mark" && s.class === "cm-md-struck");
+    expect(struck).toEqual([{ kind: "mark", from: 6, to: 16, class: "cm-md-struck" }]);
+  });
+});
+
+describe("quotes", () => {
+  test("every line of the quote carries the border", () => {
+    const doc = "> one\n> two";
+    const lines = spansFor(doc, noImages).filter(
+      (s) => s.kind === "line" && s.class === "cm-md-quote",
+    );
+    expect(lines.map((s) => s.from)).toEqual([0, 6]);
+  });
+
+  test("a nested quote indents further", () => {
+    const doc = "> outer\n>\n> > inner";
+    const spans = spansFor(doc, noImages);
+    expect(spans.some((s) => s.kind === "line" && s.class === "cm-md-quote2")).toBe(true);
+  });
+});
+
+describe("the remaining constructs", () => {
+  test("a setext heading sizes the text line, not the underline", () => {
+    const doc = "Also a heading\n==============";
+    const lines = spansFor(doc, noImages).filter((s) => s.kind === "line");
+    expect(lines).toEqual([{ kind: "line", from: 0, class: "cm-md-h1" }]);
+    // The `====` is markup and is dimmed, not sized.
+    expect(spansFor(doc, noImages)).toContainEqual({
+      kind: "mark",
+      from: 15,
+      to: 29,
+      class: "cm-md-mark",
+    });
+  });
+
+  test("a horizontal rule keeps its dashes", () => {
+    const doc = "before\n\n---\n\nafter";
+    expect(spansFor(doc, noImages)).toContainEqual({
+      kind: "line",
+      from: 8,
+      class: "cm-md-rule",
+    });
+  });
+
+  test("an indented code block is monospaced including its indent", () => {
+    const doc = "text:\n\n    $ git status";
+    const spans = spansFor(doc, noImages);
+    expect(spans.some((s) => s.kind === "mark" && s.class === "cm-md-fence")).toBe(true);
+  });
+
+  test("a fence's info string is dimmed", () => {
+    const doc = "```ts\nconst a = 1\n```";
+    const spans = spansFor(doc, noImages);
+    expect(spans).toContainEqual({ kind: "mark", from: 3, to: 5, class: "cm-md-mark" });
+  });
+
+  test("an escape dims the backslash and leaves the character alone", () => {
+    const doc = "\\*not italic\\*";
+    const spans = spansFor(doc, noImages);
+    const marks = spans.filter((s) => s.kind === "mark" && s.class === "cm-md-mark");
+    expect(marks).toEqual([
+      { kind: "mark", from: 0, to: 1, class: "cm-md-mark" },
+      { kind: "mark", from: 12, to: 13, class: "cm-md-mark" },
+    ]);
+  });
+
+  test("a link title and a reference definition are dimmed as metadata", () => {
+    const doc = 'A [ref][ex].\n\n[ex]: https://example.com "T"';
+    const spans = spansFor(doc, noImages);
+    expect(spans.some((s) => s.kind === "mark" && s.class === "cm-md-ref")).toBe(true);
+    expect(spans.some((s) => s.kind === "mark" && s.class === "cm-md-mark")).toBe(true);
+  });
+
+  test("an autolink is coloured as a link", () => {
+    const spans = spansFor("<https://example.com>", noImages);
+    expect(spans).toContainEqual({ kind: "mark", from: 0, to: 21, class: "cm-md-link" });
+  });
+});

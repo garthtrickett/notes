@@ -455,3 +455,63 @@ kbd {
   vertical-align: middle;
   border-radius: 4px;
 }
+
+/* Phase 7: the rest of the prose. Same rule as everything above — a class on a
+   range, nothing removed, nothing reflowed. */
+
+/* Line-level rules are scoped to the host on purpose. CodeMirror injects its own
+   `.cm-line { padding: 0 2px 0 6px }` into the head *after* this stylesheet, so
+   at equal specificity it wins and every padding here is silently dropped —
+   which is exactly what happened to the quote indent the first time. */
+
+/* Per line, because a line is what has metrics. The source is never re-aligned;
+   monospace just makes the alignment its author typed visible. */
+.cm-host .cm-md-table {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.cm-md-th {
+  font-weight: 700;
+}
+
+.cm-host .cm-md-quote,
+.cm-host .cm-md-quote2 {
+  border-left: 3px solid currentColor;
+  opacity: 0.85;
+}
+
+.cm-host .cm-md-quote {
+  padding-left: 0.75rem;
+}
+
+/* Deeper nesting indents further. Two levels is as far as this goes; beyond it
+   the extra `>` characters carry the depth, and they are still visible. */
+.cm-host .cm-md-quote2 {
+  padding-left: 1.75rem;
+}
+
+/* Reads as a rule and still says `---`. */
+.cm-host .cm-md-rule {
+  opacity: 0.4;
+  border-bottom: 1px solid currentColor;
+}
+
+.cm-md-task-open {
+  opacity: 0.5;
+}
+
+.cm-md-task-done {
+  color: var(--link, #3b6ea5);
+  font-weight: 700;
+}
+
+.cm-md-struck {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.cm-md-ref {
+  opacity: 0.55;
+}
+

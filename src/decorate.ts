@@ -43,6 +43,23 @@ const MARK_CLASS: Readonly<Record<string, string>> = {
   CodeText: "cm-md-code",
   Strikethrough: "cm-md-strike",
   StrikethroughMark: "cm-md-mark",
+  CodeInfo: "cm-md-mark",
+  // The four spaces are what make an indented block code; CodeText starts after
+  // them, so styling the block is what covers it.
+  CodeBlock: "cm-md-fence",
+  Autolink: "cm-md-link",
+  LinkTitle: "cm-md-mark",
+  LinkLabel: "cm-md-mark",
+  // Each `|`, and the whole `|---|---|` row, are both this node.
+  TableDelimiter: "cm-md-mark",
+  // A `[ex]: https://…` line is metadata, not prose.
+  LinkReference: "cm-md-ref",
+};
+
+// Headings whose level is written underneath rather than in front.
+const SETEXT: Readonly<Record<string, string>> = {
+  SetextHeading1: "cm-md-h1",
+  SetextHeading2: "cm-md-h2",
 };
 
 const WIKILINK = /\[\[([^\]\n]+)\]\]/g;
@@ -51,6 +68,37 @@ const WIKILINK = /\[\[([^\]\n]+)\]\]/g;
 // alt are read back out of the text rather than reassembled from children.
 const IMAGE_PARTS = /^!\[([^\]]*)\]\(([^)\s]+)/;
 
+const lineStartAt = (doc: string, pos: number): number =>
+  doc.lastIndexOf("\n", pos - 1) + 1;
+
+// Some constructs are styled a line at a time because a line is what has
+// metrics — a table's monospace, a quote's border. Clamped to the range so a
+// table taller than the viewport only decorates what is on screen.
+const eachLine = (
+  doc: string,
+  from: number,
+  to: number,
+  range: { from: number; to: number },
+  add: (at: number) => void,
+): void => {
+  let at = Math.max(lineStartAt(doc, from), lineStartAt(doc, range.from));
+  const end = Math.min(to, range.to);
+  while (at <= end) {
+    add(at);
+    const next = doc.indexOf("\n", at);
+    if (next === -1 || next >= end) break;
+    at = next + 1;
+  }
+};
+
+const quoteDepth = (node: SyntaxNode): number => {
+  let depth = 1;
+  for (let parent = node.parent; parent !== null; parent = parent.parent) {
+    if (parent.name === "Blockquote") depth += 1;
+  }
+  return depth;
+};
+
 export const spansFor = (
   doc: string,
   resolveImage: ResolveImage,
@@ -58,7 +106,14 @@ export const spansFor = (
 ): Span[] => {
   const spans: Span[] = [];
   const tree = markdownLanguage.parser.parse(doc);
-  const seenLines = new Set<number>();
+  // Keyed by class as well as position: a quoted table wants both.
+  const seenLines = new Set<string>();
+  const line = (at: number, cls: string): void => {
+    const key = `${at}|${cls}`;
+    if (seenLines.has(key)) return;
+    seenLines.add(key);
+    spans.push({ kind: "line", from: at, class: cls });
+  };
 
   tree.iterate({
     from: range.from,
@@ -66,16 +121,69 @@ export const spansFor = (
     enter: (node) => {
       const heading = HEADING.exec(node.name);
       if (heading) {
-        // One line decoration per heading, keyed by start so a re-entered node
-        // cannot add it twice.
-        if (!seenLines.has(node.from)) {
-          seenLines.add(node.from);
-          spans.push({
-            kind: "line",
-            from: node.from,
-            class: `cm-md-h${heading[1]}`,
-          });
+        line(node.from, `cm-md-h${heading[1]}`);
+        return;
+      }
+
+      const setext = SETEXT[node.name];
+      if (setext !== undefined) {
+        // The text line only. The `====` underneath is markup and is already
+        // dimmed as a HeaderMark; sizing it too would make the underline shout.
+        line(lineStartAt(doc, node.from), setext);
+        return;
+      }
+
+      if (node.name === "Table") {
+        // Per line, so the columns the author aligned line up. The source is
+        // never re-aligned — only made visible.
+        eachLine(doc, node.from, node.to, range, (at) => line(at, "cm-md-table"));
+        return;
+      }
+
+      if (node.name === "TableCell" && node.node.parent?.name === "TableHeader") {
+        spans.push({ kind: "mark", from: node.from, to: node.to, class: "cm-md-th" });
+        return;
+      }
+
+      if (node.name === "Blockquote") {
+        const cls = quoteDepth(node.node) >= 2 ? "cm-md-quote2" : "cm-md-quote";
+        eachLine(doc, node.from, node.to, range, (at) => line(at, cls));
+        return;
+      }
+
+      if (node.name === "HorizontalRule") {
+        line(lineStartAt(doc, node.from), "cm-md-rule");
+        return;
+      }
+
+      if (node.name === "TaskMarker") {
+        // `[x]` in three parts, so the brackets can dim while the mark itself
+        // stays legible.
+        const done = doc[node.from + 1] !== " ";
+        spans.push({ kind: "mark", from: node.from, to: node.from + 1, class: "cm-md-mark" });
+        spans.push({
+          kind: "mark",
+          from: node.from + 1,
+          to: node.to - 1,
+          class: done ? "cm-md-task-done" : "cm-md-task-open",
+        });
+        spans.push({ kind: "mark", from: node.to - 1, to: node.to, class: "cm-md-mark" });
+        return;
+      }
+
+      if (node.name === "Task") {
+        // Struck from after the marker, so the box itself is not crossed out.
+        if (doc[node.from + 1] === " ") return;
+        const from = Math.min(node.from + 4, node.to);
+        if (from < node.to) {
+          spans.push({ kind: "mark", from, to: node.to, class: "cm-md-struck" });
         }
+        return;
+      }
+
+      if (node.name === "Escape") {
+        // The backslash is machinery; what it protects is content.
+        spans.push({ kind: "mark", from: node.from, to: node.from + 1, class: "cm-md-mark" });
         return;
       }
 

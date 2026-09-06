@@ -834,3 +834,106 @@ phone connection, the answer is the cheap version: dim the markup and colour
 headings with a transparent textarea over a painted div. No size hierarchy, no
 inline images, no library, and it keeps the native selection that the gate is
 testing.
+
+---
+
+# Phase 7 — the rest of the prose
+
+Phase 6 styled what the editor needed to be usable. This styles what the vault
+actually contains. The list came from parsing `examples/` with the real grammar
+and diffing every node against `decorate.ts`, not from reading the CommonMark
+spec and guessing what might turn up.
+
+The counts below are from that diff, over seven notes.
+
+## 7.1 The rule, unchanged
+
+Markup is **dimmed, never removed**. Nothing appears or disappears as the caret
+moves and no line reflows. Everything here is a class on a range; the only
+element that replaces text is still the image, and it stays the only one.
+
+A second rule this phase leans on: **the source is not rewritten to look tidy.**
+A table is made monospace so the alignment its author typed becomes visible. It
+is not re-aligned, and the pipes stay where they were.
+
+## 7.2 What gets styled
+
+| Construct | Nodes | Count | Treatment |
+|---|---|---|---|
+| Tables | `Table`, `TableHeader`, `TableCell`, `TableDelimiter` | ~102 | Monospace per line so columns line up; `\|` and the `\|---\|---\|` row dimmed; header cells bold |
+| Tasks | `Task`, `TaskMarker` | 12 each | Brackets dimmed, the `x` coloured, a completed item's text struck and dimmed |
+| Quote bodies | `Blockquote` | 6 | Left border and indent per line. Two depths; beyond that the extra `>` carries it |
+| Setext headings | `SetextHeading1`, `SetextHeading2` | 2 | The same line class as the `#` form, on the text line only — the `====` underneath is already dimmed as `HeaderMark` |
+| Horizontal rules | `HorizontalRule` | 2 | Dimmed characters plus a rule on the line, so it reads as one and still says `---` |
+| Fence info | `CodeInfo` | 1 | Dimmed. Specified in 6.3 and missed in the code |
+| Indented code | `CodeBlock` | 1 | Monospace. `CodeText` was styled but not the four spaces that make it code |
+| Autolinks | `Autolink` | 2 | Link colour on the whole `<…>`. Its children were already styled; only the wrapper was not |
+| Link titles and references | `LinkTitle`, `LinkLabel`, `LinkReference` | 4 | Dimmed — a `[ex]: https://…` line is metadata, not prose |
+| Escapes | `Escape` | 2 | The backslash dimmed, the character it protects left alone |
+
+## 7.3 Tables, which are the only real design decision
+
+`TableDelimiter` covers each `|` separately *and* the whole `|---|---|` row as one
+node, so both fall out of the same rule. `TableCell` reports its parent, so a
+header cell is `TableCell` whose parent is `TableHeader` — no second pass and no
+positional arithmetic.
+
+Monospace is applied **per line**, not as one mark over the table, because a line
+is what has metrics. A table wider than the editor still wraps and the alignment
+breaks with it. That is an accepted cost: the alternative is horizontal scrolling
+inside a line, which fights the one-surface rule for a construct that is rare.
+
+## 7.4 What is deliberately not in this phase
+
+`==highlight==`, `$math$` and `#tags` produce **no nodes at all** — the parser
+returns a bare paragraph. They would each need a regex pass of their own, like
+wikilinks, and `known-quirks.md` lists them as absent on purpose. Styling them
+would imply support that does not exist.
+
+Raw HTML (`HTMLTag`, `HTMLBlock`) stays unstyled for the same reason: it is
+escaped by design, and dimming it would suggest it does something.
+
+Two more that are reachable but wrong to take now. A callout `> [!NOTE]` parses
+as a `Blockquote` whose first child is a `Link`, so it could be matched — but a
+callout that is styled and does not collapse is a half-feature. And `[^1]`
+parses as `Link`, which is why footnotes already look like a strange link; making
+them look deliberate without resolving them would be worse than leaving them odd.
+
+## 7.5 A bug this phase does not fix
+
+Wikilinks are styled inside code fences. The wikilink pass is a regex over raw
+text with no knowledge of the tree, so `[[project-plan]]` in a fence is coloured
+while `**not bold**` correctly is not. `known-quirks.md` documents the same
+inconsistency in the preview. It is a separate fix — skipping ranges covered by
+`FencedCode`, `InlineCode` and `CodeBlock` — and it belongs with the wikilink
+pass, not with this list.
+
+## 7.6 A trap worth writing down
+
+CodeMirror injects its own `.cm-line { padding: 0 2px 0 6px }` into the head
+*after* the app stylesheet. At equal specificity the later rule wins, so every
+`padding` set on a line decoration is silently dropped. The quote indent did not
+apply at all on the first attempt, and nested quotes were indistinguishable from
+plain ones — with no error, no failing test, and a screenshot that looked close
+enough to pass a glance.
+
+Line-level rules are therefore scoped `.cm-host .cm-md-…`. **No unit test can
+catch this**: it is the cascade, not the code. It was found by measuring
+`getComputedStyle` on a real line, which is the check to reach for whenever a
+line decoration does not look like it landed.
+
+## 7.7 Tests
+
+Headless, against the real parser, one per construct, asserting the ranges rather
+than the rendering. Plus the two that have caught real mistakes before: that a
+construct inside a fenced block is not styled as prose, and that nothing here
+emits a span the image replace would have to discard.
+
+## 7.8 Order
+
+1. The node table above, as `MARK_CLASS` entries — the ones that are just a class.
+2. The five that need more than a class: tables, tasks, quotes, setext headings,
+   rules.
+3. CSS for all of it in one pass.
+4. Look at it against `examples/kitchen-sink.md`, which is what it was written for.
+
