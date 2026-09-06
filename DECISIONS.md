@@ -281,9 +281,113 @@ Stated up front so they aren't surprises later.
    `[[wikilink]]` (Obsidian's long-running pain). Stable ID in frontmatter with
    links by ID survives renames but makes the repo less human-browsable. Git
    tracks renames fine; the link graph doesn't. **Decide before 500 notes.**
-3. Attachment policy — separate dir, size threshold, or don't commit binaries.
-4. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
+3. **Where the agent runs.** Option A (Claude Code on a clone) needs no decision
+   and is available now. Options B (browser, own key) and C (GitHub Actions) are
+   deferred until A reveals what is actually wanted.
+4. Attachment policy — separate dir, size threshold, or don't commit binaries.
+5. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
    find out whether it's actually missed.
+
+---
+
+## Agent-native
+
+**Goal:** an agent should be able to achieve anything the UI can achieve. Features
+are outcomes described in prompts, not code paths. Reference: Shipper & Claude,
+*Agent-native Architectures* (Every).
+
+### Most of this is already paid for
+
+The article's central claim is that files are the best agent interface —
+inspectable, portable, self-documenting, and the primitives agents are most
+fluent with. This design landed on `.md` files in a git repo for entirely
+separate reasons, which means the substrate is already right:
+
+| Article principle | Status here |
+|---|---|
+| Files as the universal interface | The whole design |
+| Shared workspace, not a sandbox | Agent and user both write the `vault` branch |
+| Self-documenting structure | `projects/gafu/adaptive-media.md` |
+| Inspectable, portable, no black box | `git clone -b vault` |
+| Conflict model | Already stronger than the article's: `sha` is a real
+compare-and-swap, not last-write-wins |
+
+### The one real conflict: an agent needs a key, and there is no backend
+
+An LLM call needs an API key. A public client-side PWA cannot hold one. This is
+the only place agent-native genuinely collides with "no server", so it is the
+decision to make rather than drift into.
+
+Three options, and they are not exclusive:
+
+**A. The agent is Claude Code on a clone of `vault`. Recommended, and free
+today.** Point it at a checkout and it has full parity immediately — bash plus
+the filesystem, which the article calls the most battle-tested agent interface
+there is. No tools to write, no key in the browser, no server. The agent commits
+and pushes like any other writer.
+
+**B. Bring-your-own key in the browser.** Same precedent as the GitHub PAT
+already in localStorage. Single user, own key. Gets the agent into the app UI.
+Do this only once A has shown which tools are actually wanted.
+
+**C. GitHub Actions as the agent runtime.** Triggered on push to `vault`, or on a
+schedule. Secrets live in GitHub, no server, and it suits unattended work —
+nightly tidying, weekly review, link repair.
+
+### Why option A costs the architecture nothing
+
+The sync already treats "someone else changed this file" as a first-class case —
+that is exactly what the `409` branch is for. **An agent is just another
+writer.** It is indistinguishable from editing a note on github.com, which is
+already a supported path.
+
+So the agent stays entirely outside the loop: it never violates principle 2,
+because it is not impure code inside the app, it is a separate process acting on
+the repo. Agent-nativeness on day one costs zero changes to `present()`, `nap()`
+or the sync.
+
+### Parity map
+
+Every user action is a file operation, which is what makes parity nearly free:
+
+| User action | Agent path |
+|---|---|
+| Create a note | write a file at a path |
+| Edit a note | read, write with `sha` |
+| Delete a note | delete the file |
+| Move / rename | delete + create (see open question on identity) |
+| Capture to today's dump | append to `dump/YYYY-MM-DD.md` |
+| Search | `grep` the tree |
+| Follow a `[[link]]` | resolve to a path, read it |
+| Browse folders | list the tree |
+
+### Rules that follow
+
+- **Atomic tools only, if tools are ever written.** `read_note`, `write_note`,
+  `list_notes`, `delete_note`, `search`. Never `organize_my_notes` — that puts
+  judgement in code, and changing behaviour becomes a refactor instead of a
+  prompt edit.
+- **CRUD completeness.** Whatever the entity list becomes, audit all four
+  operations. The article's named failure is shipping create and read, then
+  forgetting update and delete.
+- **Agent writes must be legible.** Distinct commit author or trailer, so agent
+  work is visible in `git log` and revertible in one command. Git already gives
+  the audit log and the rollback for free.
+- **`context.md` at the vault root**, holding what exists and what the user
+  prefers. Derived state, so it must be regenerable from the notes — principle 7
+  still applies.
+- **The dump is the natural agent log.** Append-only, timestamped, day-scoped.
+
+### The anti-pattern to actively avoid
+
+The article names it: *build the app, then add the agent* — the agent can then
+only do what the features already do, and emergent capability never appears.
+
+This document is currently a full app design with no agent in it, so that is the
+live risk. The mitigation is cheap: **option A is available before any app code
+exists.** Clone `vault`, point Claude Code at it, and use it. Whatever it turns
+out to need is real evidence rather than a guess, and it arrives before the UI
+has calcified around a different shape.
 
 ---
 
