@@ -1299,3 +1299,53 @@ Nothing collects orphaned attachments: undo a pasted image and the bytes stay in
 the vault forever. Deliberate for now — deleting bytes because no note currently
 references them is how a link that was about to be pasted back loses its picture.
 
+# Phase 12 — a fourth driving pass
+
+Three, from surfaces earlier passes never touched.
+
+## 12.1 Settings was a dead end
+
+Once a vault was connected there was no way back to the settings screen — the tab
+bar was the only navigation, and it had four tabs, none of them this. Meanwhile
+the status line said, on a rejected token, **"Check it in settings."**
+
+Following that instruction meant clearing site data, which also throws away every
+note that has not synced yet. The app's own advice destroyed work.
+
+Settings is a view now, reached by a fifth tab, prefilled with the current
+config and cancellable. Saving reloads, which is the honest way to adopt a new
+token: every client above that point was built with the old one.
+
+## 12.2 A dialog said aria-modal and was not
+
+Phase 9 stopped single-letter shortcuts reaching the app through an open dialog.
+Tab still walked straight out of it into the tab bar behind, where Enter
+navigated the app while the question was still on screen — the same hole, in the
+half I had not thought about.
+
+Focus now cycles within `[role=dialog]`. It lives in `main.ts` rather than
+`keys.ts` because it needs to know which elements are focusable, which is a DOM
+question and not a keymap one.
+
+## 12.3 A name ending in a dot produced a file with no extension
+
+`normalizePath` adds `.md` only when the basename has no dot, and `weird.` has
+one. So it made a file called `weird.` — not markdown, not openable as a note by
+anything else, and a name Windows cannot check out at all. Trailing dots are
+stripped before the extension test, and a name of nothing but dots is refused.
+
+## Measured, not guessed
+
+400 notes: about 3ms a keystroke, and the tree, badges and palette all rebuild
+per paint without it mattering. A 4,000-line note pastes, wraps, virtualises to
+about 56 rendered lines and scrolls; toggling preview on it blocks the main
+thread for around 100ms, which is visible but not a stall. No change made,
+because there is nothing here to fix yet.
+
+## Checked and sound
+
+Deleting a folder containing the open note moves you somewhere sensible.
+Backlinks survive a rename and the link text is rewritten. Quick capture from a
+note leaves the open note alone. Unicode, emoji, `?` and `#` in names all work,
+`../escape` is refused, and a 120-character name does not push the sidebar wide.
+

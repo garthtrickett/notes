@@ -27,6 +27,7 @@ import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { dataUrlOf } from "./attachments.ts";
 import { renderMarkdown } from "./render-markdown.ts";
+import { settingsView, type VaultConfig } from "./view-settings.ts";
 
 type Propose = (p: Proposal) => void;
 
@@ -37,6 +38,10 @@ export interface ViewCtx {
   readonly now: () => number;
   readonly onCapture: (text: string) => void;
   readonly previewCache: PreviewCache;
+  // Saving the vault config is ambient state, so it belongs to main rather than
+  // to the loop; the view only asks.
+  readonly onSaveConfig: (config: VaultConfig) => void;
+  readonly config: VaultConfig | null;
 }
 
 // Only the top ten rows carry a digit, because only ten digits exist. Anything
@@ -715,6 +720,13 @@ const tabs = (model: Model, propose: Propose) => html`
     >
       Trash
     </button>
+    <button
+      class=${model.mode === "settings" ? "on" : ""}
+      title="Vault settings"
+      @click=${() => propose({ kind: "modeChanged", mode: "settings" })}
+    >
+      Vault
+    </button>
   </div>
 `;
 
@@ -761,6 +773,18 @@ const filedView = (model: Model, propose: Propose, folder: string) => {
 export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
   const { propose, now, onCapture, previewCache } = ctx;
   if (!model.hydrated) return html`<p class="empty">Loading…</p>`;
+
+  if (model.mode === "settings") {
+    return html`
+      <main class="single">
+        ${tabs(model, propose)}
+        ${settingsView(ctx.onSaveConfig, ctx.config, () =>
+          propose({ kind: "modeChanged", mode: "notes" }),
+        )}
+        ${status(model)}
+      </main>
+    `;
+  }
 
   if (model.mode === "archive" || model.mode === "trash") {
     return html`

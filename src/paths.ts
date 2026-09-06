@@ -23,8 +23,13 @@ export const normalizePath = (raw: string): string => {
     .replace(/\/{2,}/g, "/")
     .replace(/\/+$/, "");
   if (cleaned === "") return "";
-  const base = cleaned.slice(cleaned.lastIndexOf("/") + 1);
-  return base.includes(".") ? cleaned : `${cleaned}.md`;
+  // A name ending in a dot has no extension, it has a stray dot. Left alone,
+  // `weird.` became a file called `weird.` — not markdown, and a name Windows
+  // cannot check out at all.
+  const trimmed = cleaned.replace(/\.+$/, "");
+  if (trimmed === "" || trimmed.endsWith("/")) return "";
+  const base = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return base.includes(".") ? trimmed : `${trimmed}.md`;
 };
 
 export const pathProblem = (

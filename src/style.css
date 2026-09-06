@@ -784,3 +784,25 @@ body {
   max-width: 100%;
   overflow-x: hidden;
 }
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-actions button {
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.settings-actions button:hover,
+.settings-actions button:focus-visible {
+  border-color: var(--accent);
+}
+

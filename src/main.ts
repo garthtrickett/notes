@@ -55,6 +55,13 @@ if (config === null) {
       github: createGithub(config),
       now: () => Date.now(),
       schedule: (ms, fire) => void setTimeout(fire, ms),
+      config,
+      saveConfig: (next) => {
+        saveConfig(localStorage, next);
+        // A reload is the honest way to adopt a new token: every client above
+        // this point was built with the old one.
+        location.reload();
+      },
     },
     root,
   );
@@ -67,6 +74,34 @@ if (config === null) {
   // Without this the app pulls once per session, so a note written on the laptop
   // does not appear on the phone until a reload. Clearing the watermark is the
   // whole mechanism; nap() does the rest.
+  // A dialog says aria-modal, and until now that was the only sense in which it
+  // was. Tab walked straight out of it into the tab bar behind, where Enter
+  // navigated the app while the question was still on screen. Single-letter
+  // shortcuts are already refused while a modal is open; this is the same rule
+  // for focus, which needs the DOM and so cannot live in keys.ts.
+  addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key !== "Tab" || loop.model.modal === null) return;
+    const dialog = document.querySelector<HTMLElement>("[role=dialog]");
+    if (dialog === null) return;
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((el) => el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    const first = focusable[0] as HTMLElement;
+    const last = focusable[focusable.length - 1] as HTMLElement;
+    const active = document.activeElement;
+    // Wrap at whichever end the cycle is about to leave from.
+    if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
   addEventListener("keydown", (event: KeyboardEvent) => {
     const action = keyAction(event, loop.model);
     if (action === null) return;

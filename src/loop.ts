@@ -17,6 +17,7 @@ import { createModel, present, type Model, type Proposal } from "./model.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
+import type { VaultConfig } from "./view-settings.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
 import { followLink, resolveLink } from "./links.ts";
 
@@ -27,6 +28,10 @@ export interface Deps {
   readonly now: () => number;
   // Injected so tests can drive the cooldown without waiting for real seconds.
   readonly schedule: (ms: number, fire: () => void) => void;
+  // Reading and writing the stored vault config is ambient, so it is injected
+  // rather than reached for.
+  readonly config?: VaultConfig | null;
+  readonly saveConfig?: (config: VaultConfig) => void;
 }
 
 export interface Loop {
@@ -140,6 +145,8 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         now,
         onCapture: capture,
         previewCache,
+        config: deps.config ?? null,
+        onSaveConfig: (next) => deps.saveConfig?.(next),
       }),
       root,
     );

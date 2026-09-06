@@ -198,3 +198,23 @@ describe("the trash and the archive", () => {
     expect(uniquePath(".trash/notes/readme", () => true).startsWith(".trash/notes/readme (")).toBe(true);
   });
 });
+
+describe("a name that ends in a dot", () => {
+  it("is not treated as having an extension", () => {
+    // `weird.` used to become a file literally called `weird.` — not markdown,
+    // and a name Windows cannot check out at all.
+    expect(normalizePath("weird.")).toBe("weird.md");
+    expect(normalizePath("notes...")).toBe("notes.md");
+    expect(normalizePath("folder/thing.")).toBe("folder/thing.md");
+  });
+
+  it("still leaves a real extension alone", () => {
+    expect(normalizePath("readme.txt")).toBe("readme.txt");
+    expect(normalizePath("a.b.md")).toBe("a.b.md");
+  });
+
+  it("refuses a name that is nothing but dots", () => {
+    expect(normalizePath("...")).toBe("");
+    expect(normalizePath("folder/...")).toBe("");
+  });
+});
