@@ -288,19 +288,17 @@ type Result<T, E> =
 const ok  = <T>(value: T): Result<T, never> => ({ ok: true,  value });
 const err = <E>(error: E): Result<never, E> => ({ ok: false, error });
 
-const attempt = <T, E>(fn: () => T, onThrow: (u: unknown) => E): Result<T, E> => {
-  try { return ok(fn()); } catch (e) { return err(onThrow(e)); }
+// Takes a thunk, not a promise: an expression that throws before it produces a
+// promise is then caught too.
+const attemptAsync = async <T, E>(
+  run: () => Promise<T>,
+  onThrow: (u: unknown) => E,
+): Promise<Result<T, E>> => {
+  try { return ok(await run()); } catch (e) { return err(onThrow(e)); }
 };
 
-const attemptAsync = async <T, E>(p: Promise<T>, onThrow: (u: unknown) => E): Promise<Result<T, E>> => {
-  try { return ok(await p); } catch (e) { return err(onThrow(e)); }
-};
-
-const combine = <T, E>(rs: readonly Result<T, E>[]): Result<T[], E[]> => {
-  const values: T[] = [], errors: E[] = [];
-  for (const r of rs) r.ok ? values.push(r.value) : errors.push(r.error);
-  return errors.length ? err(errors) : ok(values);
-};
+// A synchronous attempt() and a combine() collecting every error are the obvious
+// next two. They are not written until something needs them (principle 8).
 
 type SyncError =
   | { kind: "offline" }
