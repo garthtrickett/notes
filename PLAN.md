@@ -10,7 +10,7 @@ known to hold.
 |---|---|
 | 1. The loop, offline | A working notes app with no network |
 | 2. Sync | It round-trips to GitHub and survives a real conflict |
-| 3. The vault | Nested folders, the dump, and the PWA shell |
+| 3. The vault | Nested folders, the dump, and offline start-up |
 | 4. Documents | Rendered markdown, links, rename, search, attachments |
 
 Only phase 1 is fleshed out. The rest are one paragraph each and get expanded
@@ -283,21 +283,103 @@ Also out: folders, the dump, markdown rendering, links, search, attachments.
 
 # Phase 3 — The vault
 
-Give the flat list a shape.
+**Goal:** give the flat list a shape. Nested folders, the dump, and the app shell
+loading with no network.
 
-**Nested folders to arbitrary depth.** This needs no model change — folders are
-path prefixes and the manifest already returns full paths, so the tree is derived
-on read. What it needs is a tree view with expand/collapse, and create / move /
-delete. Moving a note is just a path change.
+**The gate:** capture a thought on one device, and have it appear on another
+without a reload — and with the browser offline from a cold start, the app still
+opens and still shows the notes.
 
-**The PWA shell**, moved down from phase 2: manifest, service worker, and app
-caching, so the thing loads with no network at all.
+## 3.1 The tree
 
-**The dump.** Per-day files, the 04:00 rollover, entries carrying a time, and the
-one-continuous-scroll UI: one textarea per day, past days read-only until
-clicked, headers rendered from filenames, lazy loading off the manifest.
+Arbitrary nesting, and it needs no model change: folders are path prefixes, so
+the tree is derived from the paths on render. `buildTree(notes)` is a pure
+function from a flat list to a nested one — testable with no DOM.
 
----
+Expansion state lives in the model as a `Set<string>` of open folder paths. Not
+persisted; a session is the right lifetime for it.
+
+Folders sort before notes, then alphabetically.
+
+## 3.2 Moving a note
+
+Folders are useless if nothing can move between them. A move is a path change,
+and because links match on basename it breaks nothing (phase 4 handles rename,
+which does).
+
+The Contents API has no move, so it is a create at the new path plus a delete of
+the old — which the existing machinery already expresses: write the new record as
+`pending` with a `null` baseSha, and tombstone the old one. Two commits, no new
+sync code.
+
+## 3.3 The dump
+
+`dump/YYYY-MM-DD.md`, one file per day. **The day rolls over at 04:00**, so
+`dumpDayOf(t) = localDate(t - 4h)` — an entry at 01:30 belongs to the night
+before. From the injected clock, never `Date.now()` inline.
+
+It is a second view, not a note: a continuous scroll, oldest to newest, one
+`<textarea>` per day, date headers rendered from filenames rather than stored in
+them, and the bottom day labelled **Today** rather than its date — at 02:00 the
+live day carries yesterday's, which would otherwise read as a bug.
+
+Past days render read-only until clicked. They are settled, and it keeps the hot
+path a single focused editor.
+
+**Capture** is a separate input pinned at the bottom. Enter appends
+`HH:MM <text>` to today's file and clears. That is the phone gesture, and it is
+what makes entries timestamped without fighting a textarea over cursor position.
+
+Appending is naturally in order: time moves forward through a dump day, so a new
+entry always belongs at the end. The shifted-hour comparator the decisions doc
+specifies — `(h - 4 + 24) % 24`, so `01:30` sorts last — is only needed to merge
+two divergent copies of a day. That is not built here, and it gets written when
+the merge is (principle 8).
+
+## 3.4 Pull on focus
+
+The app currently pulls once per session, so a note written on the laptop does
+not appear on the phone until a reload. `visibilitychange` and `focus` propose a
+refresh, which clears `lastSyncedAt` and lets `nap()` do the rest.
+
+This is what makes laptop → phone feel live, and it is four lines.
+
+## 3.5 The app shell offline
+
+A hand-rolled service worker, not `vite-plugin-pwa`.
+
+The usual reason to reach for the plugin is needing the build manifest to
+precache hashed filenames. That is avoidable: hashed asset names are immutable,
+so caching them *as they are requested* is correct and needs no build step.
+Navigations are network-first falling back to cache, so a new deploy is picked up
+whenever there is a network and the app still opens when there is not.
+
+Roughly thirty lines and no dependency. Plus a web manifest so it installs to a
+home screen.
+
+## 3.6 Tests
+
+- `buildTree` — nesting, ordering, a folder containing only folders, paths with
+  no folder at all.
+- `dumpDayOf` — 04:00 exactly, 03:59 belonging to the previous day, midnight,
+  and a DST-shifted day.
+- Capture appends `HH:MM` to the right file, and creates that file if the day has
+  not started yet.
+- The dump renders one editor per day, with past days read-only.
+- Moving a note tombstones the old path and marks the new one pending.
+- A focus event triggers exactly one pull, not one per event.
+- Expanding and collapsing a folder does not touch note state.
+
+## Not in phase 3
+
+**Lazy loading of note bodies.** The plan said the dump would lazy-load off the
+manifest. It will need to — `pull` currently fetches every changed file, which is
+one request per dump day on a first sync — but that does not bite until the vault
+has hundreds of files, and doing it now means `body: string | null` threaded
+through the whole model for a scale that does not exist yet. **Trigger: a first
+sync taking more than a couple of seconds, or roughly 200 files.**
+
+Also out: markdown rendering, links, backlinks, rename, search, attachments.
 
 # Phase 4 — Documents
 
