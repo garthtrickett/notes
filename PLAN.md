@@ -10,7 +10,7 @@ known to hold.
 |---|---|
 | 1. The loop, offline | A working notes app with no network |
 | 2. Sync | It round-trips to GitHub and survives a real conflict |
-| 3. The vault | Nested folders, and the dump |
+| 3. The vault | Nested folders, the dump, and the PWA shell |
 | 4. Documents | Rendered markdown, links, rename, search, attachments |
 
 Only phase 1 is fleshed out. The rest are one paragraph each and get expanded
@@ -144,17 +144,142 @@ rendering, `[[links]]`, search, attachments, the PWA manifest.
 
 # Phase 2 — Sync
 
-Add the GitHub client and make the app a second writer to the `vault` branch.
-Trees API for the manifest, Contents API with `sha` for compare-and-swap writes,
-an outbox in IndexedDB, and flushing driven from `nap()`. A `409` writes a
-conflict copy. PWA manifest and offline caching land here too, since offline
-finally means something.
+**Goal:** the app becomes a second writer to the `vault` branch. Notes round-trip
+to GitHub, and a genuine concurrent edit produces a conflict copy rather than a
+lost one.
 
-**The gate is a deliberate conflict:** edit the same note in the GitHub web UI
-and in the app while offline, then reconnect. Expected result is a conflict copy,
-not a lost edit. Phase 2 is not done until that passes.
+**The gate:** edit the same note in the GitHub web UI *and* in the app while
+offline, then reconnect. Expected: a conflict copy. Phase 2 is not done until
+that passes against the real API, not a fake.
 
----
+## 2.1 The outbox is not a separate store
+
+The obvious design is a queue table alongside the notes. Don't build it.
+
+gafu's one real bug was exactly that: a `tx:` record and an `outbox_pending_keys`
+index written in two separate IndexedDB transactions, so a crash or an interleave
+between them orphaned the transaction forever.
+
+Here the note record *is* the queue entry. A record carries:
+
+```ts
+{ path, body, baseSha, pending, deleted }
+```
+
+- `baseSha` — the blob SHA of the remote version last seen. `null` means the note
+  has never existed on GitHub.
+- `pending` — the body differs from what GitHub has, so it needs pushing.
+- `deleted` — a tombstone. The note is gone locally but the remote delete has not
+  landed yet; the record disappears once it has.
+
+The outbox is then a *query*, not a structure: `records.filter(r => r.pending)`.
+There is no index to keep in step with anything, so there is nothing to
+desynchronise. One store, one transaction, no orphans possible.
+
+`pending` must be persisted. Closing the tab with unpushed edits and reopening it
+has to still know they need pushing.
+
+## 2.2 Typed errors, finally earning their keep
+
+```ts
+type SyncError =
+  | { kind: "offline" }                        // keep it, try later
+  | { kind: "conflict"; remoteSha: string }    // write a conflict copy
+  | { kind: "auth" }                           // ask for a token
+  | { kind: "notFound" }                       // treat as a remote delete
+  | { kind: "github"; status: number };        // surface it and back off
+```
+
+Five errors, five different responses in `present()`. This is the point where the
+`E` parameter stops being decoration and an exhaustive switch starts catching the
+case that was forgotten. Phase 1's `E = string` gets replaced.
+
+## 2.3 The GitHub client
+
+One module, injected into the loop, so every test runs against a fake and the
+whole of sync is testable with no network.
+
+| Operation | Call |
+|---|---|
+| manifest | `GET /repos/{o}/{r}/git/trees/vault?recursive=1` |
+| read | `GET /repos/{o}/{r}/contents/{path}?ref=vault` |
+| write | `PUT /repos/{o}/{r}/contents/{path}` with `sha`, `branch` |
+| delete | `DELETE /repos/{o}/{r}/contents/{path}` with `sha`, `branch` |
+
+Every method returns `Promise<Result<T, SyncError>>`. HTTP status maps to the
+union at this boundary and nowhere else — above this file, statuses do not exist
+(principle 6).
+
+Content is base64 both ways, and must be UTF-8 safe: `btoa` alone corrupts
+anything non-ASCII, which for a notes app means the first accented character or
+emoji. Use `TextEncoder`/`TextDecoder`.
+
+## 2.4 Config and auth
+
+Owner, repo and a personal access token in `localStorage`. If any is missing the
+app renders a settings form instead of the note list — there is nothing useful to
+show without them.
+
+The token is the user's own, on their own repo. Not a secret from themselves.
+
+## 2.5 Pull
+
+1. Fetch the manifest — every path with its blob SHA, in one call.
+2. For each remote path where `remote.sha !== local.baseSha`, fetch the content.
+3. **Skip any note that is `pending`.** Local has unpushed edits, so pull must not
+   clobber it. The push will discover the conflict via the `sha` check, which
+   keeps conflict handling in exactly one place.
+4. Local records with a `baseSha` that are absent from the manifest were deleted
+   remotely. Remove them — unless they are `pending`, in which case the local
+   edit wins and gets re-created.
+
+## 2.6 Push, and the conflict copy
+
+For each pending record: `PUT` with `sha: baseSha`. GitHub commits it, or returns
+**409** because the file moved on since.
+
+On 409, Obsidian's answer: keep the remote as canonical and park the local
+version beside it.
+
+- Write the local body to `{name} (conflict {YYYY-MM-DD}).md`, itself pending.
+- Clear `pending` on the original and let the next pull bring the remote version.
+
+Nothing is lost and no merge is attempted. The conflict name needs the injected
+clock (principle 5).
+
+## 2.7 `nap()` needs a real backoff
+
+Phase 1's latch — stop on failure, clear on the next user action — is wrong for a
+network. Failures are *normal* there, and nobody is typing while the train is in
+a tunnel.
+
+Replace it with `retryAt`: on failure set `retryAt = now + delay`, doubling to a
+cap, reset on success. `nap()` skips while `now < retryAt` and schedules a single
+wakeup for it. Coming back online resets it immediately.
+
+## 2.8 Tests
+
+**Against a fake client**, so all of it is deterministic and offline:
+- Pull adds new notes, updates changed ones, and leaves unchanged ones alone.
+- Pull does not clobber a pending note.
+- Pull removes a note deleted remotely, but not one with local edits.
+- Push sends `baseSha`, and stores the new SHA on success.
+- **409 produces a conflict copy, and the local body survives in it.**
+- A tombstone deletes remotely, then disappears.
+- `offline` keeps the note pending and does not touch the body.
+- `auth` surfaces without wedging the loop.
+- Backoff: two failures schedule, do not spin, and recover on success.
+- Every `SyncError` kind has a branch — adding a sixth must fail to compile.
+
+**Against the real API**, one test, run by hand: the gate above.
+
+## Not in phase 2
+
+The PWA manifest and service worker have moved to phase 3. They are about the app
+*shell* loading offline, which is independent of sync being correct, and adding a
+build plugin here would blur the one thing this phase is meant to prove.
+
+Also out: folders, the dump, markdown rendering, links, search, attachments.
 
 # Phase 3 — The vault
 
@@ -164,6 +289,9 @@ Give the flat list a shape.
 path prefixes and the manifest already returns full paths, so the tree is derived
 on read. What it needs is a tree view with expand/collapse, and create / move /
 delete. Moving a note is just a path change.
+
+**The PWA shell**, moved down from phase 2: manifest, service worker, and app
+caching, so the thing loads with no network at all.
 
 **The dump.** Per-day files, the 04:00 rollover, entries carrying a time, and the
 one-continuous-scroll UI: one textarea per day, past days read-only until
