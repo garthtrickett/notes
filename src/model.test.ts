@@ -161,8 +161,8 @@ describe("present — persistence bookkeeping", () => {
     expect(m.persisting).toBe(false);
 
     m.persisting = true;
-    present(m, { kind: "failed", message: "disk full" });
+    present(m, { kind: "failed", error: { kind: "writeFailed", cause: "disk full" } });
     expect(m.persisting).toBe(false);
-    expect(m.error).toBe("disk full");
+    expect(m.error).toContain("Could not save to this device");
   });
 });

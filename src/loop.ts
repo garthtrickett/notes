@@ -130,6 +130,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // 1. Get local edits onto the device before anything else. Losing a note to
     //    a closed tab is worse than syncing late.
     if (!model.persisting && !model.persistBlocked) {
+      // Forgetting comes first: a record left behind is a note that returns from
+      // the dead on the next reload, which is worse than a late save.
+      if (model.forgotten.size > 0) {
+        const paths = [...model.forgotten];
+        model.persisting = true;
+        idle = actions.forget(db, paths).then(propose);
+        return;
+      }
       const dirty = [...model.notes.values()].filter((n) => n.dirty);
       if (dirty.length > 0) {
         model.persisting = true;

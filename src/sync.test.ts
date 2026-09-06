@@ -32,7 +32,7 @@ const fakeGithub = () => {
       const existing = files.get(path);
       // The compare-and-swap, which is the whole conflict mechanism.
       const current = existing?.sha ?? null;
-      if (current !== baseSha) return err({ kind: "conflict", remoteSha: current });
+      if (current !== baseSha) return err({ kind: "conflict" });
       const sha = `sha-${nextSha++}`;
       files.set(path, { body, sha });
       return ok(sha);
@@ -42,7 +42,7 @@ const fakeGithub = () => {
       if (failWith) return err(failWith);
       const existing = files.get(path);
       if (existing && existing.sha !== baseSha) {
-        return err({ kind: "conflict", remoteSha: existing.sha });
+        return err({ kind: "conflict" });
       }
       files.delete(path);
       return ok(undefined);

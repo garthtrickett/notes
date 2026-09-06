@@ -10,6 +10,7 @@ import { rewriteLinks } from "./links.ts";
 import { describeProblem, normalizePath, pathProblem } from "./paths.ts";
 import { isDumpPath } from "./dump.ts";
 import { isAttachmentPath } from "./attachments.ts";
+import { describeLocal, type LocalError } from "./local-error.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
@@ -56,6 +57,11 @@ export interface Model {
   online: boolean;
   syncError: SyncError | null;
   lastSyncedAt: number | null;
+  // Paths whose record must be dropped from this device. Removing a note from
+  // the map is not enough: nap() only ever writes notes it can still see, so a
+  // vanished record would linger in IndexedDB and be read back on reload — the
+  // note would return from the dead.
+  forgotten: Set<string>;
   // Set when a write fails, so nap() stops retrying. Without it a failing store
   // spins: the note is still dirty, so nap starts another write immediately,
   // which fails, forever. Cleared by the next user action, which is the only
@@ -80,6 +86,7 @@ export const createModel = (): Model => ({
   online: true,
   syncError: null,
   lastSyncedAt: null,
+  forgotten: new Set(),
   error: null,
 });
 
@@ -90,7 +97,8 @@ export type Proposal =
   | { readonly kind: "edited"; readonly path: string; readonly body: string }
   | { readonly kind: "deleted"; readonly path: string }
   | { readonly kind: "persisted"; readonly written: readonly NoteRecord[] }
-  | { readonly kind: "failed"; readonly message: string }
+  | { readonly kind: "forgot"; readonly paths: readonly string[] }
+  | { readonly kind: "failed"; readonly error: LocalError }
   | { readonly kind: "online"; readonly online: boolean }
   | { readonly kind: "woke" }
   | { readonly kind: "pulled"; readonly notes: readonly NoteRecord[]; readonly gone: readonly string[] }
@@ -153,6 +161,16 @@ export interface Rejection {
 
 const reject = (reason: string): Rejection => ({ reason });
 
+// A sync ended well. Four fields have to move together — an arm that sets three
+// of them leaves a cooldown in place and wedges the retry loop, so this is a
+// rule rather than a shape and does not get duplicated (principle 4).
+const settleSync = (m: Model): void => {
+  m.syncing = false;
+  m.syncError = null;
+  m.retryDelay = 0;
+  m.retryAt = 0;
+};
+
 // Accepts or rejects. A rejection returns a reason rather than a silent return — the proposal violated an
 // invariant, so the model declines it and nothing changes. Never throws.
 export const present = (m: Model, p: Proposal): Rejection | null => {
@@ -178,6 +196,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "created": {
       const path = refusePath(m, p.path);
       if (path === null) return reject(m.error ?? `Cannot create ${p.path}.`);
+      m.forgotten.delete(path);
       m.notes.set(path, {
         path,
         body: "",
@@ -207,8 +226,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       const doomed = m.notes.get(p.path);
       if (!doomed) return reject(`Cannot delete ${p.path}: no such note.`);
       if (doomed.baseSha === null) {
-        // Never reached GitHub, so there is nothing to tell it about.
+        // Never reached GitHub, so there is nothing to tell it about — but this
+        // device still has to forget it.
         m.notes.delete(p.path);
+        m.forgotten.add(p.path);
       } else {
         // Keep a tombstone until the remote delete lands.
         m.notes.set(p.path, {
@@ -240,8 +261,15 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
+    case "forgot": {
+      for (const path of p.paths) m.forgotten.delete(path);
+      m.persisting = false;
+      return null;
+    }
+
     case "failed": {
-      m.error = p.message;
+      // The one place a local failure becomes a sentence.
+      m.error = describeLocal(p.error);
       m.persisting = false;
       m.persistBlocked = true;
       return null;
@@ -338,8 +366,8 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         });
       }
 
-      present(m, { kind: "moved", from: p.from, to });
-      return null;
+      // Return what the delegate decided rather than assuming it accepted.
+      return present(m, { kind: "moved", from: p.from, to });
     }
 
     case "moved": {
@@ -363,6 +391,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       });
       if (note.baseSha === null) {
         m.notes.delete(p.from);
+        m.forgotten.add(p.from);
       } else {
         m.notes.set(p.from, {
           ...note,
@@ -398,17 +427,16 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         // A pending note has unpushed edits; the push decides that conflict, not
         // the pull. Never overwrite it here.
         if (local?.pending) continue;
+        m.forgotten.delete(incoming.path);
         m.notes.set(incoming.path, { ...incoming, dirty: true });
       }
       for (const path of p.gone) {
         const local = m.notes.get(path);
         if (!local || local.pending) continue; // local edits win a remote delete
         m.notes.delete(path);
+        m.forgotten.add(path);
       }
-      m.syncing = false;
-      m.syncError = null;
-      m.retryDelay = 0;
-      m.retryAt = 0;
+      settleSync(m);
       if (m.openPath === null || !m.notes.has(m.openPath)) {
         m.openPath = firstVisiblePath(m);
       }
@@ -417,10 +445,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
 
     case "pushed": {
       const note = m.notes.get(p.path);
-      m.syncing = false;
-      m.syncError = null;
-      m.retryDelay = 0;
-      m.retryAt = 0;
+      settleSync(m);
       // Deliberately *not* clearing lastSyncedAt here. Re-pulling straight after
       // a push races the Trees API's staleness for no benefit — the push already
       // told us the remote state. The conflict branch still forces a pull,
@@ -442,10 +467,8 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
 
     case "removed": {
       m.notes.delete(p.path);
-      m.syncing = false;
-      m.syncError = null;
-      m.retryDelay = 0;
-      m.retryAt = 0;
+      m.forgotten.add(p.path);
+      settleSync(m);
       if (m.openPath === p.path) m.openPath = firstVisiblePath(m);
       return null;
     }
@@ -475,10 +498,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         baseSha: null,
         dirty: true,
       });
-      m.syncing = false;
-      m.syncError = null;
-      m.retryDelay = 0;
-      m.retryAt = 0;
+      settleSync(m);
       // The original now has no baseSha, so a fresh pull is what brings the
       // remote version back down beside the copy.
       m.lastSyncedAt = null;

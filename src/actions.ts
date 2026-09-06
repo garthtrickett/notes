@@ -6,6 +6,7 @@
 // proposal, with no model and no renderer in sight.
 
 import { attemptAsync } from "./result.ts";
+import type { LocalError } from "./local-error.ts";
 import * as idb from "./idb.ts";
 import type { Encoding, Note, NoteRecord, Proposal } from "./model.ts";
 import type { Github } from "./github.ts";
@@ -23,9 +24,9 @@ import {
 export const hydrate = async (db: IDBDatabase): Promise<Proposal> => {
   const read = await attemptAsync(
     () => idb.getAll(db),
-    (cause) => `Could not read your notes from this device: ${String(cause)}`,
+    (cause): LocalError => ({ kind: "readFailed", cause: String(cause) }),
   );
-  if (!read.ok) return { kind: "failed", message: read.error };
+  if (!read.ok) return { kind: "failed", error: read.error };
 
   const notes: Note[] = read.value.map((r) => ({
     ...r,
@@ -55,9 +56,9 @@ export const persist = async (
 
   const wrote = await attemptAsync(
     () => idb.putMany(db, written),
-    (cause) => `Could not save to this device: ${String(cause)}`,
+    (cause): LocalError => ({ kind: "writeFailed", cause: String(cause) }),
   );
-  if (!wrote.ok) return { kind: "failed", message: wrote.error };
+  if (!wrote.ok) return { kind: "failed", error: wrote.error };
 
   return { kind: "persisted", written };
 };
@@ -68,11 +69,11 @@ export const forget = async (
 ): Promise<Proposal> => {
   const removed = await attemptAsync(
     () => idb.deleteMany(db, paths),
-    (cause) => `Could not delete from this device: ${String(cause)}`,
+    (cause): LocalError => ({ kind: "forgetFailed", cause: String(cause) }),
   );
-  if (!removed.ok) return { kind: "failed", message: removed.error };
+  if (!removed.ok) return { kind: "failed", error: removed.error };
 
-  return { kind: "persisted", written: [] };
+  return { kind: "forgot", paths };
 };
 
 // ---------------------------------------------------------------------------
@@ -247,23 +248,22 @@ export const attach = async (
 ): Promise<Proposal> => {
   const shrunk = await attemptAsync(
     () => shrink(file),
-    (cause) => `Could not read that image: ${String(cause)}`,
+    (cause): LocalError => ({ kind: "imageUnreadable", cause: String(cause) }),
   );
-  if (!shrunk.ok) return { kind: "failed", message: shrunk.error };
+  if (!shrunk.ok) return { kind: "failed", error: shrunk.error };
 
   if (shrunk.value.byteLength > MAX_BYTES) {
-    const mb = (shrunk.value.byteLength / 1_000_000).toFixed(1);
     return {
       kind: "failed",
-      message: `That image is still ${mb} MB after resizing, so it was not added. Git keeps binaries forever.`,
+      error: { kind: "imageTooBig", bytes: shrunk.value.byteLength },
     };
   }
 
   const hash = await attemptAsync(
     () => shortHash(shrunk.value),
-    () => "Could not hash the image.",
+    (cause): LocalError => ({ kind: "imageUnreadable", cause: String(cause) }),
   );
-  if (!hash.ok) return { kind: "failed", message: hash.error };
+  if (!hash.ok) return { kind: "failed", error: hash.error };
 
   const path = attachmentPath(now(), hash.value);
   return {

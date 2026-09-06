@@ -244,3 +244,79 @@ afterEach(() => {
   db?.close();
   db = undefined;
 });
+
+describe("deleting reaches the device, not just the model", () => {
+  it("keeps a deleted note deleted across a reload", async () => {
+    const first = await boot(localOnly(), root);
+    first.propose({ kind: "created", path: "a.md" });
+    first.propose({ kind: "edited", path: "a.md", body: "delete me" });
+    await settle(first);
+    expect((await getAll(theDb())).map((r) => r.path)).toEqual(["a.md"]);
+
+    first.propose({ kind: "deleted", path: "a.md" });
+    await settle(first);
+
+    // Removing it from the map is not enough: nap() only writes notes it can
+    // still see, so without an explicit forget the record survives and the note
+    // returns from the dead on the next boot.
+    expect(await getAll(theDb())).toEqual([]);
+
+    document.body.innerHTML = '<div id="app"></div>';
+    const second = await boot(
+      localOnly(),
+      document.getElementById("app") as HTMLElement,
+    );
+    await settle(second);
+    expect([...second.model.notes.keys()]).toEqual([]);
+  });
+
+  it("forgets a synced note once its remote delete lands", async () => {
+    const loop = await boot(localOnly(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [{ ...record("a.md", "text"), baseSha: "sha-1" }],
+    });
+    await settle(loop);
+
+    loop.propose({ kind: "deleted", path: "a.md" });
+    await settle(loop);
+    // Still a tombstone: the remote has not been told yet.
+    expect((await getAll(theDb())).map((r) => [r.path, r.deleted])).toEqual([
+      ["a.md", true],
+    ]);
+
+    loop.propose({ kind: "removed", path: "a.md" });
+    await settle(loop);
+    expect(await getAll(theDb())).toEqual([]);
+  });
+
+  it("stops forgetting a path that comes back", async () => {
+    const loop = await boot(localOnly(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    loop.propose({ kind: "deleted", path: "a.md" });
+    // Recreated before the forget has been written.
+    loop.propose({ kind: "created", path: "a.md" });
+    loop.propose({ kind: "edited", path: "a.md", body: "back" });
+    await settle(loop);
+
+    // A queued deletion must not erase the note that replaced it.
+    expect((await getAll(theDb())).map((r) => [r.path, r.body])).toEqual([
+      ["a.md", "back"],
+    ]);
+    expect(loop.model.forgotten.size).toBe(0);
+  });
+
+  it("forgets a note deleted on another device", async () => {
+    const loop = await boot(localOnly(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [{ ...record("a.md", "text"), baseSha: "sha-1" }],
+    });
+    await settle(loop);
+
+    loop.propose({ kind: "pulled", notes: [], gone: ["a.md"] });
+    await settle(loop);
+    expect(await getAll(theDb())).toEqual([]);
+  });
+});

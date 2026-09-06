@@ -10,7 +10,7 @@ import type { Encoding } from "./model.ts";
 
 export type SyncError =
   | { readonly kind: "offline" }
-  | { readonly kind: "conflict"; readonly remoteSha: string | null }
+  | { readonly kind: "conflict" }
   | { readonly kind: "auth" }
   | { readonly kind: "notFound" }
   | { readonly kind: "github"; readonly status: number };
@@ -149,7 +149,7 @@ export const createGithub = (config: Config): Github => {
       // 422 is GitHub's answer to creating a path that already exists, which is
       // the same situation reached from the other direction.
       if (res.value.status === 409 || res.value.status === 422) {
-        return err({ kind: "conflict", remoteSha: null });
+        return err({ kind: "conflict" });
       }
       if (!res.value.ok) return err(statusToError(res.value.status));
 
@@ -172,7 +172,7 @@ export const createGithub = (config: Config): Github => {
       });
       if (!res.ok) return res;
       if (res.value.status === 409) {
-        return err({ kind: "conflict", remoteSha: null });
+        return err({ kind: "conflict" });
       }
       // Already gone is the outcome we wanted.
       if (res.value.status === 404) return ok(undefined);

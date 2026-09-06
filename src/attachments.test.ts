@@ -12,6 +12,7 @@ import {
 import { attach } from "./actions.ts";
 import { createModel, present, visible, type Note } from "./model.ts";
 import { renderMarkdown, sanitize } from "./render-markdown.ts";
+import { describeLocal } from "./local-error.ts";
 import { getAll, openDb, putMany } from "./idb.ts";
 
 const NOON = new Date("2026-09-06T14:32:00").getTime();
@@ -91,7 +92,10 @@ describe("attach", () => {
     // Git keeps binaries forever, so this has to fail before it is committed.
     expect(proposal.kind).toBe("failed");
     if (proposal.kind === "failed") {
-      expect(proposal.message).toContain("not added");
+      // The action reports what happened; only describeLocal turns it into a
+      // sentence (principle 6).
+      expect(proposal.error.kind).toBe("imageTooBig");
+      expect(describeLocal(proposal.error)).toContain("not added");
     }
   });
 
@@ -111,7 +115,7 @@ describe("attach", () => {
   it("adds nothing to the model when it is refused", () => {
     const m = createModel();
     present(m, { kind: "hydrated", notes: [host] });
-    present(m, { kind: "failed", message: "too big" });
+    present(m, { kind: "failed", error: { kind: "imageTooBig", bytes: 9_000_000 } });
     expect(m.notes.size).toBe(1);
   });
 });

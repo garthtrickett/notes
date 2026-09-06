@@ -49,7 +49,7 @@ Everything enters at the top and leaves at the bottom. Nothing mutates outside
 | View | `lit-html` standalone | Pure function from model to DOM — exactly the `S` SAM wants. No web components, no shadow DOM, no base class. ~5 KB. |
 | Errors | Hand-rolled `Result<T, E>` | ~20 lines. Typed errors + exhaustive handling with no runtime and nothing to cast away at a boundary. |
 | Editor | `<textarea>`, **uncontrolled** | Native control behaves correctly on mobile keyboards. No WYSIWYG: the markdown → doc-tree → markdown round trip is lossy exactly where people notice, and it costs more than every other feature combined. |
-| Markdown → AST | `remark` / unified | Need an AST for `[[wikilinks]]`, tags, headings. Not `marked` — that's render-only. |
+| Markdown → HTML | `marked` + a hand-rolled sanitizer | An earlier row here specified `remark` and rejected `marked`, on the grounds that finding `[[wikilinks]]` needed an AST. It does not — a wikilink is a three-line regex — so the only remaining job is rendering, which `marked` does in a third of the weight. Raw HTML is stripped from the output rather than trusted, since an agent may summarise a web page into a note. |
 | Search | `Array.filter` | 1,000 notes × 2 KB is 2 MB. Add FTS when it's measurably slow, not before. |
 | Toolchain | Bun | Fast install, runs TS directly, built-in test runner and `.env`. Low stakes — there is no production runtime, so the compat surface is Vite + tests. `npm i && node` is a one-command exit. |
 | Build | Vite → PWA | |
@@ -391,6 +391,13 @@ Stated up front so they aren't surprises later.
   note locally — every disappearance is confirmed against the Contents API
   first. Deleting is the most destructive thing here and deserves the second
   signal.
+- **Two O(n)-per-render scans, left in deliberately.** `nap()` walks every note
+  twice per proposal to find dirty and pending ones, and `backlinksTo` runs the
+  wikilink regex over every body on every paint. Both are imperceptible at the
+  sizes this has seen, and fixing them early would be exactly the speculation
+  principle 8 warns about. **Trigger: typing feels laggy.** The answers are a
+  dirty/pending count kept on the model and a memoised backlink pass — not a
+  rewrite.
 - **A pull is one round trip per changed file, in series.** `pull` fetches each
   changed file one at a time, then makes a second sequential pass confirming any
   file the manifest omitted. A first sync of a thousand-note vault is therefore a
