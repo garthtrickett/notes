@@ -179,6 +179,73 @@ describe("the sanitizer", () => {
   });
 });
 
+describe("the sanitizer, adversarially", () => {
+  // These are the vectors an audit found. The suite previously covered only
+  // HTML-namespace cases — the ones that already passed — which is the shape of
+  // a test suite that agrees with its implementation instead of attacking it.
+  const render = (source: string): string => {
+    const el = document.createElement("div");
+    el.append(renderMarkdown(source, document));
+    return el.innerHTML;
+  };
+  const inert = (source: string) => {
+    const html = render(source);
+    // Rendered as text, so no element exists to carry a URL or a handler.
+    expect(html).not.toContain("<svg");
+    expect(html).not.toContain("<math");
+    expect(html).not.toContain("<script");
+    return html;
+  };
+
+  it("neutralises xlink:href, which never reached the URL check", () => {
+    // attr.name is the qualified name, so allowlisting "href" and "src" skipped
+    // it entirely — and browsers honour xlink:href on an SVG anchor.
+    inert('<svg><a xlink:href="javascript:alert(1)"><text>x</text></a></svg>');
+  });
+
+  it("neutralises SMIL, which rewrites href after sanitising", () => {
+    inert('<svg><a><animate attributeName="href" values="javascript:alert(1)"/></a></svg>');
+  });
+
+  it("neutralises <svg><script>, whose tagName is lowercase", () => {
+    inert("<svg><script>alert(1)</script></svg>");
+  });
+
+  it("neutralises MathML", () => {
+    inert('<math><maction actiontype="statusline" xlink:href="javascript:alert(1)">x</maction></math>');
+  });
+
+  it("neutralises srcset, which would leak that a note was opened", () => {
+    // The URL survives as escaped text, which fetches nothing. What matters is
+    // that no element exists to carry it.
+    const html = render('<img srcset="https://evil.example/leak.png 1x">');
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img");
+  });
+
+  it("strips srcset from an element markdown could produce", () => {
+    const template = document.createElement("template");
+    template.innerHTML = '<img src="https://x/a.png" srcset="https://evil/leak.png 1x">';
+    sanitize(template.content);
+    expect(template.innerHTML).toBe('<img src="https://x/a.png">');
+  });
+
+  it("still strips a javascript: link markdown itself produced", () => {
+    // Raw HTML is escaped, but this is an ordinary link as far as the parser is
+    // concerned, so the second layer has to catch it.
+    expect(render("[x](javascript:alert(1))")).toContain("<a>x</a>");
+  });
+
+  it("leaves ordinary markdown alone", () => {
+    expect(render("# Hello\n\n**bold**")).toContain("<h1>Hello</h1>");
+    expect(render("![](https://example.com/a.png)")).toContain(
+      'src="https://example.com/a.png"',
+    );
+    // A code fence still shows its angle brackets rather than eating them.
+    expect(render("```\n<div>ok</div>\n```")).toContain("&lt;div&gt;ok&lt;/div&gt;");
+  });
+});
+
 describe("preview and search in the app", () => {
   it("toggles between the editor and rendered markdown", async () => {
     const loop = await boot(deps(), root);
@@ -439,5 +506,31 @@ describe("the preview does not thrash the DOM", () => {
     root.querySelector<HTMLAnchorElement>("a[data-note]")!.click();
     await settle(loop);
     expect(loop.model.notes.has("ghost.md")).toBe(true);
+  });
+});
+
+describe("the caret when a change lands elsewhere in the note", () => {
+  it("stays put when a rename rewrites a link far above it", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("a.md", "[[older]] intro\n\nI am typing down here."), note("older.md")],
+    });
+    loop.propose({ kind: "opened", path: "a.md" });
+    await settle(loop);
+
+    const editor = root.querySelector<HTMLTextAreaElement>("#editor");
+    editor!.focus();
+    const caret = editor!.value.length - "down here.".length;
+    editor!.setSelectionRange(caret, caret);
+
+    // The rewrite shortens text above the caret. A prefix-only heuristic would
+    // drag the caret by the whole delta and read as a phantom jump.
+    loop.propose({ kind: "renamed", from: "older.md", to: "new.md" });
+    await settle(loop);
+
+    expect(editor!.value).toContain("[[new]] intro");
+    const shortenedBy = "older".length - "new".length;
+    expect(editor!.selectionStart).toBe(caret - shortenedBy);
   });
 });

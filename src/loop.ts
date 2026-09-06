@@ -2,8 +2,15 @@
 //
 //   proposal -> present() -> render() -> nap() -> action -> proposal -> ...
 //
-// present() is the only mutation point and it is synchronous, so two async
-// results can never interleave halfway through a state change.
+// present() owns note state; nap() and propose() additionally write the in-flight
+// flags beside it — persisting, syncing, retryAt, lastSyncedAt. That is a
+// deliberate boundary, not an oversight: the loop *starts* an operation, present
+// *concludes* it, so the fields do not partition by owner.
+//
+// The safety property does not rest on there being one writer. It rests on every
+// write happening synchronously inside one turn — nap() is called from propose(),
+// never from a callback — and on no async code ever seeing a Model. Actions take
+// notes and a client; none of them receives one.
 
 import { render } from "lit-html";
 import { createModel, present, type Model, type Proposal } from "./model.ts";
@@ -44,7 +51,28 @@ const syncEditorValue = (editor: HTMLTextAreaElement, body: string): void => {
     shared += 1;
   }
 
-  const moved = caret < shared ? caret : caret + (body.length - previous.length);
+  // The trailing match matters as much as the leading one. A rename rewriting
+  // [[old]] far above the caret changes length in the middle, and a prefix-only
+  // test would drag the caret by that delta and look like a phantom jump.
+  let tail = 0;
+  while (
+    tail < previous.length - shared &&
+    tail < body.length - shared &&
+    previous[previous.length - 1 - tail] === body[body.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+
+  const changeEnds = previous.length - tail;
+  // `caret < shared`, not `<=`: text inserted *at* the caret should carry it
+  // along, which is what makes typing continue after a pasted image reference
+  // rather than in front of it.
+  const moved =
+    caret < shared
+      ? caret // the change is entirely after the caret
+      : caret >= changeEnds
+        ? caret + (body.length - previous.length) // entirely before it
+        : shared; // the caret sat inside what changed
   const next = Math.max(0, Math.min(moved, body.length));
 
   editor.value = body;
@@ -63,9 +91,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // would come back empty.
   let lastEditorKey: string | null = null;
   let wasCapturing = false;
-  // Resolves when nothing is in flight and nothing is left to do. Tests await
-  // it instead of sleeping.
+  // Everything currently in flight, not merely the most recent thing started.
+  // A push can begin while a persist is still running — the first block is
+  // skipped rather than returned from — so assigning would drop the persist's
+  // promise on the floor.
   let idle: Promise<void> = Promise.resolve();
+  const track = (work: Promise<unknown>): void => {
+    idle = Promise.all([idle, work]).then(() => undefined);
+  };
 
   const capture = (text: string) => {
     for (const p of actions.captureProposals(model.notes, text, now)) propose(p);
@@ -82,7 +115,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     const note = model.notes.get(path);
     if (!note) return;
     const cursor = (event.target as HTMLTextAreaElement).selectionStart ?? note.body.length;
-    idle = actions.attach(file, note, cursor, now, shrink).then(propose);
+    track(actions.attach(file, note, cursor, now, shrink).then(propose));
   };
 
   const paint = () => {
@@ -145,13 +178,13 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       if (model.forgotten.size > 0) {
         const paths = [...model.forgotten];
         model.persisting = true;
-        idle = actions.forget(db, paths).then(propose);
+        track(actions.forget(db, paths).then(propose));
         return;
       }
       const dirty = [...model.notes.values()].filter((n) => n.dirty);
       if (dirty.length > 0) {
         model.persisting = true;
-        idle = actions.persist(db, dirty).then(propose);
+        track(actions.persist(db, dirty).then(propose));
         return;
       }
     }
@@ -177,7 +210,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     const pending = [...model.notes.values()].find((n) => n.pending && !n.dirty);
     if (pending) {
       model.syncing = true;
-      idle = actions.push(github, pending, now, model.notes).then(propose);
+      track(actions.push(github, pending, now, model.notes).then(propose));
       return;
     }
 
@@ -185,7 +218,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (model.lastSyncedAt === null) {
       model.syncing = true;
       model.lastSyncedAt = now();
-      idle = actions.pull(github, model.notes).then(propose);
+      track(actions.pull(github, model.notes).then(propose));
     }
   };
 

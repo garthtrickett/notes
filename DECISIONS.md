@@ -204,8 +204,14 @@ the 09:00 ones. Sort on the shifted hour, `(h - 4 + 24) % 24`, using the same
 function that picks the file — one rule, one place (principle 4). This also keeps
 the files simple: an entry displays a plain `01:30` and stores no extra timestamp.
 
-This applies to the conflict auto-merge too. Union-and-sort must use the shifted
-comparator, or resolving a conflict silently reorders the day.
+**The auto-merge this was written for does not exist yet.** A conflicted dump day
+gets a conflict copy like anything else; nothing unions and sorts two versions.
+The comparator is specified here because when that merge is built it must use
+the shifted hour — sorting raw `HH:MM` would silently reorder the day — but it is
+a rule waiting for its caller, not a description of running code.
+
+**Trigger: the first time a conflict copy of a dump day is annoying enough to
+merge by hand.**
 
 **The bottom day is labelled "Today", not its date.** At 02:00 the current dump
 day carries yesterday's date, which would otherwise read as a bug. Labelling the

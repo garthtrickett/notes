@@ -17,6 +17,31 @@ export const wikilinksToMarkdown = (body: string): string =>
     return `[${basenameOf(target)}](#note:${encodeURIComponent(target)})`;
   });
 
+// Raw HTML in a note is not rendered as HTML. It is shown as the text it is.
+//
+// This is the whole answer to the SVG and MathML vectors — xlink:href,
+// <animate attributeName="href">, <svg><script>, <math><maction> — because none
+// of those elements ever reach the DOM to be filtered in the first place.
+// Filtering them correctly means tracking browser quirks across namespaces, and
+// an audit of this file found five holes in one pass.
+//
+// The cost is that a note containing <details> or <kbd> renders as literal text
+// here while github.com renders it as markup. That is the trade: this app
+// renders markdown, not HTML. Taking DOMPurify would buy the HTML back.
+const escapeHtml = (text: string): string =>
+  text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+marked.use({
+  renderer: {
+    html: ({ text }) => escapeHtml(text),
+  },
+});
+
+// Second layer, for markup markdown itself produces — [x](javascript:alert(1))
+// is an ordinary link as far as the parser is concerned.
 const FORBIDDEN_TAGS = new Set([
   "SCRIPT",
   "IFRAME",
@@ -27,6 +52,11 @@ const FORBIDDEN_TAGS = new Set([
   "META",
   "BASE",
   "FORM",
+  // Namespaced elements carry their own URL and scripting surfaces. Nothing in a
+  // markdown note needs them, so they go wholesale rather than attribute by
+  // attribute.
+  "SVG",
+  "MATH",
 ]);
 
 const SAFE_URL = /^(https?:|mailto:|#)/i;
@@ -36,12 +66,29 @@ const SAFE_URL = /^(https?:|mailto:|#)/i;
 // would readmit data:text/html and with it the whole class this exists to stop.
 const SAFE_DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp|avif);base64,/i;
 
-// Not DOMPurify, and not claimed to be. It removes the obvious class — script
-// execution and navigation to a javascript: URL — which is the risk that matters
-// when an agent may summarise a web page into a note.
+// Any attribute can carry a URL — href, src, srcset, xlink:href, formaction,
+// poster, data. Allowlisting two names is how xlink:href walked straight past
+// the check, so the test is on the *value* rather than the name.
+const LOOKS_LIKE_URL = /^\s*[a-z][a-z0-9+.-]*:/i;
+
+const isDangerousValue = (name: string, value: string): boolean => {
+  // srcset goes unconditionally, before any allowlist can rescue it. Markdown
+  // cannot produce one — an image is src and alt — so any srcset came from raw
+  // HTML, and it fetches remotely, which leaks that the note was opened.
+  if (name === "srcset" || name === "imagesrcset") return true;
+
+  const trimmed = value.trim();
+  if (name === "src" && SAFE_DATA_IMAGE.test(trimmed)) return false;
+  if (SAFE_URL.test(trimmed)) return false;
+  // Any scheme that is not on the allowlist, whatever attribute carries it.
+  return LOOKS_LIKE_URL.test(trimmed);
+};
+
 export const sanitize = (root: ParentNode): void => {
   for (const element of [...root.querySelectorAll("*")]) {
-    if (FORBIDDEN_TAGS.has(element.tagName)) {
+    // tagName is lowercase in the SVG and MathML namespaces, so an uppercase
+    // comparison silently missed <svg><script>.
+    if (FORBIDDEN_TAGS.has(element.tagName.toUpperCase())) {
       element.remove();
       continue;
     }
@@ -51,12 +98,7 @@ export const sanitize = (root: ParentNode): void => {
         element.removeAttribute(attr.name);
         continue;
       }
-      if (name !== "href" && name !== "src") continue;
-      const value = attr.value.trim();
-      const allowed =
-        SAFE_URL.test(value) ||
-        (name === "src" && SAFE_DATA_IMAGE.test(value));
-      if (!allowed) element.removeAttribute(attr.name);
+      if (isDangerousValue(name, attr.value)) element.removeAttribute(attr.name);
     }
   }
 };

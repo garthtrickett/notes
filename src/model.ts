@@ -1,7 +1,8 @@
 // The model is a mutable container of immutable values.
 //
-// Only present() writes to a Model, and everything a Model holds is readonly
-// (principle 3). Replacing one Note per keystroke costs a small allocation;
+// present() writes note state and everything a Model holds is readonly
+// (principle 3). loop.ts additionally writes the in-flight flags — see the header
+// there for why that boundary is temporal rather than by field. Replacing one Note per keystroke costs a small allocation;
 // replacing the whole model would cost one per keystroke for no benefit, since
 // there is exactly one writer.
 
