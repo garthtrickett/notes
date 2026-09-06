@@ -6,10 +6,11 @@ import { describe, expect, test } from "bun:test";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import { createEditor, type EditorHandle } from "./editor.ts";
+import type { ResolveImage } from "./decorate.ts";
 
 const openEditor = (
   body: string,
-  resolveImage = (src: string) => `data:image/png;base64,${src}`,
+  resolveImage: ResolveImage = (src) => `data:image/png;base64,${src}`,
   hooks: Partial<{ onEdit: (body: string) => void }> = {},
 ): { handle: EditorHandle; view: EditorView } => {
   const handle = createEditor({
@@ -57,6 +58,39 @@ describe("a replaced image is one thing to the caret", () => {
     view.dispatch(view.state.replaceSelection("")); // no-op, keeps the selection
     const moved = view.moveByChar(view.state.selection.main, false);
     expect(moved.head).toBeLessThanOrEqual(4);
+    handle.destroy();
+  });
+});
+
+describe("dragging a picture", () => {
+  const dragstartOn = (img: Element, dt: DataTransfer): void => {
+    const event = new Event("dragstart", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: dt });
+    img.dispatchEvent(event);
+  };
+
+  test("is draggable, which is what makes the editor claim the drag", () => {
+    const { handle } = openEditor("![](a.png)\nafter");
+    const img = handle.dom.querySelector("img.cm-md-image") as HTMLImageElement | null;
+    if (img === null) throw new Error("no image");
+    // CodeMirror only treats a widget as the thing being dragged when its DOM
+    // is draggable. Without it the browser drags the picture instead.
+    expect(img.draggable).toBe(true);
+    handle.destroy();
+  });
+
+  test("carries the markdown, not the picture's src", () => {
+    const { handle } = openEditor("![](a.png)\nafter");
+    const img = handle.dom.querySelector("img.cm-md-image");
+    if (img === null) throw new Error("no image");
+    const dt = new DataTransfer();
+    // What the browser sends when it drags the picture itself: the src, which
+    // for a local attachment is the entire base64 data URL.
+    dt.setData("Text", "data:image/webp;base64,AAAA");
+    dragstartOn(img, dt);
+    // Rewritten to the range the picture stands for. This also proves the
+    // widget did not swallow the event — if it had, nothing would have changed.
+    expect(dt.getData("Text")).toBe("![](a.png)");
     handle.destroy();
   });
 });

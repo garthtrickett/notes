@@ -66,11 +66,27 @@ class ImageWidget extends WidgetType {
     return other.src === this.src && other.alt === this.alt;
   }
 
+  // CodeMirror discards every event that starts inside a widget by default. The
+  // drag is the one that has to get through: its own dragstart handler has a
+  // branch for draggable widgets that selects the range the widget covers, and
+  // its drop then deletes and reinserts in a single change. Letting the event
+  // reach it is the whole of "dragging a picture moves it" (never duplicate
+  // rules). Everything else still stays the widget's business.
+  override ignoreEvent(event: Event): boolean {
+    return event.type !== "dragstart";
+  }
+
   override toDOM(): HTMLElement {
     const img = document.createElement("img");
     img.className = "cm-md-image";
     img.src = this.src;
     img.alt = this.alt;
+    // Draggable on purpose, and load-bearing: CodeMirror only treats a widget
+    // as the thing being dragged when `event.target.draggable` is true. Without
+    // it the browser drags the *picture* instead, and dropping that into a
+    // contenteditable inserts its `src` — here the whole base64 data URL — as
+    // text, which is what this looked like from the outside.
+    img.draggable = true;
     return img;
   }
 }

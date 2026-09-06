@@ -651,6 +651,24 @@ Worth stating as a rule rather than a fix: **anything replaced visually has to b
 atomic behaviourally.** Any future widget — a rendered table, a folded block —
 inherits the same obligation.
 
+**A widget also has to let the drag through.** Reported next: dragging a picture
+did not move it, it pasted a screenful of `data:image/webp;base64,…` into the
+note. An `<img>` is draggable by default, so the browser was dragging the
+*picture* and dropping its `src` in as text.
+
+CodeMirror already handles this properly — `handlers.dragstart` has a branch that
+picks up a draggable widget's range, and its drop deletes and reinserts in a
+single change. Two lines were in the way: `WidgetType.ignoreEvent` defaults to
+true, so nothing starting inside a widget ever reached that handler. Letting
+`dragstart` through, and leaving the image draggable so the branch triggers, is
+the entire fix.
+
+Recorded because the first attempt was to hand-roll the move — payload, drop
+position, one transaction, the lot — and all of it was already there and better.
+The rule is the one already written down: **before writing a mechanism, check
+whether the library owns it** (never duplicate rules). Reading
+`@codemirror/view`'s source settled in a minute what guessing had not.
+
 **Only local attachments become widgets.** A remote image URL stays as markdown
 text and is never fetched. The rule survives even though the code enforcing it
 today does not: rendering a remote image tells its host that this note was

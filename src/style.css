@@ -445,8 +445,11 @@ kbd {
   cursor: pointer;
 }
 
-/* Inline, so a selection can run text -> picture -> text in one drag. */
+/* Inline, so a selection can run text -> picture -> text in one drag. The drag
+   properties are the CSS half of img.draggable = false: without them Safari and
+   iOS still start a native image drag, which drops the data URL in as text. */
 .cm-md-image {
+  -webkit-user-drag: none;
   max-width: 100%;
   max-height: 60vh;
   vertical-align: middle;
