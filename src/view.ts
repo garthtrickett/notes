@@ -791,13 +791,12 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
   // to open.
   return html`
     <main>
-      <nav>
+      <nav
+        @dragover=${dropZone(null, propose).onDragOver}
+        @drop=${dropZone(null, propose).onDrop}
+      >
         ${tabs(model, propose)}
-        <ul
-          class="tree"
-          @dragover=${dropZone(null, propose).onDragOver}
-          @drop=${dropZone(null, propose).onDrop}
-        >
+        <ul class="tree">
           ${treeNodes(noteTree(model), model, propose, 0, badgesFor(model))}
         </ul>
       </nav>

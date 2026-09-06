@@ -625,9 +625,11 @@ kbd {
    highlight would need state the tree does not otherwise keep. */
 .row[draggable="true"] { cursor: grab; }
 .row[draggable="true"]:active { cursor: grabbing; }
-/* The empty space below the tree is the root, so something can be moved out of
-   a folder without another folder to aim at. */
-ul.tree { min-height: 100%; }
+/* Anywhere in the sidebar a folder row has not claimed is the root, so something
+   can be moved out of a folder without another folder to aim at. The zone is on
+   the nav rather than the list: `min-height: 100%` on the list resolved to auto,
+   so it was only ever as tall as its rows and the space below it belonged to
+   nobody. */
 
 /* History. A panel rather than a pane, so the editor layout is untouched. */
 .history { max-width: 560px; width: 90vw; }
