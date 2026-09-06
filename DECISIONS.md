@@ -391,6 +391,16 @@ Stated up front so they aren't surprises later.
   note locally — every disappearance is confirmed against the Contents API
   first. Deleting is the most destructive thing here and deserves the second
   signal.
+- **A pull is one round trip per changed file, in series.** `pull` fetches each
+  changed file one at a time, then makes a second sequential pass confirming any
+  file the manifest omitted. A first sync of a thousand-note vault is therefore a
+  thousand sequential round trips. Correct, and fine at the sizes this has seen.
+
+  The escape hatch is **bounded concurrency**, not lazy loading. The wall here is
+  latency, not data volume: a `Promise.all` over a small pool fixes it in about
+  fifteen lines with no change to the model. Lazy bodies (`body: string | null`
+  threaded everywhere) is the answer to a different problem and should not be
+  reached for first. **Trigger: a first sync you notice waiting for.**
 - **Authenticated API responses carry `Cache-Control: private, max-age=60`.**
   Every request is therefore `cache: "no-store"`. Without it the browser serves
   a minute-old tree and a note written on another device simply appears not to
@@ -555,14 +565,27 @@ project ends up where gafu is.
 
 You don't need one, because the loop already quarantines effects structurally:
 
-- **Pure:** `present()`, `nap()`, the manifest diff, the view functions.
+- **Pure:** `present()`'s note handling, the manifest diff, the view functions.
 - **Impure:** the async actions — whose only job is to end in a `present()` call.
+
+`nap()` is *not* pure, and an earlier version of this document claimed it was.
+It sets `persisting`, `syncing` and `lastSyncedAt`; `propose()` sets `retryAt`
+and `retryDelay`. The honest boundary is not "one writer" but **note state
+versus loop state**:
+
+> `present()` owns note state. `loop.ts` additionally writes the in-flight flags
+> — facts about what the loop is doing, not about what a note is. Nothing
+> outside those two files touches the model at all.
+
+That last clause is the part that is genuinely enforced: actions return
+proposals and never see the model. Stating it accurately keeps it a rule; a
+principle known to be violated stops being a bright line and becomes a vibe.
 
 Functional core, imperative shell. The boundary is marked by *position in the
 loop*, not by a type — which is stronger, because you cannot cast your way out of
 a position. And it is checkable by reading.
 
-### 3. Everything is immutable except inside `present()`
+### 3. Everything is immutable except inside `present()` and the loop
 
 The original phrasing was "immutability wherever suitable". "Wherever suitable"
 was doing a lot of work, and in this design "suitable" has a precise boundary —
@@ -570,7 +593,9 @@ so it is stated as the boundary instead.
 
 Proposals, Results, manifests, view inputs: all `readonly`.
 
-`present()` mutates `M` in place, deliberately. With exactly one writer,
+`present()` mutates `M` in place, deliberately, and `loop.ts` writes the
+in-flight flags beside it — see principle 2 for why that is a boundary rather
+than an exception. With exactly one writer,
 `M = {...M, notes: new Map(...)}` buys nothing and allocates on every keystroke.
 The single-writer discipline is what immutability was protecting you from in the
 first place, and SAM already gives you that.

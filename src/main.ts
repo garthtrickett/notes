@@ -66,10 +66,10 @@ if (config === null) {
   // Without this the app pulls once per session, so a note written on the laptop
   // does not appear on the phone until a reload. Clearing the watermark is the
   // whole mechanism; nap() does the rest.
-  const refresh = () => loop.propose({ kind: "refresh" });
-  addEventListener("focus", refresh);
+  const resumed = () => loop.propose({ kind: "resumed" });
+  addEventListener("focus", resumed);
   addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") refresh();
+    if (document.visibilityState === "visible") resumed();
   });
 
 }

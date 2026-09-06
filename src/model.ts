@@ -101,7 +101,7 @@ export type Proposal =
   | { readonly kind: "modeChanged"; readonly mode: Mode }
   | { readonly kind: "folderToggled"; readonly path: string }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
-  | { readonly kind: "refresh" }
+  | { readonly kind: "resumed" }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
   | { readonly kind: "previewToggled" }
   | { readonly kind: "searched"; readonly query: string }
@@ -147,29 +147,37 @@ const refusePath = (m: Model, raw: string): string | null => {
   return null;
 };
 
-// Accepts or rejects. A rejection is a silent return — the proposal violated an
+export interface Rejection {
+  readonly reason: string;
+}
+
+const reject = (reason: string): Rejection => ({ reason });
+
+// Accepts or rejects. A rejection returns a reason rather than a silent return — the proposal violated an
 // invariant, so the model declines it and nothing changes. Never throws.
-export const present = (m: Model, p: Proposal): void => {
+export const present = (m: Model, p: Proposal): Rejection | null => {
   switch (p.kind) {
     case "hydrated": {
       m.notes = new Map(p.notes.map((n) => [n.path, n]));
       m.hydrated = true;
       m.openPath = firstVisiblePath(m);
-      return;
+      return null;
     }
 
     case "opened": {
       const target = m.notes.get(p.path);
       // Rejects an attachment and a dump day as well as a tombstone: none of
       // them are text the editor should be showing.
-      if (!target || !isOpenable(target)) return;
+      if (!target || !isOpenable(target)) {
+        return reject(`Cannot open ${p.path}: it is not a note.`);
+      }
       m.openPath = p.path;
-      return;
+      return null;
     }
 
     case "created": {
       const path = refusePath(m, p.path);
-      if (path === null) return;
+      if (path === null) return reject(m.error ?? `Cannot create ${p.path}.`);
       m.notes.set(path, {
         path,
         body: "",
@@ -181,21 +189,23 @@ export const present = (m: Model, p: Proposal): void => {
       });
       m.openPath = path;
       m.persistBlocked = false;
-      return;
+      return null;
     }
 
     case "edited": {
       const note = m.notes.get(p.path);
-      if (!note) return; // reject: unknown note
-      if (note.body === p.body) return; // reject: no-op, do not dirty
+      if (!note) return reject(`Cannot edit ${p.path}: no such note.`);
+      // Not a rejection: an edit that changes nothing is a normal no-change, and
+      // reporting it would drown the anomalies in noise.
+      if (note.body === p.body) return null;
       m.notes.set(p.path, { ...note, body: p.body, dirty: true, pending: true });
       m.persistBlocked = false;
-      return;
+      return null;
     }
 
     case "deleted": {
       const doomed = m.notes.get(p.path);
-      if (!doomed) return; // reject: nothing to delete
+      if (!doomed) return reject(`Cannot delete ${p.path}: no such note.`);
       if (doomed.baseSha === null) {
         // Never reached GitHub, so there is nothing to tell it about.
         m.notes.delete(p.path);
@@ -211,7 +221,7 @@ export const present = (m: Model, p: Proposal): void => {
       }
       m.persistBlocked = false;
       if (m.openPath === p.path) m.openPath = firstVisiblePath(m);
-      return;
+      return null;
     }
 
     case "persisted": {
@@ -227,36 +237,39 @@ export const present = (m: Model, p: Proposal): void => {
       }
       m.persisting = false;
       m.error = null;
-      return;
+      return null;
     }
 
     case "failed": {
       m.error = p.message;
       m.persisting = false;
       m.persistBlocked = true;
-      return;
+      return null;
     }
 
     case "modeChanged": {
       m.mode = p.mode;
-      return;
+      return null;
     }
 
     case "folderToggled": {
       if (m.expanded.has(p.path)) m.expanded.delete(p.path);
       else m.expanded.add(p.path);
-      return;
+      return null;
     }
 
-    case "refresh": {
-      // Clearing the watermark is the whole mechanism; nap() notices and pulls.
+    case "resumed": {
+      // The window came back. Clearing the watermark is the whole mechanism;
+      // nap() notices and pulls.
       if (!m.syncing) m.lastSyncedAt = null;
-      return;
+      return null;
     }
 
     case "attached": {
       const host = m.notes.get(p.into);
-      if (!host || host.deleted) return; // reject: nowhere to put it
+      if (!host || host.deleted) {
+        return reject(`Cannot attach to ${p.into}: that note is gone.`);
+      }
 
       // The name is a hash of the bytes, so pasting the same image twice lands
       // on the same path. Re-adding it would reset baseSha to null, and the next
@@ -282,26 +295,30 @@ export const present = (m: Model, p: Proposal): void => {
       // points at an attachment that was not added.
       m.notes.set(p.into, { ...host, body: p.body, dirty: true, pending: true });
       m.persistBlocked = false;
-      return;
+      return null;
     }
 
     case "previewToggled": {
       m.preview = !m.preview;
-      return;
+      return null;
     }
 
     case "searched": {
       m.query = p.query;
-      return;
+      return null;
     }
 
     case "renamed": {
       const note = m.notes.get(p.from);
-      if (!note || note.deleted) return; // reject: nothing there
+      if (!note || note.deleted) {
+        return reject(`Cannot rename ${p.from}: no such note.`);
+      }
       // Checked before anything is rewritten, so a refused rename leaves no
       // half-updated links behind.
       const to = normalizePath(p.to);
-      if (refusePath(m, p.to) === null) return;
+      if (refusePath(m, p.to) === null) {
+        return reject(m.error ?? `Cannot rename to ${p.to}.`);
+      }
 
       // A rename changes the note's identity, so every inbound link has to move
       // with it. Doing that here means the whole rename is one synchronous state
@@ -322,14 +339,16 @@ export const present = (m: Model, p: Proposal): void => {
       }
 
       present(m, { kind: "moved", from: p.from, to });
-      return;
+      return null;
     }
 
     case "moved": {
       const note = m.notes.get(p.from);
-      if (!note || note.deleted) return; // reject: nothing there
+      if (!note || note.deleted) {
+        return reject(`Cannot move ${p.from}: no such note.`);
+      }
       const to = refusePath(m, p.to);
-      if (to === null) return;
+      if (to === null) return reject(m.error ?? `Cannot move to ${p.to}.`);
 
       // A move is a create plus a delete, which the sync machinery already
       // expresses. Links match on basename, so nothing else needs touching.
@@ -355,7 +374,7 @@ export const present = (m: Model, p: Proposal): void => {
       }
       if (m.openPath === p.from) m.openPath = to;
       m.persistBlocked = false;
-      return;
+      return null;
     }
 
     case "online": {
@@ -365,12 +384,12 @@ export const present = (m: Model, p: Proposal): void => {
         m.retryAt = 0;
         m.retryDelay = 0;
       }
-      return;
+      return null;
     }
 
     case "woke": {
       // The cooldown timer fired. nap() re-evaluates on the way out of present.
-      return;
+      return null;
     }
 
     case "pulled": {
@@ -393,7 +412,7 @@ export const present = (m: Model, p: Proposal): void => {
       if (m.openPath === null || !m.notes.has(m.openPath)) {
         m.openPath = firstVisiblePath(m);
       }
-      return;
+      return null;
     }
 
     case "pushed": {
@@ -406,7 +425,9 @@ export const present = (m: Model, p: Proposal): void => {
       // a push races the Trees API's staleness for no benefit — the push already
       // told us the remote state. The conflict branch still forces a pull,
       // because there the remote genuinely holds something we do not have.
-      if (!note) return;
+      if (!note) {
+        return reject(`Pushed ${p.path}, but it is no longer here.`);
+      }
       // Same rule as persistence: only clear pending if the body still matches
       // what went to GitHub. An edit that landed mid-flight stays pending.
       const settled = note.body === p.body;
@@ -416,7 +437,7 @@ export const present = (m: Model, p: Proposal): void => {
         pending: !settled,
         dirty: true,
       });
-      return;
+      return null;
     }
 
     case "removed": {
@@ -426,12 +447,14 @@ export const present = (m: Model, p: Proposal): void => {
       m.retryDelay = 0;
       m.retryAt = 0;
       if (m.openPath === p.path) m.openPath = firstVisiblePath(m);
-      return;
+      return null;
     }
 
     case "conflicted": {
       const note = m.notes.get(p.path);
-      if (!note) return;
+      if (!note) {
+        return reject(`Conflict on ${p.path}, but it is no longer here.`);
+      }
       // Keep the remote as canonical and park the local body beside it. Nothing
       // is merged and nothing is lost.
       m.notes.set(p.copyPath, {
@@ -460,14 +483,14 @@ export const present = (m: Model, p: Proposal): void => {
       // remote version back down beside the copy.
       m.lastSyncedAt = null;
       m.openPath = p.copyPath;
-      return;
+      return null;
     }
 
     case "syncFailed": {
       m.syncing = false;
       m.syncError = p.error;
       if (p.error.kind === "offline") m.online = false;
-      return;
+      return null;
     }
   }
 };

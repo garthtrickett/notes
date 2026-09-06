@@ -319,6 +319,32 @@ describe("conflict", () => {
   });
 });
 
+describe("flush", () => {
+  it("waits for a sync in flight, not only a local write", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+
+    // Deliberately bare: no extra microtask hop afterwards. Checking only
+    // `persisting` let this return with a push still running, so callers papered
+    // over it with their own wait and the gap stayed hidden.
+    await loop.flush();
+
+    expect(loop.model.syncing).toBe(false);
+    expect(loop.model.persisting).toBe(false);
+    expect(remote.files.has("a.md")).toBe(true);
+  });
+
+  it("settles a push that triggers a further pull", async () => {
+    remote.put("other.md", "theirs");
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await loop.flush();
+
+    expect(loop.model.syncing).toBe(false);
+    expect(loop.model.notes.get("other.md")?.body).toBe("theirs");
+  });
+});
+
 describe("conflict naming", () => {
   it("does not stack a second marker on an already-conflicted copy", () => {
     const at = () => new Date("2026-09-07T10:00:00").getTime();

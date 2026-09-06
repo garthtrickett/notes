@@ -181,18 +181,29 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       );
       model.retryAt = now() + model.retryDelay;
     }
-    present(model, p);
+    const rejection = present(model, p);
+    if (rejection !== null && import.meta.env.DEV) {
+      // A rejection used to vanish. It is almost always a bug in the caller —
+      // proposing against a note that is gone — and finding it by watching the
+      // UI do nothing is how an afternoon disappears.
+      console.warn(`[notes] rejected ${p.kind}: ${rejection.reason}`);
+    }
     scheduleRender();
     nap();
   }
 
+  // A test affordance living in production code, which is a compromise worth
+  // naming. It settles the loop: an action's proposal can start another action,
+  // so it drains until nothing is in flight.
+  //
+  // It must check every in-flight flag. Checking only `persisting` meant it
+  // returned while a push or pull was still running, which is why callers were
+  // adding their own microtask hop afterwards — a flake waiting for a slow day.
   const flush = async (): Promise<void> => {
-    // Settle the loop: an action's proposal can start another action, so keep
-    // draining until nothing is in flight.
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 40; i += 1) {
       await idle;
       await new Promise<void>((r) => queueMicrotask(() => r()));
-      if (!model.persisting) return;
+      if (!model.persisting && !model.syncing) return;
     }
     throw new Error("Loop did not settle");
   };

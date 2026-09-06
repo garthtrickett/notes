@@ -211,12 +211,12 @@ describe("the dump view", () => {
   });
 });
 
-describe("refresh", () => {
+describe("resumed", () => {
   it("clears the sync watermark so nap pulls again", () => {
     const m = createModel();
     present(m, { kind: "hydrated", notes: [] });
     m.lastSyncedAt = 12345;
-    present(m, { kind: "refresh" });
+    present(m, { kind: "resumed" });
     expect(m.lastSyncedAt).toBeNull();
   });
 
@@ -225,7 +225,7 @@ describe("refresh", () => {
     present(m, { kind: "hydrated", notes: [] });
     m.lastSyncedAt = 12345;
     m.syncing = true;
-    present(m, { kind: "refresh" });
+    present(m, { kind: "resumed" });
     // Otherwise a burst of focus events would stack pulls on top of each other.
     expect(m.lastSyncedAt).toBe(12345);
   });

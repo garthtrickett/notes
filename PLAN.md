@@ -374,11 +374,12 @@ home screen.
 ## Not in phase 3
 
 **Lazy loading of note bodies.** The plan said the dump would lazy-load off the
-manifest. It will need to — `pull` currently fetches every changed file, which is
-one request per dump day on a first sync — but that does not bite until the vault
-has hundreds of files, and doing it now means `body: string | null` threaded
-through the whole model for a scale that does not exist yet. **Trigger: a first
-sync taking more than a couple of seconds, or roughly 200 files.**
+manifest. `pull` does fetch every changed file, one request per dump day on a
+first sync — but lazy bodies is the wrong fix to reach for first, and the cost is
+recorded in `DECISIONS.md` under accepted costs. The wall is latency, so bounded
+concurrency answers it for a fraction of the work and no change to the model.
+Lazy bodies is for when the data itself is too large, which is a different
+problem and not this one yet.
 
 Also out: markdown rendering, links, backlinks, rename, search, attachments.
 
