@@ -24,3 +24,6 @@ coverage/
 *.log
 npm-debug.log*
 bun-debug.log*
+
+# bun
+bun.lockb

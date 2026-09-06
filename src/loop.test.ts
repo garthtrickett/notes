@@ -1,0 +1,223 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { getAll, openDb } from "./idb.ts";
+import { boot, createLoop, type Loop } from "./loop.ts";
+
+let db: IDBDatabase | undefined;
+let root: HTMLElement;
+
+const reset = async () => {
+  db?.close();
+  await new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase("notes");
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => resolve();
+  });
+  db = await openDb();
+};
+
+const theDb = (): IDBDatabase => {
+  if (!db) throw new Error("db was not opened");
+  return db;
+};
+
+const paint = async () => {
+  await new Promise<void>((r) => queueMicrotask(() => r()));
+};
+
+const settle = async (loop: Loop) => {
+  await loop.flush();
+  await paint();
+};
+
+beforeEach(async () => {
+  await reset();
+  document.body.innerHTML = '<div id="app"></div>';
+  root = document.getElementById("app") as HTMLElement;
+});
+
+describe("the loop", () => {
+  it("boots empty and renders", async () => {
+    const loop = await boot(theDb(), root);
+    await paint();
+    expect(loop.model.hydrated).toBe(true);
+    expect(root.textContent).toContain("No note open.");
+  });
+
+  it("persists a created note without being told to", async () => {
+    const loop = await boot(theDb(), root);
+    loop.propose({ kind: "created", path: "inbox/a.md" });
+    await settle(loop);
+
+    // Nothing called save(). nap() noticed the dirty note and acted.
+    expect(await getAll(theDb())).toEqual([{ path: "inbox/a.md", body: "" }]);
+    expect(loop.model.notes.get("inbox/a.md")?.dirty).toBe(false);
+  });
+
+  it("persists an edit", async () => {
+    const loop = await boot(theDb(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    loop.propose({ kind: "edited", path: "a.md", body: "hello" });
+    await settle(loop);
+
+    expect(await getAll(theDb())).toEqual([{ path: "a.md", body: "hello" }]);
+  });
+
+  it("survives a reload — the gate for this phase", async () => {
+    const first = await boot(theDb(), root);
+    first.propose({ kind: "created", path: "inbox/thought.md" });
+    first.propose({ kind: "edited", path: "inbox/thought.md", body: "kept" });
+    await settle(first);
+
+    // Drop everything but the database, exactly as a page refresh would.
+    document.body.innerHTML = '<div id="app"></div>';
+    const second = await boot(
+      theDb(),
+      document.getElementById("app") as HTMLElement,
+    );
+    await paint();
+
+    expect(second.model.notes.get("inbox/thought.md")?.body).toBe("kept");
+    expect(second.model.notes.get("inbox/thought.md")?.dirty).toBe(false);
+  });
+
+  it("does not start a second write while one is in flight", async () => {
+    const loop = await boot(theDb(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    expect(loop.model.persisting).toBe(true);
+
+    // An edit arriving mid-write must not launch a competing persist.
+    loop.propose({ kind: "edited", path: "a.md", body: "typed while saving" });
+    expect(loop.model.persisting).toBe(true);
+
+    await settle(loop);
+    // ...and the loop comes back for it, so the edit is not stranded.
+    expect(await getAll(theDb())).toEqual([
+      { path: "a.md", body: "typed while saving" },
+    ]);
+    expect(loop.model.notes.get("a.md")?.dirty).toBe(false);
+  });
+
+  it("removes a deleted note from the model", async () => {
+    const loop = await boot(theDb(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    loop.propose({ kind: "deleted", path: "a.md" });
+    await settle(loop);
+    expect(loop.model.notes.size).toBe(0);
+  });
+
+  it("renders the note list and marks the open one", async () => {
+    const loop = createLoop(theDb(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        { path: "a.md", body: "A", dirty: false },
+        { path: "b.md", body: "B", dirty: false },
+      ],
+    });
+    await paint();
+
+    const rows = root.querySelectorAll(".row");
+    expect(rows.length).toBe(2);
+    expect(rows[0]?.classList.contains("open")).toBe(true);
+    expect(root.textContent).toContain("b.md");
+  });
+
+  it("keeps the editor uncontrolled so the cursor is never yanked", async () => {
+    const loop = createLoop(theDb(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [{ path: "a.md", body: "hello", dirty: false }],
+    });
+    await paint();
+
+    const editor = root.querySelector("#editor") as HTMLTextAreaElement;
+    expect(editor.value).toBe("hello");
+
+    // Simulate typing: the DOM already holds the new text, and the model catches
+    // up. A re-render must not write back over the live field.
+    editor.value = "hello world";
+    editor.setSelectionRange(11, 11);
+    loop.propose({ kind: "edited", path: "a.md", body: "hello world" });
+    await paint();
+
+    expect(editor.value).toBe("hello world");
+    expect(editor.selectionStart).toBe(11);
+  });
+
+  it("loads the note body when the open note changes", async () => {
+    const loop = createLoop(theDb(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        { path: "a.md", body: "A body", dirty: false },
+        { path: "b.md", body: "B body", dirty: false },
+      ],
+    });
+    await paint();
+    loop.propose({ kind: "opened", path: "b.md" });
+    await paint();
+
+    const editor = root.querySelector("#editor") as HTMLTextAreaElement;
+    expect(editor.value).toBe("B body");
+  });
+
+  it("surfaces a storage failure instead of dying silently", async () => {
+    const loop = await boot(theDb(), root);
+    theDb().close(); // every later write now fails
+
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    await paint();
+
+    expect(loop.model.error).toContain("Could not save");
+    expect(root.textContent).toContain("Could not save");
+    expect(loop.model.persisting).toBe(false);
+    // The note is still dirty: a failed write must not look like a saved one.
+    expect(loop.model.notes.get("a.md")?.dirty).toBe(true);
+  });
+
+  it("stops retrying a failing write instead of spinning", async () => {
+    const loop = await boot(theDb(), root);
+    theDb().close();
+
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+
+    // Without the latch, nap() would see a dirty note, write, fail, and go
+    // straight round again — a hot loop for as long as the store is broken.
+    expect(loop.model.persistBlocked).toBe(true);
+    expect(loop.model.persisting).toBe(false);
+  });
+
+  it("tries again after the next user action", async () => {
+    const loop = await boot(theDb(), root);
+    theDb().close();
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    expect(loop.model.persistBlocked).toBe(true);
+
+    // Typing is the only honest signal that things may have changed.
+    loop.propose({ kind: "edited", path: "a.md", body: "again" });
+    expect(loop.model.persistBlocked).toBe(false);
+    await settle(loop);
+    expect(loop.model.persistBlocked).toBe(true); // failed again, latched again
+  });
+
+  it("clears a stale error once a write succeeds", async () => {
+    const loop = await boot(theDb(), root);
+    loop.model.error = "something old";
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    expect(loop.model.error).toBeNull();
+  });
+});
+
+afterEach(() => {
+  // An open connection blocks deleteDatabase — including from another test file
+  // sharing this process — so never leave one behind.
+  db?.close();
+  db = undefined;
+});
