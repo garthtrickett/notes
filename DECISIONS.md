@@ -281,11 +281,8 @@ Stated up front so they aren't surprises later.
    `[[wikilink]]` (Obsidian's long-running pain). Stable ID in frontmatter with
    links by ID survives renames but makes the repo less human-browsable. Git
    tracks renames fine; the link graph doesn't. **Decide before 500 notes.**
-3. **Where the agent runs.** Option A (Claude Code on a clone) needs no decision
-   and is available now. Options B (browser, own key) and C (GitHub Actions) are
-   deferred until A reveals what is actually wanted.
-4. Attachment policy — separate dir, size threshold, or don't commit binaries.
-5. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
+3. Attachment policy — separate dir, size threshold, or don't commit binaries.
+4. CodeMirror 6 on desktop later, or textarea forever? Ship textarea first and
    find out whether it's actually missed.
 
 ---
@@ -318,21 +315,31 @@ An LLM call needs an API key. A public client-side PWA cannot hold one. This is
 the only place agent-native genuinely collides with "no server", so it is the
 decision to make rather than drift into.
 
-Three options, and they are not exclusive:
+**Decided: A — the agent edits the files directly, on a clone of `vault`.**
 
-**A. The agent is Claude Code on a clone of `vault`. Recommended, and free
-today.** Point it at a checkout and it has full parity immediately — bash plus
-the filesystem, which the article calls the most battle-tested agent interface
-there is. No tools to write, no key in the browser, no server. The agent commits
-and pushes like any other writer.
+Claude Code (or any CLI agent) in a checkout. It reads and writes `.md` files
+with bash, exactly as the human does. No tools to write, no key in a browser, no
+server, nothing to build. `AGENTS.md` at the vault root carries the conventions,
+with `CLAUDE.md` symlinked to it so Claude Code picks it up either way.
 
-**B. Bring-your-own key in the browser.** Same precedent as the GitHub PAT
-already in localStorage. Single user, own key. Gets the agent into the app UI.
-Do this only once A has shown which tools are actually wanted.
+Deferred, not rejected:
 
-**C. GitHub Actions as the agent runtime.** Triggered on push to `vault`, or on a
-schedule. Secrets live in GitHub, no server, and it suits unattended work —
-nightly tidying, weekly review, link repair.
+**B. Bring-your-own key in the browser.** Same precedent as the GitHub PAT in
+localStorage. The expensive one: agent loop, tool definitions, streaming, and
+mobile's checkpoint/resume problem, since a PWA is backgrounded within seconds.
+Also questionable on its merits — phone use is mostly *capture*, which needs no
+agent. Revisit only if A proves an in-app agent is genuinely wanted.
+
+**C. GitHub Actions as the agent runtime.** Cron, push to `vault`, or
+`workflow_dispatch` — which is a manual button reachable from the GitHub mobile
+app. Secrets live in GitHub, no server. The natural fit for unattended work:
+nightly filing, weekly review, link repair. The obvious next step after A.
+⚠ The repo is public, so Actions logs are public — an agent that echoes note
+contents publishes them.
+
+**D. A key-proxy function** (Worker or serverless) keeps the key off the client
+but reintroduces infrastructure: something to deploy, keep alive, and remember
+exists. Rejected for now on those grounds, not technical ones.
 
 ### Why option A costs the architecture nothing
 
@@ -377,6 +384,13 @@ Every user action is a file operation, which is what makes parity nearly free:
   prefers. Derived state, so it must be regenerable from the notes — principle 7
   still applies.
 - **The dump is the natural agent log.** Append-only, timestamped, day-scoped.
+- **Commit before prompting.** Git is the undo button for a destructive prompt;
+  a clean tree beforehand turns a bad result into `git reset --hard`.
+- **The agent never touches today's dump file.** It is the one file with
+  concurrent writers — the human may be capturing to it from their phone. Cold
+  days are safe. This falls out of the per-day split for free.
+- **No inventory in `AGENTS.md`.** It would go stale and start lying. Conventions
+  belong there; current state is discovered by reading the files (principle 7).
 
 ### The anti-pattern to actively avoid
 
