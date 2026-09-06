@@ -352,3 +352,66 @@ describe("a conflicted attachment", () => {
     expect(copy?.body).toBe("AAAA");
   });
 });
+
+describe("what the editor is allowed to open", () => {
+  const attachment = note("attachments/2026-09-06-abcd.webp", "UklGRmwBAABX", {
+    encoding: "base64",
+  });
+
+  it("opens nothing when the vault holds only an attachment", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [attachment] });
+    // Otherwise the editor fills with raw base64 that looks like corruption.
+    expect(m.openPath).toBeNull();
+  });
+
+  it("opens nothing when the vault holds only dump days", () => {
+    const m = createModel();
+    present(m, {
+      kind: "hydrated",
+      notes: [note("dump/2026-09-06.md", "09:00 a thought")],
+    });
+    // The dump has its own view; the notes editor is not it.
+    expect(m.openPath).toBeNull();
+  });
+
+  it("skips past an attachment to a real note", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [attachment, note("inbox/a.md", "text")] });
+    expect(m.openPath).toBe("inbox/a.md");
+  });
+
+  it("refuses to open an attachment on request", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [attachment, note("inbox/a.md")] });
+    present(m, { kind: "opened", path: attachment.path });
+    expect(m.openPath).toBe("inbox/a.md");
+  });
+
+  it("does not fall back onto an attachment when the last note is deleted", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [attachment, note("inbox/a.md")] });
+    present(m, { kind: "deleted", path: "inbox/a.md" });
+    expect(m.openPath).toBeNull();
+  });
+
+  it("does not fall back onto an attachment after a pull", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [] });
+    present(m, {
+      kind: "pulled",
+      notes: [
+        {
+          path: attachment.path,
+          body: attachment.body,
+          baseSha: "s",
+          pending: false,
+          deleted: false,
+          encoding: "base64",
+        },
+      ],
+      gone: [],
+    });
+    expect(m.openPath).toBeNull();
+  });
+});

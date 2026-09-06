@@ -8,6 +8,8 @@
 import type { SyncError } from "./github.ts";
 import { rewriteLinks } from "./links.ts";
 import { describeProblem, normalizePath, pathProblem } from "./paths.ts";
+import { isDumpPath } from "./dump.ts";
+import { isAttachmentPath } from "./attachments.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
@@ -116,8 +118,18 @@ export type Proposal =
 export const visible = (m: Model): Note[] =>
   [...m.notes.values()].filter((n) => !n.deleted);
 
+// What the notes view can show and open. An attachment is a record, not a note,
+// and a dump day belongs to its own view — opening either puts something in the
+// editor that is not text you meant to edit. Defined here rather than in the
+// view so there is one answer to "is this a note" (principle 4).
+export const openable = (m: Model): Note[] =>
+  visible(m).filter((n) => !isDumpPath(n.path) && !isAttachmentPath(n.path));
+
 const firstVisiblePath = (m: Model): string | null =>
-  visible(m)[0]?.path ?? null;
+  openable(m)[0]?.path ?? null;
+
+const isOpenable = (note: Note): boolean =>
+  !note.deleted && !isDumpPath(note.path) && !isAttachmentPath(note.path);
 
 // A rejected path used to be a silent return, which is how someone ends up
 // typing into a note they did not mean to open. Every rejection now says why.
@@ -148,7 +160,9 @@ export const present = (m: Model, p: Proposal): void => {
 
     case "opened": {
       const target = m.notes.get(p.path);
-      if (!target || target.deleted) return; // reject: unknown or tombstoned
+      // Rejects an attachment and a dump day as well as a tombstone: none of
+      // them are text the editor should be showing.
+      if (!target || !isOpenable(target)) return;
       m.openPath = p.path;
       return;
     }

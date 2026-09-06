@@ -2,11 +2,11 @@
 // what changed, so painting the whole tree on every microtask is cheap.
 
 import { html, nothing, type TemplateResult } from "lit-html";
-import { visible, type Model, type Note, type Proposal } from "./model.ts";
+import { openable, visible, type Model, type Note, type Proposal } from "./model.ts";
 import { buildTree, type TreeNode } from "./tree.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, resolveLink, searchNotes } from "./links.ts";
-import { dataUrlOf, isAttachmentPath } from "./attachments.ts";
+import { dataUrlOf } from "./attachments.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 
 type Propose = (p: Proposal) => void;
@@ -368,11 +368,9 @@ export const view = (
   }
 
   // The dump lives in its own view, so it does not clutter the note tree.
-  // Attachments are records, not notes: they sync like everything else but have
-  // no business in the tree, in search, or as something you can open.
-  const notes = visible(model)
-    .filter((n) => !isDumpPath(n.path) && !isAttachmentPath(n.path))
-    .sort((a, b) => a.path.localeCompare(b.path));
+  // One definition of "is this a note", shared with whatever the model decides
+  // to open.
+  const notes = openable(model).sort((a, b) => a.path.localeCompare(b.path));
 
   return html`
     <main>
