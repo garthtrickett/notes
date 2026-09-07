@@ -7,7 +7,7 @@ const anyImage = (src: string) => `data:image/png;base64,${src}`;
 const classesAt = (spans: Span[], text: string, needle: string): string[] => {
   const at = text.indexOf(needle);
   return spans
-    .filter((s) => s.kind !== "line" && s.from <= at && s.to >= at + needle.length)
+    .filter((s) => (s.kind === "mark" || s.kind === "image") && s.from <= at && s.to >= at + needle.length)
     .map((s) => (s.kind === "mark" ? s.class : "image"));
 };
 
@@ -316,5 +316,51 @@ describe("a clip is not a picture", () => {
     const still = spansFor("![](a.webp)", anyImage).find((s) => s.kind === "image");
     expect(clip?.kind === "image" && clip.video).toBe(true);
     expect(still?.kind === "image" && still.video).toBe(false);
+  });
+});
+
+describe("list indent", () => {
+  const indentAt = (doc: string, line: number): number | undefined => {
+    let at = 0;
+    for (const [i, text] of doc.split("\n").entries()) {
+      if (i === line) break;
+      at += text.length + 1;
+    }
+    const span = spansFor(doc, noImages).find((s) => s.kind === "indent" && s.from === at);
+    return span?.kind === "indent" ? span.columns : undefined;
+  };
+
+  test("hangs a bullet item under its own text", () => {
+    // `- ` is two characters, so a wrapped line starts two in — where the
+    // preview's <li> puts it, and not back at the margin.
+    expect(indentAt("- an item", 0)).toBe(2);
+  });
+
+  test("counts the marker, however wide", () => {
+    expect(indentAt("1. first\n10. tenth", 0)).toBe(3);
+    expect(indentAt("1. first\n10. tenth", 1)).toBe(4);
+  });
+
+  test("a nested item hangs from its own column, not its parent's", () => {
+    // The parent item spans this line too and is entered first. If the outer
+    // column won, a nested item's wrapped text would line up under the parent.
+    const doc = "- outer\n  - inner";
+    expect(indentAt(doc, 0)).toBe(2);
+    expect(indentAt(doc, 1)).toBe(4);
+  });
+
+  test("carries on across the lines of one item", () => {
+    const doc = "- first line\n  second line";
+    expect(indentAt(doc, 1)).toBe(2);
+  });
+
+  test("leaves everything that is not a list alone", () => {
+    const doc = "- an item\n\nplain prose\n\n# A heading";
+    expect(indentAt(doc, 2)).toBeUndefined();
+    expect(indentAt(doc, 4)).toBeUndefined();
+  });
+
+  test("counts the quote marks, so a quoted item still hangs correctly", () => {
+    expect(indentAt("> - quoted", 0)).toBe(4);
   });
 });

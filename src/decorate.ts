@@ -26,7 +26,11 @@ export type Span =
       // and now says `blob:`, and a widget that reads the scheme to know what
       // to draw silently became an <img> around a video.
       readonly video: boolean;
-    };
+    }
+  // How far a wrapped line should hang, in characters. The preview gets this
+  // from `<li>` for free; here the marker is still text on the line, so the
+  // column it ends at has to be counted.
+  | { readonly kind: "indent"; readonly from: number; readonly columns: number };
 
 export type ResolveImage = (src: string) => string | null;
 
@@ -118,6 +122,10 @@ export const spansFor = (
 ): Span[] => {
   const spans: Span[] = [];
   const tree = markdownLanguage.parser.parse(doc);
+  // One indent per line, and the last write wins: a nested item is entered
+  // after the item containing it, and it is the inner column its own wrapped
+  // lines should hang from.
+  const indents = new Map<number, number>();
   // Keyed by class as well as position: a quoted table wants both.
   const seenLines = new Set<string>();
   const line = (at: number, cls: string): void => {
@@ -160,6 +168,20 @@ export const spansFor = (
       if (node.name === "Blockquote") {
         const cls = quoteDepth(node.node) >= 2 ? "cm-md-quote2" : "cm-md-quote";
         eachLine(doc, node.from, node.to, range, (at) => line(at, cls));
+        return;
+      }
+
+      if (node.name === "ListItem") {
+        const mark = node.node.firstChild;
+        if (mark !== null && mark.name === "ListMark") {
+          // CommonMark lets one to four spaces follow the marker; content
+          // begins wherever they end.
+          let after = mark.to;
+          while (after - mark.to < 4 && doc[after] === " ") after += 1;
+          const start = lineStartAt(doc, node.from);
+          const columns = Math.max(after, mark.to + 1) - start;
+          eachLine(doc, node.from, node.to, range, (at) => indents.set(at, columns));
+        }
         return;
       }
 
@@ -231,6 +253,10 @@ export const spansFor = (
     },
   });
 
+  for (const [at, columns] of indents) {
+    spans.push({ kind: "indent", from: at, columns });
+  }
+
   // The parser has no concept of a wikilink, so it gets a scan of its own.
   const LINK_CLASS: Readonly<Record<LinkState, string>> = {
     found: "cm-md-wikilink",
@@ -249,7 +275,7 @@ export const spansFor = (
 
   // CodeMirror requires decorations sorted by position, and line decorations
   // ahead of marks that start at the same offset.
-  const weight = (s: Span): number => (s.kind === "line" ? 0 : 1);
+  const weight = (s: Span): number => (s.kind === "line" || s.kind === "indent" ? 0 : 1);
   return spans.sort((a, b) => a.from - b.from || weight(a) - weight(b));
 };
 

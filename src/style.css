@@ -593,6 +593,30 @@ kbd {
   padding-left: 1.75rem;
 }
 
+/* A wrapped list item hangs under its own text, the way the preview's <li>
+   does, instead of falling back to the left margin where it reads as a new
+   item. The first line does not move: the padding pushes it right and the
+   text-indent pulls it back by exactly as much, so no character changes column
+   and nothing reflows as the caret arrives.
+
+   `ch` is the width of a zero, which in this proportional font is a little
+   wider than `- `. Erring long is the right way to be wrong here — the preview
+   indents further still. */
+.cm-host .cm-md-list {
+  padding-left: var(--md-indent, 0);
+  text-indent: calc(-1 * var(--md-indent, 0));
+}
+
+/* A quoted list needs both indents, and the quote's padding is set by a class
+   of the same specificity, so it has to be said once for each depth. */
+.cm-host .cm-md-quote.cm-md-list {
+  padding-left: calc(0.75rem + var(--md-indent, 0));
+}
+
+.cm-host .cm-md-quote2.cm-md-list {
+  padding-left: calc(1.75rem + var(--md-indent, 0));
+}
+
 /* Reads as a rule and still says `---`. */
 .cm-host .cm-md-rule {
   opacity: 0.4;

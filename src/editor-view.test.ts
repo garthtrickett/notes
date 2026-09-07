@@ -157,3 +157,17 @@ describe("entering the editor", () => {
     handle.destroy();
   });
 });
+
+describe("list indent reaches the DOM", () => {
+  test("the line carries the class and its own hanging width", () => {
+    // The span builder is unit-tested; what this catches is the adapter
+    // dropping either half. A class with no `--md-indent` hangs by zero and
+    // looks exactly like the bug it fixes.
+    const { view } = openEditor("- outer\n  - inner\n\nplain");
+    const lines = [...view.contentDOM.querySelectorAll(".cm-line")];
+    expect(lines[0]?.className).toContain("cm-md-list");
+    expect(lines[0]?.getAttribute("style")).toContain("--md-indent: 2ch");
+    expect(lines[1]?.getAttribute("style")).toContain("--md-indent: 4ch");
+    expect(lines[3]?.className).not.toContain("cm-md-list");
+  });
+});

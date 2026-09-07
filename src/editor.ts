@@ -145,6 +145,14 @@ const buildDecorations = (
       // decoration anywhere but position zero of the line is rejected.
       const at = view.state.doc.lineAt(span.from).from;
       ranges.push(Decoration.line({ class: span.class }).range(at));
+    } else if (span.kind === "indent") {
+      const at = view.state.doc.lineAt(span.from).from;
+      ranges.push(
+        Decoration.line({
+          class: "cm-md-list",
+          attributes: { style: `--md-indent: ${span.columns}ch` },
+        }).range(at),
+      );
     } else if (span.kind === "mark") {
       ranges.push(Decoration.mark({ class: span.class }).range(span.from, span.to));
     } else {
