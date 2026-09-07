@@ -25,10 +25,10 @@ self.addEventListener("activate", (event) => {
 // its body consumed. Awaiting caches.open() first means clone() throws "body is
 // already used" and nothing is ever cached — silently, because the page still
 // works while there is a network.
-const cachePut = (request, response) => {
+const cachePut = (key, response) => {
   if (!response || !response.ok) return response;
   const copy = response.clone();
-  void caches.open(CACHE).then((cache) => cache.put(request, copy));
+  void caches.open(CACHE).then((cache) => cache.put(key, copy));
   return response;
 };
 
@@ -69,14 +69,17 @@ self.addEventListener("fetch", (event) => {
 
   // Navigations are network-first, so a deploy is picked up whenever there is a
   // network, and the app still opens when there is not.
+  // Under the app root every note has its own URL, and every one of them
+  // serves the same shell. Cached under the request they would be one identical
+  // copy per note ever opened, in a store that shares its quota with the
+  // IndexedDB holding unsynced notes. There is one shell, so it is cached once.
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
-        .then((response) => cachePut(request, response))
+        .then((response) => cachePut("/", response))
         .then((response) => pruneAssets(response))
         .catch(
           async () =>
-            (await caches.match(request)) ??
             (await caches.match("/")) ??
             new Response("Offline and not cached yet.", {
               status: 503,

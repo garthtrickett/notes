@@ -371,3 +371,74 @@ describe("the path box after a refused rename", () => {
     expect(field.value).toBe("half-typed-na");
   });
 });
+
+describe("the address bar", () => {
+  const track = (): { calls: Array<[string, string]>; deps: Deps } => {
+    const calls: Array<[string, string]> = [];
+    return {
+      calls,
+      deps: { ...localOnly(), navigate: (url, title) => void calls.push([url, title]) },
+    };
+  };
+
+  it("names the open note, and says so once", async () => {
+    const { calls, deps } = track();
+    const loop = await boot(deps, root);
+    loop.propose({ kind: "created", path: "health/markers.md" });
+    await settle(loop);
+
+    expect(calls.at(-1)).toEqual(["/health/markers.md", "markers — notes"]);
+    // Repainting is not navigating. Every paint reporting the same place would
+    // be a history entry per keystroke.
+    const before = calls.length;
+    loop.propose({ kind: "edited", path: "health/markers.md", body: "typed" });
+    await settle(loop);
+    expect(calls.length).toBe(before);
+  });
+
+  it("goes back to the root when the note is left behind", async () => {
+    const { calls, deps } = track();
+    const loop = await boot(deps, root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+
+    expect(calls.at(-1)).toEqual(["/", "notes"]);
+  });
+
+  it("follows a rename, so a bookmark is never left pointing at nothing", async () => {
+    const { calls, deps } = track();
+    const loop = await boot(deps, root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    loop.propose({ kind: "renamed", from: "a.md", to: "b.md" });
+    await settle(loop);
+
+    expect(calls.at(-1)).toEqual(["/b.md", "b — notes"]);
+  });
+
+  it("opens the note a cold load asked for, not the one hydrating picked", async () => {
+    const first = await boot(localOnly(), root);
+    first.propose({ kind: "created", path: "aaa.md" });
+    first.propose({ kind: "created", path: "zzz.md" });
+    await settle(first);
+
+    document.body.innerHTML = '<div id="app"></div>';
+    const second = await boot(
+      localOnly(),
+      document.getElementById("app") as HTMLElement,
+      "zzz.md",
+    );
+    await paint();
+    expect(second.model.openPath).toBe("zzz.md");
+  });
+
+  it("ignores a link to a note this device has not synced yet", async () => {
+    // Rather than an error toast, which reads as the app being broken when the
+    // truth is only that the pull has not finished.
+    const loop = await boot(localOnly(), root, "never/seen.md");
+    await paint();
+    expect(loop.model.error).toBeNull();
+  });
+});

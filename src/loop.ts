@@ -21,6 +21,7 @@ import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
 import { followLink, resolveLink } from "./links.ts";
+import { titleFor, urlFor } from "./url.ts";
 
 export interface Deps {
   readonly db: IDBDatabase;
@@ -33,6 +34,10 @@ export interface Deps {
   // rather than reached for.
   readonly config?: VaultConfig | null;
   readonly saveConfig?: (config: VaultConfig) => void;
+  // Where the app now is. The loop says it; whether that becomes a new history
+  // entry or replaces the current one is not a decision it can make, so it
+  // does not try to.
+  readonly navigate?: (url: string, title: string) => void;
 }
 
 export interface Loop {
@@ -58,6 +63,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let lastEditorKey: string | null = null;
   let lastModal: string | null = null;
   let lastPaletteIndex: number | null = null;
+  let lastUrl: string | null = null;
   const previewCache = createPreviewCache();
   // Bytes are read from the blob store when something needs to show them, and
   // held as object URLs rather than on the notes themselves.
@@ -236,6 +242,13 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     } else {
       lastEditorKey = editorKey;
     }
+
+    // Last, because everything above can still change which note is open.
+    const url = urlFor(model);
+    if (url !== lastUrl) {
+      lastUrl = url;
+      deps.navigate?.(url, titleFor(model));
+    }
   };
 
   // The history panel asks for two things, in order: the list of revisions, then
@@ -396,8 +409,21 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   return { model, propose, flush, enterEditor };
 };
 
-export const boot = async (deps: Deps, root: HTMLElement): Promise<Loop> => {
+export const boot = async (
+  deps: Deps,
+  root: HTMLElement,
+  want: string | null = null,
+): Promise<Loop> => {
   const loop = createLoop(deps, root);
   loop.propose(await actions.hydrate(deps.db));
+  // A cold load on a link to a particular note. Hydrating has just picked a
+  // note of its own; this is the one that was actually asked for.
+  //
+  // Only if it is here. On a device that has not synced yet the note genuinely
+  // does not exist, and an error toast for following your own bookmark reads
+  // as the app being broken rather than as the vault being empty.
+  if (want !== null && loop.model.notes.has(want)) {
+    loop.propose({ kind: "opened", path: want });
+  }
   return loop;
 };

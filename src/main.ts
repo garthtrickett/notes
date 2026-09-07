@@ -7,6 +7,7 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
+import { historyMethod, pathFromUrl } from "./url.ts";
 
 // Worker lifecycle has nothing to do with whether a vault is configured, so it
 // runs before anything else. Putting it inside the configured branch left anyone
@@ -48,6 +49,23 @@ if (config === null) {
     root,
   );
 } else {
+  // Read before the loop starts, because hydrating picks a note of its own and
+  // the first paint writes that choice straight into the address bar.
+  const wanted = pathFromUrl(location.pathname);
+
+  // The loop reports where it is; how that meets the History API is decided
+  // here, and only here.
+  //
+  let booted = false;
+  let fromPop = false;
+  const navigate = (url: string, title: string): void => {
+    document.title = title;
+    const method = historyMethod(url, { booted, fromPop });
+    fromPop = false;
+    if (url === location.pathname) return;
+    history[method](null, "", url);
+  };
+
   const loop = await boot(
     {
       db: await openDb(),
@@ -56,6 +74,7 @@ if (config === null) {
       now: () => Date.now(),
       schedule: (ms, fire) => void setTimeout(fire, ms),
       config,
+      navigate,
       saveConfig: (next) => {
         saveConfig(localStorage, next);
         // A reload is the honest way to adopt a new token: every client above
@@ -64,7 +83,21 @@ if (config === null) {
       },
     },
     root,
+    wanted,
   );
+
+  booted = true;
+
+  // Back and forward. The model decides whether the path names something
+  // openable — it is the only thing that knows — and a path that names nothing
+  // is left alone rather than corrected, so the button still works.
+  addEventListener("popstate", () => {
+    const path = pathFromUrl(location.pathname);
+    if (path === null || path === loop.model.openPath) return;
+    if (!loop.model.notes.has(path)) return;
+    fromPop = true;
+    loop.propose({ kind: "opened", path });
+  });
 
   addEventListener("online", () => loop.propose({ kind: "online", online: true }));
   addEventListener("offline", () =>
