@@ -92,6 +92,11 @@ nav li { display: flex; gap: 4px; margin-bottom: 4px; }
   line-height: 1.5;
   align-self: center;
 }
+
+/* The way out of a scoped folder wears the same box as the digits it replaced,
+   so the names below it still line up. It just says a word instead of a
+   number. */
+.num.out { min-width: 0; }
 .delete { color: var(--muted); }
 
 /* Column, so the path bar, the editor and the backlinks stack and the editor

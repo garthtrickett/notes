@@ -360,17 +360,64 @@ describe("present — numbers that follow you into a folder", () => {
   it("does not toggle a folder shut on a second press", () => {
     const m = nested();
     present(m, { kind: "jumped", index: 0 });
-    present(m, { kind: "unscoped" });
+    present(m, { kind: "steppedOut" });
     present(m, { kind: "jumped", index: 0 });
     // Still open: with a scope, a repeated digit has to mean "its first child".
     expect(m.expanded.has("apple")).toBe(true);
   });
 
-  it("returns to the top level when unscoped", () => {
+  it("returns to the top level, and closes the folder it left", () => {
     const m = nested();
     present(m, { kind: "jumped", index: 0 });
-    present(m, { kind: "unscoped" });
+    present(m, { kind: "steppedOut" });
     expect(numberedRows(m).map(label)).toEqual(["apple", "zebra", "loose.md"]);
+    // Half the point: a folder standing open with nothing numbered inside it
+    // is the state this exists to get out of.
+    expect(m.expanded.has("apple")).toBe(false);
+  });
+
+  it("steps out one folder per press, not all the way", () => {
+    const m = nested();
+    present(m, { kind: "jumped", index: 0 }); // apple
+    present(m, { kind: "jumped", index: 0 }); // apple/deeper
+    present(m, { kind: "steppedOut" });
+    expect(m.numberScope).toBe("apple");
+    expect(m.expanded.has("apple/deeper")).toBe(false);
+    expect(m.expanded.has("apple")).toBe(true);
+    present(m, { kind: "steppedOut" });
+    expect(m.numberScope).toBeNull();
+  });
+
+  it("does nothing when there is nothing to step out of", () => {
+    const m = nested();
+    present(m, { kind: "steppedOut" });
+    expect(m.numberScope).toBeNull();
+  });
+
+  it("takes the numbers with it when a folder is clicked shut", () => {
+    // Otherwise the digits address rows that are no longer drawn — badges on
+    // invisible children, and nothing on screen to say where the numbers went.
+    const m = nested();
+    present(m, { kind: "jumped", index: 0 });
+    present(m, { kind: "folderToggled", path: "apple" });
+    expect(m.numberScope).toBeNull();
+    expect(numberedRows(m).map(label)).toEqual(["apple", "zebra", "loose.md"]);
+  });
+
+  it("releases the numbers when an ancestor is clicked shut", () => {
+    const m = nested();
+    present(m, { kind: "jumped", index: 0 }); // apple
+    present(m, { kind: "jumped", index: 0 }); // apple/deeper
+    present(m, { kind: "folderToggled", path: "apple" });
+    expect(m.numberScope).toBeNull();
+  });
+
+  it("leaves the numbers alone when an unrelated folder is clicked shut", () => {
+    const m = nested();
+    present(m, { kind: "jumped", index: 0 }); // apple
+    present(m, { kind: "folderToggled", path: "zebra" }); // opens it
+    present(m, { kind: "folderToggled", path: "zebra" }); // and shuts it again
+    expect(m.numberScope).toBe("apple");
   });
 
   it("falls back to the top level when the scoped folder disappears", () => {

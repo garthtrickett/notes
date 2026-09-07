@@ -244,6 +244,25 @@ describe("the dump view", () => {
     expect(root.querySelector("#editor-host")?.textContent).toContain("a new thought");
   });
 
+  it("shows the way out on the folder the digits are counting inside", async () => {
+    // Escape is not a thing you can see. Without this the only clue the numbers
+    // have moved is that they are somewhere else.
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("health/hip/a.md"), note("health/b.md"), note("other/c.md")],
+    });
+    await settle(loop);
+    expect(root.querySelector(".num.out")).toBeNull();
+
+    loop.propose({ kind: "jumped", index: 0 }); // health
+    await settle(loop);
+    const out = root.querySelector(".num.out");
+    expect(out?.textContent).toBe("esc");
+    // On the folder itself, where its own digit used to be.
+    expect(out?.closest("button")?.textContent).toContain("health");
+  });
+
   it("keeps dump files out of the note tree", async () => {
     const loop = await boot(deps(), root);
     loop.propose({

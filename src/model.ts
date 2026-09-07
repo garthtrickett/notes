@@ -21,6 +21,8 @@ import {
   filedPath,
   isFiledPath,
   isTrashPath,
+  isUnder,
+  parentFolder,
   unfiledPath,
   uniquePath,
 } from "./paths.ts";
@@ -192,7 +194,7 @@ export type Proposal =
   // Which top-level row, counting from zero, as shown in the tree.
   | { readonly kind: "jumped"; readonly index: number }
   // Back to numbering the top level.
-  | { readonly kind: "unscoped" }
+  | { readonly kind: "steppedOut" }
   | { readonly kind: "dragStarted"; readonly from: string; readonly folder: boolean }
   | { readonly kind: "draggedOver"; readonly over: string | null | undefined }
   | { readonly kind: "dragEnded" }
@@ -677,8 +679,13 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return reject(m.error);
     }
 
-    case "unscoped": {
-      m.numberScope = null;
+    case "steppedOut": {
+      if (m.numberScope === null) return null;
+      // One level, not all the way out. Collapsing the folder being left is
+      // half of it: a folder standing open with nothing numbered inside it is
+      // the state this exists to get out of.
+      m.expanded.delete(m.numberScope);
+      m.numberScope = parentFolder(m.numberScope);
       return null;
     }
 
@@ -718,8 +725,17 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "folderToggled": {
-      if (m.expanded.has(p.path)) m.expanded.delete(p.path);
-      else m.expanded.add(p.path);
+      if (!m.expanded.has(p.path)) {
+        m.expanded.add(p.path);
+        return null;
+      }
+      m.expanded.delete(p.path);
+      // Closing a folder the digits are inside would leave them addressing rows
+      // that are no longer drawn: badges on invisible children, and nothing on
+      // screen to say where the numbers went. They come out with it.
+      if (m.numberScope !== null && isUnder(m.numberScope, p.path)) {
+        m.numberScope = parentFolder(p.path);
+      }
       return null;
     }
 

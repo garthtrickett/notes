@@ -89,8 +89,14 @@ export const describeProblem = (
 export const TRASH = ".trash";
 export const ARCHIVE = ".archive";
 
-const isUnder = (path: string, folder: string): boolean =>
+export const isUnder = (path: string, folder: string): boolean =>
   path === folder || path.startsWith(`${folder}/`);
+
+// The folder a path sits in, or null when it is already at the top level.
+export const parentFolder = (path: string): string | null => {
+  const cut = path.lastIndexOf("/");
+  return cut === -1 ? null : path.slice(0, cut);
+};
 
 export const isTrashPath = (path: string): boolean => isUnder(path, TRASH);
 export const isArchivePath = (path: string): boolean => isUnder(path, ARCHIVE);

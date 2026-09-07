@@ -33,8 +33,8 @@ export const keyAction = (
     if (model.modal !== null) return propose({ kind: "modalClosed" });
     if (isTyping(event.target)) return { kind: "blur" };
     // Escape unwinds one thing at a time, and the scoped numbers are the last
-    // of them.
-    if (model.numberScope !== null) return propose({ kind: "unscoped" });
+    // of them — one folder per press, rather than all the way out at once.
+    if (model.numberScope !== null) return propose({ kind: "steppedOut" });
     return null;
   }
 

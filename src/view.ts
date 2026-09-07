@@ -54,6 +54,15 @@ export interface ViewCtx {
 const badge = (index: number | null) =>
   index === null ? nothing : html`<kbd class="num">${index}</kbd>`;
 
+// The folder the digits are currently counting inside wears the way back out
+// where its own number used to be. Without it the only clue that the numbers
+// have moved is that they are somewhere else, and Escape is not a thing you can
+// see.
+const scopeBadge = (model: Model, path: string) =>
+  model.numberScope === path
+    ? html`<kbd class="num out" title="Close ${path} (Esc)">esc</kbd>`
+    : nothing;
+
 // Dragging a row moves what it stands for. The payload is the path, and the drop
 // target works out the rest — so a note and a folder are dragged the same way.
 const DRAG_TYPE = "text/x-note-path";
@@ -185,7 +194,7 @@ const treeNodes = (
           @drop=${dropZone(node.path, model, propose).onDrop}
           @click=${() => propose({ kind: "folderToggled", path: node.path })}
         >
-          ${badge(index)}
+          ${badge(index)}${scopeBadge(model, node.path)}
           <span class="twist">${open ? "▾" : "▸"}</span>
           <span class="path">${node.name}</span>
         </button>
