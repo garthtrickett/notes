@@ -6,9 +6,12 @@ import {
   dumpDayOf,
   dumpEdits,
   dumpPathOf,
+  dumpSections,
+  dumpSpotAt,
   isDumpPath,
   splitDump,
   stamp,
+  type DumpDay,
 } from "./dump.ts";
 
 // Local time, because the rollover is about when the human felt it was night.
@@ -174,5 +177,77 @@ describe("dumpEdits", () => {
   test("no days, nothing to say", () => {
     expect(composeDump([])).toBe("");
     expect(dumpEdits("anything at all", [])).toEqual([]);
+  });
+});
+
+describe("dumpSections", () => {
+  const day = (date: string, body: string) => ({ path: `dump/${date}.md`, body });
+
+  test("each section spans exactly the day's own text in the document", () => {
+    // The invariant that lets a position in the document name a position in a
+    // file. If composeDump and dumpSections ever drift, this is what catches it.
+    const days = [
+      day("2026-09-07", "09:00 up\n"),
+      day("2026-09-06", ""),
+      day("2026-09-05", "\n\na\nb\n\n\n"),
+      day("2026-09-04", "x"),
+    ];
+    const doc = composeDump(days);
+    for (const [i, section] of dumpSections(days).entries()) {
+      const stored = days[i]?.body ?? "";
+      expect(doc.slice(section.from, section.to)).toBe(
+        stored.replace(/^\s*\n|\s+$/g, ""),
+      );
+      expect(doc.slice(section.start).startsWith(`# ${dayOfPath(section.path)}`)).toBe(true);
+    }
+  });
+});
+
+describe("dumpSpotAt", () => {
+  const day = (date: string, body: string) => ({ path: `dump/${date}.md`, body });
+  const days = [day("2026-09-07", "09:00 up\n"), day("2026-09-06", "22:00 late\n")];
+  const doc = composeDump(days);
+
+  test("a position inside a day names that day, at the same place in the file", () => {
+    const at = doc.indexOf("up");
+    expect(dumpSpotAt(days, at)).toEqual({ path: "dump/2026-09-07.md", offset: 6 });
+    // Which is where "up" actually is in the file it came from.
+    expect(days[0]?.body.slice(6, 8)).toBe("up");
+  });
+
+  test("a caret on a heading belongs to the day it names, at the top of it", () => {
+    const at = doc.indexOf("# 2026-09-06") + 3;
+    expect(dumpSpotAt(days, at)).toEqual({ path: "dump/2026-09-06.md", offset: 0 });
+  });
+
+  test("a position above every heading belongs to the first day", () => {
+    // The same rule the split uses, so a picture lands where the text around it
+    // is about to be written.
+    expect(dumpSpotAt(days, 0)).toEqual({ path: "dump/2026-09-07.md", offset: 0 });
+  });
+
+  test("counts the whitespace composing stripped off the front", () => {
+    // The document shows the body trimmed; the file still has its blank lines,
+    // and an insertion at the wrong offset would land inside them.
+    const padded = [day("2026-09-07", "\n\nfirst\n")];
+    const at = composeDump(padded).indexOf("first");
+    expect(dumpSpotAt(padded, at)).toEqual({ path: "dump/2026-09-07.md", offset: 2 });
+    expect(padded[0]?.body.slice(2, 7)).toBe("first");
+  });
+
+  test("an insertion at the spot comes back where the caret was", () => {
+    // The whole point of the mapping, tied off end to end: write into the file
+    // at the offset it gives, recompose, and the text is where you put it.
+    const at = doc.indexOf("late");
+    const spot = dumpSpotAt(days, at);
+    if (spot === null) throw new Error("no spot");
+    const body = days[1]?.body ?? "";
+    const written = `${body.slice(0, spot.offset)}![](x.webp)${body.slice(spot.offset)}`;
+    const after = composeDump([days[0] as DumpDay, { path: spot.path, body: written }]);
+    expect(after.indexOf("![](x.webp)")).toBe(at);
+  });
+
+  test("no days, no spot", () => {
+    expect(dumpSpotAt([], 0)).toBeNull();
   });
 });

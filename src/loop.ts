@@ -14,7 +14,7 @@
 
 import { render } from "lit-html";
 import { createModel, dumpDays, present, type Model, type Proposal } from "./model.ts";
-import { composeDump, dumpEdits } from "./dump.ts";
+import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
@@ -117,6 +117,19 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     attachImage(file, path, caret);
   };
 
+  // Which file a picture dropped at this position belongs in, and where in it.
+  //
+  // In the dump that is not the open note: openPath still names whichever note
+  // the tree had open behind it, and attaching there would file the picture
+  // somewhere you are not looking. It is the day under the caret, which needs
+  // the document offset turned back into one in that day's file.
+  const attachSpot = (caret: number | null): { path: string; offset: number } | null => {
+    if (model.mode === "dump") return dumpSpotAt(dumpDays(model), caret ?? 0);
+    if (model.openPath === null) return null;
+    const note = model.notes.get(model.openPath);
+    return { path: model.openPath, offset: caret ?? note?.body.length ?? 0 };
+  };
+
   // Created once, before the first paint, and outlives every one of them. lit is
   // handed an empty container and never touches what is inside it.
   const cm: EditorHandle = createEditor({
@@ -139,18 +152,15 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       }
     },
     onPaste: (event, caret) => {
-      // Not in the dump. openPath still names whichever note the tree had open
-      // behind it, and attaching there would file the picture somewhere you are
-      // not looking. A text paste is unaffected; this only declines the image.
-      if (model.mode === "dump") return;
-      if (model.openPath !== null) pasteImage(event, model.openPath, caret);
+      const spot = attachSpot(caret);
+      if (spot !== null) pasteImage(event, spot.path, spot.offset);
     },
     onDropFiles: (files, caret) => {
       const image = [...files].find((f) => f.type.startsWith("image/"));
       // Anything else is left to CodeMirror, which will drop its text in.
-      if (image === undefined || model.openPath === null) return false;
-      if (model.mode === "dump") return false;
-      attachImage(image, model.openPath, caret);
+      const spot = attachSpot(caret);
+      if (image === undefined || spot === null) return false;
+      attachImage(image, spot.path, spot.offset);
       return true;
     },
     onWikilink: (target) => {

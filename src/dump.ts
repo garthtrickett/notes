@@ -130,3 +130,64 @@ export const dumpEdits = (
   }
   return changed;
 };
+
+// Where each day's own text sits in the composite document.
+//
+// The document is many files behind one editor, so anything that acts at a
+// position — a pasted image, a dropped file — has to be able to say which file
+// that position is in and where in it. Kept next to composeDump because the two
+// have to agree exactly; a test holds them to it.
+export interface DumpSection {
+  readonly path: string;
+  // Where the day's heading begins, so a caret anywhere on it belongs to it.
+  readonly start: number;
+  readonly from: number;
+  readonly to: number;
+  // What composing stripped from the front of the stored body, which is the
+  // difference between an offset in the document and one in the file.
+  readonly leading: number;
+}
+
+export const dumpSections = (days: readonly DumpDay[]): DumpSection[] => {
+  const sections: DumpSection[] = [];
+  let at = 0;
+  for (const day of days) {
+    if (sections.length > 0) at += 1; // the blank line joining two days
+    const trimmed = trimBody(day.body);
+    const from = at + headingFor(day.path).length + (trimmed === "" ? 1 : 2);
+    const to = from + trimmed.length;
+    sections.push({
+      path: day.path,
+      start: at,
+      from,
+      to,
+      leading: /^\s*\n/.exec(day.body)?.[0].length ?? 0,
+    });
+    at = trimmed === "" ? to : to + 1;
+  }
+  return sections;
+};
+
+export interface DumpSpot {
+  readonly path: string;
+  // Into the day's stored body, not into the document.
+  readonly offset: number;
+}
+
+// Which file a position in the document is in. Follows the same rule as the
+// split — a position belongs to the day whose heading is above it, and one
+// above every heading belongs to the first day — so a picture lands where the
+// text around it is about to be written.
+export const dumpSpotAt = (
+  days: readonly DumpDay[],
+  pos: number,
+): DumpSpot | null => {
+  let found: DumpSection | undefined;
+  for (const section of dumpSections(days)) {
+    if (section.start > pos) break;
+    found = section;
+  }
+  if (found === undefined) return null; // no days, so no spot
+  const within = Math.min(Math.max(pos, found.from), found.to);
+  return { path: found.path, offset: within - found.from + found.leading };
+};
