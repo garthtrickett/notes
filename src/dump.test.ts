@@ -1,5 +1,15 @@
-import { describe, expect, it } from "bun:test";
-import { appendEntry, dayOfPath, dumpDayOf, dumpPathOf, isDumpPath, stamp } from "./dump.ts";
+import { describe, expect, it, test } from "bun:test";
+import {
+  appendEntry,
+  composeDump,
+  dayOfPath,
+  dumpDayOf,
+  dumpEdits,
+  dumpPathOf,
+  isDumpPath,
+  splitDump,
+  stamp,
+} from "./dump.ts";
 
 // Local time, because the rollover is about when the human felt it was night.
 const at = (iso: string): number => new Date(iso).getTime();
@@ -71,5 +81,98 @@ describe("capture", () => {
     expect(appendEntry("", "  spaced  ", at("2026-09-06T09:05:00"))).toBe(
       "09:05 spaced\n",
     );
+  });
+});
+
+describe("the dump as one document", () => {
+  const day = (date: string, body: string) => ({ path: `dump/${date}.md`, body });
+
+  test("newest day first, each under a heading of its date", () => {
+    // Newest first because ascending buries today under every day before it.
+    const doc = composeDump([day("2026-09-07", "09:00 up\n"), day("2026-09-06", "22:00 late\n")]);
+    expect(doc).toBe("# 2026-09-07\n\n09:00 up\n\n# 2026-09-06\n\n22:00 late\n");
+  });
+
+  test("a day with nothing in it is still a heading", () => {
+    expect(composeDump([day("2026-09-07", "")])).toBe("# 2026-09-07\n");
+  });
+
+  test("splits back into exactly what it was composed from", () => {
+    const days = [day("2026-09-07", "09:00 up\n"), day("2026-09-06", ""), day("2026-09-05", "a\nb\n")];
+    const back = splitDump(composeDump(days), days);
+    expect([...back]).toEqual([
+      ["2026-09-07", "09:00 up"],
+      ["2026-09-06", ""],
+      ["2026-09-05", "a\nb"],
+    ]);
+  });
+
+  test("composing is stable through a round trip", () => {
+    const days = [day("2026-09-07", "09:00 up\n"), day("2026-09-06", "x\n")];
+    const once = composeDump(days);
+    const twice = composeDump(
+      days.map((d) => ({ path: d.path, body: splitDump(once, days).get(dayOfPath(d.path)) ?? "" })),
+    );
+    expect(twice).toBe(once);
+  });
+});
+
+describe("dumpEdits", () => {
+  const day = (date: string, body: string) => ({ path: `dump/${date}.md`, body });
+
+  test("says nothing when the document still agrees with the files", () => {
+    const days = [day("2026-09-07", "09:00 up\n"), day("2026-09-06", "x\n")];
+    expect(dumpEdits(composeDump(days), days)).toEqual([]);
+  });
+
+  test("does not rewrite a file over its own trailing whitespace", () => {
+    // Opening the dump and typing one character must not touch every day that
+    // happened to end in a stray blank line.
+    const days = [day("2026-09-07", "09:00 up\n\n\n")];
+    expect(dumpEdits(composeDump(days), days)).toEqual([]);
+  });
+
+  test("reports only the day that changed", () => {
+    const days = [day("2026-09-07", "up\n"), day("2026-09-06", "x\n")];
+    const edited = composeDump(days).replace("x", "x edited");
+    expect(dumpEdits(edited, days)).toEqual([{ path: "dump/2026-09-06.md", body: "x edited\n" }]);
+  });
+
+  test("writes back in the shape appendEntry uses", () => {
+    const days = [day("2026-09-07", "")];
+    expect(dumpEdits("# 2026-09-07\n\nhello", days)).toEqual([
+      { path: "dump/2026-09-07.md", body: "hello\n" },
+    ]);
+  });
+
+  test("text above every heading belongs to the first day", () => {
+    // The rule has to be total: a section belonging to no file would be wiped
+    // by the next repaint, which rebuilds this document from the notes.
+    const days = [day("2026-09-07", "up\n")];
+    // It keeps the blank line the heading left behind, which reads as the
+    // separator it now is, and survives a further round trip unchanged.
+    expect(dumpEdits("stray\n# 2026-09-07\n\nup\n", days)).toEqual([
+      { path: "dump/2026-09-07.md", body: "stray\n\nup\n" },
+    ]);
+  });
+
+  test("a heading for a day that does not exist is just text", () => {
+    // Otherwise typing a date would silently write to nothing.
+    const days = [day("2026-09-07", "up\n")];
+    expect(dumpEdits("# 2026-09-07\n\nup\n# 1999-01-01\n\nold\n", days)).toEqual([
+      { path: "dump/2026-09-07.md", body: "up\n# 1999-01-01\n\nold\n" },
+    ]);
+  });
+
+  test("a blank line typed at the end of a day is not a disagreement", () => {
+    // If this reported a change, the repaint that followed would rewrite the
+    // document and trim the line away under the caret as it was being typed.
+    const days = [day("2026-09-07", "up\n")];
+    expect(dumpEdits("# 2026-09-07\n\nup\n\n", days)).toEqual([]);
+  });
+
+  test("no days, nothing to say", () => {
+    expect(composeDump([])).toBe("");
+    expect(dumpEdits("anything at all", [])).toEqual([]);
   });
 });

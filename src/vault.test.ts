@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { openDb } from "./idb.ts";
 import { boot, type Deps, type Loop } from "./loop.ts";
-import { createModel, present, visible, type Note } from "./model.ts";
+import { createModel, dumpDays, present, visible, type Note } from "./model.ts";
+import { dumpEdits } from "./dump.ts";
 import { captureProposals } from "./actions.ts";
 
 let db: IDBDatabase | undefined;
@@ -167,7 +168,7 @@ describe("capture", () => {
 });
 
 describe("the dump view", () => {
-  it("shows one editor per day, with only today writable", async () => {
+  it("puts every day in one editor, newest first, under its own heading", async () => {
     const loop = await boot(deps(), root);
     loop.propose({
       kind: "hydrated",
@@ -179,23 +180,68 @@ describe("the dump view", () => {
     loop.propose({ kind: "modeChanged", mode: "dump" });
     await settle(loop);
 
-    const editors = root.querySelectorAll<HTMLTextAreaElement>(".day-body");
-    expect(editors.length).toBe(2);
-    // Oldest first, so it reads as one document top to bottom.
-    expect(editors[0]?.dataset.day).toBe("dump/2026-09-05.md");
-    expect(editors[0]?.readOnly).toBe(true);
-    expect(editors[1]?.readOnly).toBe(false);
+    expect(root.querySelectorAll(".day-body").length).toBe(0);
+    expect(root.querySelectorAll("#editor-host").length).toBe(1);
+    // Newest first: the day you are writing in is the one you can see without
+    // scrolling past every day before it.
+    expect(loop.model.mode).toBe("dump");
+    const text = root.querySelector("#editor-host")?.textContent ?? "";
+    expect(text.indexOf("2026-09-06")).toBeLessThan(text.indexOf("2026-09-05"));
+    expect(text).toContain("09:05 today");
+    expect(text).toContain("10:00 yesterday");
   });
 
-  it("labels the live day Today rather than its date", async () => {
+  it("writes an edit back into the day it was made in", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        note("dump/2026-09-05.md", { body: "10:00 yesterday\n" }),
+        note("dump/2026-09-06.md", { body: "09:05 today\n" }),
+      ],
+    });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+
+    // What CodeMirror would hand back after typing in the older day.
+    const edited = "# 2026-09-06\n\n09:05 today\n\n# 2026-09-05\n\n10:00 yesterday and more\n";
+    for (const day of dumpEdits(edited, dumpDays(loop.model))) {
+      loop.propose({ kind: "edited", path: day.path, body: day.body });
+    }
+    await settle(loop);
+
+    expect(loop.model.notes.get("dump/2026-09-05.md")?.body).toBe(
+      "10:00 yesterday and more\n",
+    );
+    // And the day nobody touched is untouched — not rewritten, not dirtied.
+    expect(loop.model.notes.get("dump/2026-09-06.md")?.body).toBe("09:05 today\n");
+  });
+
+  it("heads each day with its date, which is what makes the split reversible", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("dump/2026-09-06.md")] });
     loop.propose({ kind: "modeChanged", mode: "dump" });
     await settle(loop);
 
-    const heading = root.querySelector(".day h2");
-    expect(heading?.textContent?.trim()).toContain("Today");
-    expect(heading?.textContent).not.toContain("2026-09-06");
+    // The old view said "Today" for the live day. A heading in a document has
+    // to name the file it stands for, or an edit cannot be written back.
+    expect(root.querySelector("#editor-host")?.textContent).toContain("2026-09-06");
+  });
+
+  it("shows a captured line without being asked to re-read the file", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("dump/2026-09-06.md", { body: "09:05 up\n" })] });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+
+    for (const p of captureProposals(loop.model.notes, "a new thought", () => NOON)) {
+      loop.propose(p);
+    }
+    await settle(loop);
+
+    // The document is composed from the notes, so a capture has to reach it
+    // through a repaint rather than by anyone re-reading the file.
+    expect(root.querySelector("#editor-host")?.textContent).toContain("a new thought");
   });
 
   it("keeps dump files out of the note tree", async () => {

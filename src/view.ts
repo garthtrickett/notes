@@ -15,6 +15,7 @@ import { ARCHIVE, TRASH, dropTarget } from "./paths.ts";
 import {
   dragLanding,
   filedIn,
+  dumpDays,
   orphanAttachments,
   noteTree,
   numberedRows,
@@ -439,71 +440,31 @@ const status = (model: Model) => {
 // a note contains a line that looks like a date header.
 const dumpView = (
   model: Model,
-  propose: Propose,
-  now: () => number,
   onCapture: (text: string) => void,
-): TemplateResult => {
-  const todayPath = dumpPathOf(now());
-  const days = visible(model)
-    .filter((n) => isDumpPath(n.path))
-    .sort((a, b) => a.path.localeCompare(b.path));
-
-  return html`
-    <div class="dump">
-      <div class="days">
-        ${days.length === 0
-          ? html`<p class="empty">Nothing captured yet.</p>`
-          : nothing}
-        ${days.map((day) => {
-          const isToday = day.path === todayPath;
-          return html`
-            <article class="day">
-              <h2>
-                ${isToday ? "Today" : dayOfPath(day.path)}
-                ${day.pending
-                  ? html`<span class="dot" title="Not yet on GitHub">•</span>`
-                  : nothing}
-              </h2>
-              <textarea
-                class="day-body"
-                data-day=${day.path}
-                spellcheck="false"
-                rows=${Math.max(2, day.body.split("\n").length)}
-                ?readonly=${!isToday}
-                title=${isToday ? "" : "Settled — click to edit"}
-                @dblclick=${(e: Event) => {
-                  (e.target as HTMLTextAreaElement).readOnly = false;
-                }}
-                @input=${(e: Event) =>
-                  propose({
-                    kind: "edited",
-                    path: day.path,
-                    body: (e.target as HTMLTextAreaElement).value,
-                  })}
-                .value=${day.body}
-              ></textarea>
-            </article>
-          `;
-        })}
-      </div>
-      <form
-        class="capture"
-        @submit=${(e: SubmitEvent) => {
-          e.preventDefault();
-          const input = (e.target as HTMLFormElement).querySelector("input");
-          if (!input) return;
-          onCapture(input.value);
-          input.value = "";
-        }}
-      >
-        <input id="capture" placeholder="What's on your mind?" autocomplete="off" />
-        <button type="submit" title="Capture (A)" aria-keyshortcuts="A">
-          Add <kbd>A</kbd>
-        </button>
-      </form>
+): TemplateResult => html`
+  <div class="dump">
+    <div class="days">
+      ${dumpDays(model).length === 0
+        ? html`<p class="empty">Nothing captured yet.</p>`
+        : html`<div id="editor-host"></div>`}
     </div>
-  `;
-};
+    <form
+      class="capture"
+      @submit=${(e: SubmitEvent) => {
+        e.preventDefault();
+        const input = (e.target as HTMLFormElement).querySelector("input");
+        if (!input) return;
+        onCapture(input.value);
+        input.value = "";
+      }}
+    >
+      <input id="capture" placeholder="What's on your mind?" autocomplete="off" />
+      <button type="submit" title="Capture (A)" aria-keyshortcuts="A">
+        Add <kbd>A</kbd>
+      </button>
+    </form>
+  </div>
+`;
 
 // Capture and new-note are the same shape — one field, submit — so they share a
 // box told what it is. The open palette is not that shape and does not share it:
@@ -865,7 +826,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
     return html`
       <main class="single">
         ${tabs(model, propose)}
-        ${dumpView(model, propose, now, onCapture)}
+        ${dumpView(model, onCapture)}
         ${modal(model, propose, onCapture)}
         ${status(model)}
         ${model.error

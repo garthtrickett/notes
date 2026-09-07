@@ -13,7 +13,8 @@
 // notes and a client; none of them receives one.
 
 import { render } from "lit-html";
-import { createModel, present, type Model, type Proposal } from "./model.ts";
+import { createModel, dumpDays, present, type Model, type Proposal } from "./model.ts";
+import { composeDump, dumpEdits } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
@@ -124,17 +125,31 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // points at exists.
     resolveWikilink: (target) => resolveLink(target, model.notes).kind,
     onEdit: (body) => {
+      // The dump is many files behind one document, so an edit is however many
+      // of them the text now disagrees with — usually one, and none at all
+      // while you are typing inside a day that has not changed shape.
+      if (model.mode === "dump") {
+        for (const day of dumpEdits(body, dumpDays(model))) {
+          propose({ kind: "edited", path: day.path, body: day.body });
+        }
+        return;
+      }
       if (model.openPath !== null) {
         propose({ kind: "edited", path: model.openPath, body });
       }
     },
     onPaste: (event, caret) => {
+      // Not in the dump. openPath still names whichever note the tree had open
+      // behind it, and attaching there would file the picture somewhere you are
+      // not looking. A text paste is unaffected; this only declines the image.
+      if (model.mode === "dump") return;
       if (model.openPath !== null) pasteImage(event, model.openPath, caret);
     },
     onDropFiles: (files, caret) => {
       const image = [...files].find((f) => f.type.startsWith("image/"));
       // Anything else is left to CodeMirror, which will drop its text in.
       if (image === undefined || model.openPath === null) return false;
+      if (model.mode === "dump") return false;
       attachImage(image, model.openPath, caret);
       return true;
     },
@@ -213,9 +228,13 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
 
     const editorKey = `${model.mode}|${model.preview}|${model.openPath ?? ""}`;
-    const body = model.openPath
-      ? (model.notes.get(model.openPath)?.body ?? "")
-      : "";
+    const days = model.mode === "dump" ? dumpDays(model) : null;
+    const body =
+      days !== null
+        ? composeDump(days)
+        : model.openPath
+          ? (model.notes.get(model.openPath)?.body ?? "")
+          : "";
 
     const host = root.querySelector<HTMLElement>("#editor-host");
     if (host) {
@@ -230,6 +249,13 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       if (editorKey !== lastEditorKey) {
         lastEditorKey = editorKey;
         cm.reset(body);
+      } else if (days !== null) {
+        // Through the split, not as text. Composing normalises whitespace, so
+        // comparing the strings would rewrite the document on every keystroke —
+        // and a blank line typed at the end of a day would be trimmed away
+        // under the caret as it was typed. What matters is whether the document
+        // still says what the files say.
+        if (dumpEdits(cm.doc(), days).length > 0) cm.setDoc(body);
       } else if (cm.doc() !== body) {
         cm.setDoc(body);
       }

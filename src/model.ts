@@ -241,6 +241,14 @@ export const withoutBytes = <T extends { encoding: Encoding; body: string }>(
 export const visible = (m: Model): Note[] =>
   [...m.notes.values()].filter((n) => !n.deleted);
 
+// The dump, newest day first. One definition, because the view renders it, the
+// loop composes the document from it and the split reads it back — three
+// answers to "which days, in what order" is three chances to disagree.
+export const dumpDays = (m: Model): Note[] =>
+  visible(m)
+    .filter((n) => isDumpPath(n.path))
+    .sort((a, b) => b.path.localeCompare(a.path));
+
 // What the notes view can show and open. An attachment is a record, not a note,
 // and a dump day belongs to its own view — opening either puts something in the
 // editor that is not text you meant to edit. Defined here rather than in the
