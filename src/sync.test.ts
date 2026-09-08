@@ -107,6 +107,16 @@ const settle = async (loop: Loop) => {
   await new Promise<void>((r) => queueMicrotask(() => r()));
 };
 
+// The push waits for typing to stop, so a test that wants the push wants the
+// pause with it: move the clock past the quiet period and run whatever the loop
+// asked to be woken for. Anything scheduled *after* this — a retry cooldown —
+// is left where it is, for the test to inspect.
+const quiet = async (loop: Loop) => {
+  clock += 5_000;
+  for (const fire of scheduled.splice(0)) fire();
+  await settle(loop);
+};
+
 beforeEach(async () => {
   db?.close();
   await new Promise<void>((resolve) => {
@@ -185,7 +195,7 @@ describe("pull", () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "created", path: "a.md" });
     loop.propose({ kind: "edited", path: "a.md", body: "mine" });
-    await settle(loop);
+    await quiet(loop);
 
     // Two people made the same path independently. Neither side is discarded.
     expect(loop.model.notes.get("a (conflict 2023-11-14).md")?.body).toBe("mine");
@@ -271,11 +281,44 @@ describe("a stale manifest", () => {
 });
 
 describe("push", () => {
+  it("holds the push while you are still typing", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    loop.propose({ kind: "edited", path: "a.md", body: "h" });
+    await settle(loop);
+    loop.propose({ kind: "edited", path: "a.md", body: "he" });
+    await settle(loop);
+
+    // Nothing has left the device yet. Without this a sentence arrived at
+    // GitHub as a dozen commits, one per keystroke that happened to settle.
+    expect(remote.files.has("a.md")).toBe(false);
+
+    await quiet(loop);
+    // And then it goes, once, carrying the finished text rather than a prefix.
+    expect(remote.files.get("a.md")?.body).toBe("he");
+  });
+
+  it("a note being typed does not hold up one that is finished with", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "created", path: "old.md" });
+    loop.propose({ kind: "edited", path: "old.md", body: "done" });
+    await settle(loop);
+    clock += 5_000; // old.md has gone quiet
+
+    loop.propose({ kind: "created", path: "new.md" });
+    loop.propose({ kind: "edited", path: "new.md", body: "typing" });
+    await settle(loop);
+
+    // The quiet period is per note, so the one you left alone still goes.
+    expect(remote.files.get("old.md")?.body).toBe("done");
+    expect(remote.files.has("new.md")).toBe(false);
+  });
+
   it("sends a new note and records the sha it came back with", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "created", path: "a.md" });
     loop.propose({ kind: "edited", path: "a.md", body: "hello" });
-    await settle(loop);
+    await quiet(loop);
 
     expect(remote.files.get("a.md")?.body).toBe("hello");
     const note = loop.model.notes.get("a.md");
@@ -321,7 +364,7 @@ describe("conflict", () => {
     loop.propose({ kind: "edited", path: "a.md", body: "my version" });
     // ...while someone else edits the same note there.
     remote.put("a.md", "their version");
-    await settle(loop);
+    await quiet(loop);
 
     const copy = "a (conflict 2023-11-14).md";
     expect(loop.model.notes.get(copy)?.body).toBe("my version");
@@ -337,7 +380,7 @@ describe("conflict", () => {
     await settle(loop);
     loop.propose({ kind: "edited", path: "a.md", body: "mine" });
     remote.put("a.md", "theirs");
-    await settle(loop);
+    await quiet(loop);
 
     expect(loop.model.openPath).toBe("a (conflict 2023-11-14).md");
   });
@@ -468,7 +511,7 @@ describe("failure handling", () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "created", path: "a.md" });
     loop.propose({ kind: "edited", path: "a.md", body: "eventually" });
-    await settle(loop);
+    await quiet(loop);
     expect(loop.model.retryAt).toBeGreaterThan(clock);
 
     remote.fail(null);
@@ -516,7 +559,7 @@ describe("the history panel over the wire", () => {
     loop.propose({ kind: "hydrated", notes: [] });
     loop.propose({ kind: "created", path: "a.md" });
     loop.propose({ kind: "edited", path: "a.md", body: "on github" });
-    await settle(loop);
+    await quiet(loop);
 
     loop.propose({ kind: "historyOpened", path: "a.md" });
     await settle(loop);

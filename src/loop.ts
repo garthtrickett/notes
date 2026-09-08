@@ -13,7 +13,14 @@
 // notes and a client; none of them receives one.
 
 import { render } from "lit-html";
-import { createModel, dumpDays, present, type Model, type Proposal } from "./model.ts";
+import {
+  createModel,
+  dumpDays,
+  present,
+  type Model,
+  type Note,
+  type Proposal,
+} from "./model.ts";
 import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
@@ -53,10 +60,20 @@ export interface Loop {
 const FIRST_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
 
+// How long a note has to sit untouched before it is worth pushing. Nothing is
+// at risk while it waits: phase 1 has already put the edit on the device, and
+// only the trip to GitHub is held back. Without it every keystroke that settles
+// became its own commit, so a sentence arrived as a dozen of them.
+const QUIET_MS = 1_500;
+
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const { db, github, now, schedule, shrink } = deps;
   const model = createModel();
   let wakeScheduled = false;
+  // When each note was last typed into. Bookkeeping about the loop rather than
+  // about notes — the same reason the backoff lives here and not in present(),
+  // which has no clock and should not be given one.
+  const touched = new Map<string, number>();
 
   let renderQueued = false;
   // A change of note, or of preview, replaces the editor's contents wholesale.
@@ -357,9 +374,25 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (!model.online) return;
 
     // 3. Push before pulling. An unpushed edit is the only state that exists
-    //    nowhere else.
-    const pending = [...model.notes.values()].find((n) => n.pending && !n.dirty);
+    //    nowhere else — but not while it is still being typed into.
+    const readyAt = (n: Note): number => (touched.get(n.path) ?? 0) + QUIET_MS;
+    const waiting = [...model.notes.values()].filter((n) => n.pending && !n.dirty);
+    // Per note, not per keystroke: a note being typed into must not hold up one
+    // that was finished with a minute ago.
+    const pending = waiting.find((n) => now() >= readyAt(n));
+    if (pending === undefined && waiting.length > 0) {
+      const soonest = Math.min(...waiting.map(readyAt));
+      if (!wakeScheduled) {
+        wakeScheduled = true;
+        schedule(Math.max(0, soonest - now()), () => {
+          wakeScheduled = false;
+          propose({ kind: "woke" });
+        });
+      }
+      return;
+    }
     if (pending) {
+      touched.delete(pending.path);
       model.syncing = true;
       // An attachment's bytes are not on the record, so they are fetched for
       // the push and thrown away again afterwards.
@@ -392,6 +425,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   function propose(p: Proposal): void {
     // Backoff is bookkeeping about the loop rather than about notes, so it lives
     // here instead of leaking a clock into present().
+    // Typing is what the quiet period measures, so it is recorded where the
+    // proposal arrives rather than inferred from the note afterwards.
+    if (p.kind === "edited") touched.set(p.path, now());
     if (p.kind === "syncFailed") {
       if (p.error.kind === "rateLimited") {
         // GitHub said exactly when it will answer again. Doubling from one
