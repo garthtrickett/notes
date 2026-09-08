@@ -812,9 +812,15 @@ kbd {
 @media (max-width: 720px) {
   main {
     grid-template-columns: minmax(0, 1fr);
-    /* minmax(0, …) on both rows so a long note scrolls inside its row instead
-       of stretching the grid past the screen. */
-    grid-template-rows: minmax(0, 38dvh) minmax(0, 1fr);
+    /* Round 2: the tree takes what it needs, up to a cap, rather than always
+       taking the cap. Four folders left about 200px of nothing above a note
+       that had been squeezed into whatever was left. */
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  nav {
+    max-height: 38dvh;
+    overflow-y: auto;
   }
 
   main.single {
@@ -849,6 +855,50 @@ kbd {
 
   .filed {
     padding: 12px;
+  }
+
+  /* Round 1: stop advertising keys the device does not have.
+     Every kbd hint and every jump number is for a keyboard, and on a phone
+     they are pure noise — noise that was also making the labels wide enough to
+     wrap the tab row onto two lines, spending 94px of an 839px screen on
+     chrome you touch rarely. */
+  /* Round 2: a destructive action should not carry the same weight as the row
+     it sits beside. On a desktop the pointer is precise and hover declares
+     intent first; on a phone this is a 44px delete pressed against a 44px
+     navigation target. It keeps its size, because it still has to be hittable,
+     and loses the box that made it compete. */
+  .delete {
+    border-color: transparent;
+    opacity: 0.55;
+  }
+
+  .tabs kbd,
+  .pathbar kbd,
+  .capture kbd,
+  .num {
+    display: none;
+  }
+
+  /* Round 3: two things are pinned to the bottom of the viewport — the sync
+     status bottom left, the error toast bottom right — and in the dump that is
+     exactly where the capture box is. All three were drawn on top of each
+     other: legible, none of them readable. They stack above it instead, and
+     only where a capture box exists, since that is what they were covering.
+     The box measured 54px and the status line 20px.
+
+     They stack everywhere else too: the two are pinned to opposite bottom
+     corners, which is fine on a desktop and not on a phone, where the error is
+     wide enough to reach across and land on the status line. */
+  .error {
+    bottom: 44px;
+  }
+
+  main:has(.capture) .status {
+    bottom: 78px;
+  }
+
+  main:has(.capture) .error {
+    bottom: 110px;
   }
 
   /* A finger, not a cursor. 44px is the smallest target that can be hit
