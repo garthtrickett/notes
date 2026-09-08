@@ -691,45 +691,50 @@ const modal = (
 
 const tabs = (model: Model, propose: Propose) => html`
   <div class="tabs">
-    <button
-      class=${model.mode === "notes" ? "on" : ""}
-      title="Notes (N)"
-      aria-keyshortcuts="N"
-      @click=${() => propose({ kind: "modeChanged", mode: "notes" })}
-    >
-      Notes <kbd>N</kbd>
-    </button>
-    <button
-      class=${model.mode === "dump" ? "on" : ""}
-      title="Dump (D)"
-      aria-keyshortcuts="D"
-      @click=${() => propose({ kind: "modeChanged", mode: "dump" })}
-    >
-      Dump <kbd>D</kbd>
-    </button>
-    <button
-      class=${model.mode === "archive" ? "on" : ""}
-      title="Archive (V)"
-      aria-keyshortcuts="V"
-      @click=${() => propose({ kind: "modeChanged", mode: "archive" })}
-    >
-      Archive <kbd>V</kbd>
-    </button>
-    <button
-      class=${model.mode === "trash" ? "on" : ""}
-      title="Deleted notes (T)"
-      aria-keyshortcuts="T"
-      @click=${() => propose({ kind: "modeChanged", mode: "trash" })}
-    >
-      Trash <kbd>T</kbd>
-    </button>
-    <button
-      class=${model.mode === "settings" ? "on" : ""}
-      title="Vault settings"
-      @click=${() => propose({ kind: "modeChanged", mode: "settings" })}
-    >
-      Vault
-    </button>
+    <!-- The modes wrap among themselves. Without a box of their own they used
+         to drag the search button onto a second row on a narrow phone, which
+         put it somewhere different depending on how wide the screen was. -->
+    <div class="modes">
+      <button
+        class=${model.mode === "notes" ? "on" : ""}
+        title="Notes (N)"
+        aria-keyshortcuts="N"
+        @click=${() => propose({ kind: "modeChanged", mode: "notes" })}
+      >
+        Notes <kbd>N</kbd>
+      </button>
+      <button
+        class=${model.mode === "dump" ? "on" : ""}
+        title="Dump (D)"
+        aria-keyshortcuts="D"
+        @click=${() => propose({ kind: "modeChanged", mode: "dump" })}
+      >
+        Dump <kbd>D</kbd>
+      </button>
+      <button
+        class=${model.mode === "archive" ? "on" : ""}
+        title="Archive (V)"
+        aria-keyshortcuts="V"
+        @click=${() => propose({ kind: "modeChanged", mode: "archive" })}
+      >
+        Archive <kbd>V</kbd>
+      </button>
+      <button
+        class=${model.mode === "trash" ? "on" : ""}
+        title="Deleted notes (T)"
+        aria-keyshortcuts="T"
+        @click=${() => propose({ kind: "modeChanged", mode: "trash" })}
+      >
+        Trash <kbd>T</kbd>
+      </button>
+      <button
+        class=${model.mode === "settings" ? "on" : ""}
+        title="Vault settings"
+        @click=${() => propose({ kind: "modeChanged", mode: "settings" })}
+      >
+        Vault
+      </button>
+    </div>
     <!-- An action, not a sixth mode, so it sits apart from the tabs. This row is
          the only chrome present in every mode, which is what makes it the one
          place a search button is always reachable from — including a phone,

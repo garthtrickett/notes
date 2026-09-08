@@ -173,7 +173,10 @@ section {
 /* tabs */
 /* Five tabs do not fit across a 280px sidebar, so they wrap rather than
    overflow it. */
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+/* Two parts, not one wrapping row: the modes wrap inside their own box so the
+   search button keeps the same corner however many rows they take. */
+.tabs { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 12px; }
+.modes { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0; }
 .tabs button {
   flex: 1 1 auto;
   min-width: 0;
@@ -849,10 +852,13 @@ kbd {
   }
 
   /* A finger, not a cursor. 44px is the smallest target that can be hit
-     reliably, and the icon stays 16px inside it. */
+     reliably; the label and the icon stay their own size inside it. */
+  .tabs button {
+    min-height: 44px;
+  }
+
   .tabs .search-button {
     min-width: 44px;
-    min-height: 44px;
   }
 }
 

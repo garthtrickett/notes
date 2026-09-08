@@ -285,6 +285,18 @@ describe("the dump view", () => {
     expect(loop.model.modal?.kind).toBe("open");
   });
 
+  it("keeps the search button out of the row that wraps", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md")] });
+    await settle(loop);
+
+    const button = root.querySelector(".search-button");
+    // Inside .modes it wraps with them, so on a narrow phone it lands in a
+    // different corner than on a wide one.
+    expect(button?.closest(".modes")).toBeNull();
+    expect(button?.parentElement?.className).toBe("tabs");
+  });
+
   it("keeps dump files out of the note tree", async () => {
     const loop = await boot(deps(), root);
     loop.propose({
