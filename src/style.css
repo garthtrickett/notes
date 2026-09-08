@@ -53,7 +53,6 @@ section {
 
 .new input { min-width: 0; flex: 1; }
 .new button, .delete { cursor: pointer; }
-.new button:hover, .delete:hover, .row:hover { border-color: var(--accent); }
 
 nav ul { list-style: none; margin: 0; padding: 0; }
 nav li { display: flex; gap: 4px; margin-bottom: 4px; }
@@ -169,7 +168,6 @@ section {
   cursor: pointer;
 }
 
-.settings button:hover { border-color: var(--accent); }
 .hint { margin: 0; font-size: 12px; color: var(--muted); }
 
 /* tabs */
@@ -188,6 +186,39 @@ section {
   cursor: pointer;
 }
 .tabs button.on { color: #fff; border-color: var(--accent); }
+
+/* Search is an action, not a mode, so it does not stretch with the tabs and it
+   is pinned to the far end of the row where it reads as separate. Icon-only
+   costs no vertical space, which is the scarce thing on a phone: the tree gets
+   38dvh and the tab row is above it. */
+.tabs .search-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+  /* Named properties, not `all`: the transform is the press and should be
+     quicker than the colour settling behind it. */
+  transition: transform 160ms ease-out, color 160ms ease, border-color 160ms ease;
+}
+
+/* Touch has no hover to fall back on, so the press itself has to answer. */
+.tabs .search-button:active {
+  transform: scale(0.97);
+}
+
+.tabs .search-button:focus-visible {
+  outline: none;
+  color: #fff;
+  border-color: var(--accent);
+}
 
 /* tree */
 nav li { display: block; margin-bottom: 2px; }
@@ -283,7 +314,7 @@ main.single .tabs { max-width: 720px; margin: 0 auto 12px; }
   padding: 4px 10px;
   cursor: pointer;
 }
-.toggle:hover, .toggle.on { color: #fff; border-color: var(--accent); }
+.toggle.on { color: #fff; border-color: var(--accent); }
 
 /* preview */
 .preview {
@@ -366,7 +397,7 @@ kbd {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 18vh;
+  padding-top: 18dvh;
   background: rgb(0 0 0 / 55%);
 }
 
@@ -384,7 +415,10 @@ kbd {
 /* the open palette */
 .palette {
   width: min(560px, calc(100vw - 32px));
-  max-height: 60vh;
+  /* dvh, not vh: vh does not shrink when the on-screen keyboard opens, so the
+     results ended up underneath it at exactly the moment you were typing into
+     the box above them. The scrim's own offset is dvh for the same reason. */
+  max-height: 60dvh;
   display: flex;
   flex-direction: column;
   padding: 12px;
@@ -658,18 +692,13 @@ kbd {
   cursor: pointer;
 }
 
-.confirm-actions button:focus-visible,
-.confirm-actions button:hover {
+.confirm-actions button:focus-visible {
   border-color: var(--accent);
 }
 
 .confirm-actions .danger {
   color: #ffb4b4;
   border-color: #6b3b3b;
-}
-
-.confirm-actions .danger:hover {
-  border-color: #ffb4b4;
 }
 
 /* The bin and the archive: one row per note, its original path and the way out. */
@@ -704,7 +733,6 @@ kbd {
   cursor: pointer;
 }
 
-.filed button:hover { border-color: var(--accent); }
 
 /* Dragging a row moves it. The grab cursor is the only affordance; a drop
    highlight would need state the tree does not otherwise keep. */
@@ -750,7 +778,7 @@ kbd {
   text-align: left;
 }
 
-.revisions button:hover, .revisions button.on { border-color: var(--accent); }
+.revisions button.on { border-color: var(--accent); }
 .revisions .who { color: var(--muted); }
 
 .revision-body {
@@ -819,6 +847,13 @@ kbd {
   .filed {
     padding: 12px;
   }
+
+  /* A finger, not a cursor. 44px is the smallest target that can be hit
+     reliably, and the icon stays 16px inside it. */
+  .tabs .search-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 /* Nothing may push the page wider than the phone it is on. A single long word,
@@ -845,7 +880,6 @@ body {
   cursor: pointer;
 }
 
-.settings-actions button:hover,
 .settings-actions button:focus-visible {
   border-color: var(--accent);
 }
@@ -877,3 +911,37 @@ body {
   letter-spacing: 0.06em;
 }
 
+
+/* Every hover state in one place, because they all depend on the same thing:
+   that there is a pointer which can hover at all. A touch screen fires hover on
+   tap and then keeps it, so the last row you opened went on looking selected
+   next to the one that actually was. */
+@media (hover: hover) and (pointer: fine) {
+  .new button:hover,
+  .delete:hover,
+  .row:hover,
+  .settings button:hover,
+  .filed button:hover,
+  .revisions button:hover {
+    border-color: var(--accent);
+  }
+
+  .toggle:hover {
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .confirm-actions button:hover,
+  .settings-actions button:hover {
+    border-color: var(--accent);
+  }
+
+  .confirm-actions .danger:hover {
+    border-color: #ffb4b4;
+  }
+
+  .tabs .search-button:hover {
+    color: #fff;
+    border-color: var(--accent);
+  }
+}

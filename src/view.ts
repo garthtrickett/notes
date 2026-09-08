@@ -730,6 +730,34 @@ const tabs = (model: Model, propose: Propose) => html`
     >
       Vault
     </button>
+    <!-- An action, not a sixth mode, so it sits apart from the tabs. This row is
+         the only chrome present in every mode, which is what makes it the one
+         place a search button is always reachable from — including a phone,
+         where the O shortcut it shares does not exist. -->
+    <button
+      class="search-button"
+      title="Find a note (O)"
+      aria-label="Find a note"
+      aria-keyshortcuts="O"
+      @click=${() => propose({ kind: "modalOpened", modal: { kind: "open" } })}
+    >
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <circle
+          cx="7"
+          cy="7"
+          r="4.5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+        />
+        <path
+          d="M10.4 10.4 L14 14"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
   </div>
 `;
 

@@ -263,6 +263,28 @@ describe("the dump view", () => {
     expect(out?.closest("button")?.textContent).toContain("health");
   });
 
+  it("offers search from every mode, because the shortcut needs a keyboard", async () => {
+    // The palette was reachable only by pressing O, which on a phone is not
+    // reachable at all.
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md")] });
+    await settle(loop);
+    for (const mode of ["notes", "dump", "archive", "trash"] as const) {
+      loop.propose({ kind: "modeChanged", mode });
+      await settle(loop);
+      expect(root.querySelector(".search-button")).not.toBeNull();
+    }
+  });
+
+  it("the search button opens the same palette the shortcut does", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md")] });
+    await settle(loop);
+    root.querySelector<HTMLButtonElement>(".search-button")?.click();
+    await settle(loop);
+    expect(loop.model.modal?.kind).toBe("open");
+  });
+
   it("keeps dump files out of the note tree", async () => {
     const loop = await boot(deps(), root);
     loop.propose({
