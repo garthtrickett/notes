@@ -17,6 +17,9 @@
 // Dummy-commit anchor 5: versionCode 14 moved the download into Java, where a
 // release asset's missing CORS header cannot refuse it; this no-op 15 is the
 // newer release that 14 needs before it will offer to update to anything.
+// Dummy-commit anchor 6: 15 still hung on Downloading, which no timeout in the
+// native path can explain; this no-op 16 is the target an emulator needs to
+// reproduce the hang somewhere logcat can see it.
 import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 
