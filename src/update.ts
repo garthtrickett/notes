@@ -84,6 +84,33 @@ export const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
+// Base64 in a stream. A chunk boundary mid-triple would emit padding into the
+// middle of the output and corrupt the file, so 0-2 bytes carry over between
+// pushes and only complete triples are encoded.
+export interface B64Stream {
+  push(chunk: Uint8Array): string;
+  flush(): string;
+}
+
+export const createB64Stream = (): B64Stream => {
+  let carry = new Uint8Array(0);
+  return {
+    push(chunk: Uint8Array): string {
+      const combined = new Uint8Array(carry.length + chunk.length);
+      combined.set(carry);
+      combined.set(chunk, carry.length);
+      const complete = combined.length - (combined.length % 3);
+      carry = combined.slice(complete);
+      return bytesToBase64(combined.slice(0, complete));
+    },
+    flush(): string {
+      const out = carry.length > 0 ? bytesToBase64(carry) : "";
+      carry = new Uint8Array(0);
+      return out;
+    },
+  };
+};
+
 // The bytes travel fetch, not Filesystem.downloadFile. The release URL answers
 // 302 with an empty body to a signed storage URL, and the plugin's downloader
 // hangs on exactly that instead of following it — a banner stuck on
@@ -91,17 +118,40 @@ export const bytesToBase64 = (bytes: Uint8Array): string => {
 // by specification, so the plugin only ever writes bytes it already holds.
 // The timeout is the other half: whatever hangs next becomes a named failure
 // after two minutes instead of a stuck banner.
-export const downloadUpdate = async (url: string): Promise<Proposal> => {
+export const downloadUpdate = async (
+  url: string,
+  // Observed, never awaited for control flow: lets the banner move from
+  // "fetching" to "saving" while the bytes are in hand.
+  onFetched: () => void,
+): Promise<Proposal> => {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) return { kind: "updateFailed", error: `Download failed: HTTP ${res.status}` };
-    const base64 = bytesToBase64(new Uint8Array(await res.arrayBuffer()));
+    // Streamed, a chunk at a time: the previous shape built one 4.6 MB string
+    // and pushed it over the bridge in a single writeFile, which is where a
+    // ten-minute stuck-downloading came from. Small writes, each awaited.
+    onFetched();
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
-    await Filesystem.writeFile({
-      path: "update.apk",
-      data: base64,
-      directory: Directory.Cache,
-    });
+    // A stale partial from an interrupted run must not prefix the new file.
+    await Filesystem.deleteFile({ path: "update.apk", directory: Directory.Cache }).catch(() => undefined);
+    const stream = createB64Stream();
+    const reader = res.body?.getReader();
+    if (reader === undefined) return { kind: "updateFailed", error: "Download failed: no response body" };
+    let first = true;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = stream.push(value) + (done ? "" : "");
+      if (text === "") continue;
+      if (first) {
+        await Filesystem.writeFile({ path: "update.apk", data: text, directory: Directory.Cache });
+        first = false;
+      } else {
+        await Filesystem.appendFile({ path: "update.apk", data: text, directory: Directory.Cache });
+      }
+    }
+    const tail = stream.flush();
+    if (tail !== "") await Filesystem.appendFile({ path: "update.apk", data: tail, directory: Directory.Cache });
     const { uri } = await Filesystem.getUri({ path: "update.apk", directory: Directory.Cache });
     return { kind: "updateDownloaded", path: uri.replace(/^file:\/\//, "") };
   } catch (error) {

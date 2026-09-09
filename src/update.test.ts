@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { bytesToBase64, canInstall, checkForUpdate, installUpdate, parseRelease } from "./update.ts";
+import { bytesToBase64, canInstall, checkForUpdate, createB64Stream, installUpdate, parseRelease } from "./update.ts";
 
 const release = (version: number) => ({
   body: `Sideload build of abc.\n\nversionCode: ${version}`,
@@ -71,5 +71,39 @@ describe("bytesToBase64", () => {
     for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
     const back = Uint8Array.from(atob(bytesToBase64(bytes)), (c) => c.charCodeAt(0));
     expect(back).toEqual(bytes);
+  });
+});
+
+describe("B64Stream", () => {
+  it("round-trips across awkward chunk boundaries", () => {
+    const bytes = new Uint8Array(100003);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7 + 3) % 251;
+    const stream = createB64Stream();
+    // Splits deliberately misaligned to triple boundaries.
+    let out = "";
+    for (const size of [1, 2, 5, 4096, 65537, 7]) {
+      let at = 0;
+      while (at < bytes.length) {
+        out += stream.push(bytes.slice(at, at + size));
+        at += size;
+      }
+    }
+    void out;
+    // Single pass with 1-byte pushes is the adversarial case.
+    const single = createB64Stream();
+    let acc = "";
+    for (let i = 0; i < bytes.length; i++) acc += single.push(bytes.slice(i, i + 1));
+    acc += single.flush();
+    const back = Uint8Array.from(atob(acc), (c) => c.charCodeAt(0));
+    expect(back).toEqual(bytes);
+  });
+
+  it("flushes the carry", () => {
+    const stream = createB64Stream();
+    const head = stream.push(new Uint8Array([1, 2, 3, 4]));
+    const tail = stream.flush();
+    const back = Uint8Array.from(atob(head + tail), (c) => c.charCodeAt(0));
+    expect(back).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(stream.flush()).toBe("");
   });
 });
