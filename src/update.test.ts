@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { checkForUpdate, parseRelease } from "./update.ts";
+import { canInstall, checkForUpdate, installUpdate, parseRelease } from "./update.ts";
 
 const release = (version: number) => ({
   body: `Sideload build of abc.\n\nversionCode: ${version}`,
@@ -52,5 +52,15 @@ describe("checkForUpdate", () => {
   it("stays silent when not native or unversioned", async () => {
     expect(await checkForUpdate(stubFetch(release(42)), 41, false)).toBeNull();
     expect(await checkForUpdate(stubFetch(release(42)), 0, true)).toBeNull();
+  });
+});
+
+describe("the native gate", () => {
+  // Invoking a method on a plugin with no native implementation does not
+  // reject — it crashes past try/catch. So every entry checks the platform
+  // first, and these settle instead of exploding.
+  it("answers safely without a phone", async () => {
+    await expect(canInstall()).resolves.toBe(false);
+    await expect(installUpdate("/cache/update.apk")).rejects.toThrow();
   });
 });

@@ -920,3 +920,17 @@ describe("self-update state", () => {
     expect(m.update.error).toBe("Download failed: gone");
   });
 });
+
+describe("update permission", () => {
+  it("parks in permission state and resumes from it", () => {
+    const m = createModel();
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    present(m, { kind: "updateStarted" });
+    present(m, { kind: "updatePermissionNeeded" });
+    expect(m.update.status).toBe("permission");
+    // Starting over from permission is the settings button's job, not Update's.
+    expect(present(m, { kind: "updateStarted" })).not.toBeNull();
+    expect(present(m, { kind: "updateOpenSettings" })).toBeNull();
+    expect(m.update.status).toBe("permission");
+  });
+});

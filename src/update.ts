@@ -106,12 +106,22 @@ const installer = async (): Promise<Installer> => {
 // result to wait for: if the user cancels, nothing happened, and the banner is
 // already gone — which is the correct end state either way.
 export const installUpdate = async (path: string): Promise<void> => {
+  if (!Capacitor.isNativePlatform())
+    throw new Error("installing an update needs the Android shell");
   await (await installer()).install(path);
 };
 
-export const ensureInstallPermission = async (): Promise<boolean> => {
-  const update = await installer();
-  if (await update.canInstall()) return true;
-  await update.openInstallSettings();
-  return false;
+// Three primitives; the loop orchestrates them. Split (rather than one
+// ensure-style helper) so every step has a visible model state — a silent
+// nothing was exactly the failure this flow shipped with first.
+export const canInstall = async (): Promise<boolean> => {
+  // The gate comes before any plugin touch. Calling a method on a plugin with
+  // no native implementation does not reject — it crashes the process past any
+  // try/catch — so every entry here checks the platform first.
+  if (!Capacitor.isNativePlatform()) return false;
+  return await (await installer()).canInstall();
+};
+
+export const openInstallSettings = async (): Promise<void> => {
+  await (await installer()).openInstallSettings();
 };

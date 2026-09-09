@@ -554,8 +554,22 @@ describe("the update banner", () => {
     expect(root.querySelector(".update")?.textContent).toContain("Version 7 is ready");
     (root.querySelector(".update button") as HTMLButtonElement).click();
     await settle(loop);
-    // Update starts a native download; without a phone it fails, which is a
-    // state the banner has to show rather than swallow.
-    expect(root.querySelector(".update")?.textContent).toContain("Update failed");
+    // Without a phone there is no native bridge, so Update parks at the
+    // permission step — a visible state, not a silent nothing and not a crash.
+    expect(root.querySelector(".update")?.textContent).toContain("Allow this app");
+  });
+});
+
+describe("the permission banner", () => {
+  it("asks for the unknown-sources opt-in with a way to get there", async () => {
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    loop.propose({ kind: "updateFound", version: 7, url: "https://example.com/a.apk" });
+    await settle(loop);
+    loop.propose({ kind: "updatePermissionNeeded" });
+    await settle(loop);
+    const banner = root.querySelector(".update");
+    expect(banner?.textContent).toContain("Allow this app");
+    expect(banner?.textContent).toContain("Open settings");
   });
 });

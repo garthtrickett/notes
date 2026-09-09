@@ -1496,8 +1496,11 @@ the APK to the app cache (`@capacitor/filesystem`) and hands it to a 60-line
 `UpdatePlugin` (unknown-sources opt-in, then an install intent through the
 bundled FileProvider) — the system installer always takes one tap of its own,
 so one tap is the ceiling. A failed check is silence, not an error toast: it
-runs on boot, often offline. Everything native is behind `isNativePlatform()`;
-the Java half is proven on the phone, not here.
+runs on boot, often offline. Everything native is behind `isNativePlatform()`, checked *before* any
+plugin method is touched: invoking a method on a plugin with no native
+implementation does not reject, it crashes past try/catch (proven by a test
+that hangs the runner without the gate). The Java half is proven on the phone,
+not here.
 
 ## 15.5 What was not done
 

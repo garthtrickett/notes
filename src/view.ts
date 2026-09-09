@@ -459,6 +459,11 @@ const updateBanner = (model: Model, propose: Propose) => {
     return html`<p class="update" role="status">Version ${u.version} is ready.
       <button @click=${() => propose({ kind: "updateStarted" })}>Update</button>
       <button @click=${() => propose({ kind: "updateDismissed" })}>Later</button></p>`;
+  if (u.status === "permission")
+    return html`<p class="update" role="status">Allow this app to install updates,
+      then come back — it carries on by itself.
+      <button @click=${() => propose({ kind: "updateOpenSettings" })}>Open settings</button>
+      <button @click=${() => propose({ kind: "updateDismissed" })}>Later</button></p>`;
   if (u.status === "downloading")
     return html`<p class="update" role="status">Downloading update…</p>`;
   if (u.status === "failed")

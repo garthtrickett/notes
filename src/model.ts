@@ -144,7 +144,9 @@ export interface Model {
 }
 
 export interface UpdateInfo {
-  readonly status: "idle" | "available" | "downloading" | "failed";
+  // permission sits between available and downloading: the OS has not yet
+  // been told this source may install packages.
+  readonly status: "idle" | "available" | "permission" | "downloading" | "failed";
   readonly version: number;
   readonly url: string;
   readonly dismissed: boolean;
@@ -223,6 +225,8 @@ export type Proposal =
   | { readonly kind: "updateFound"; readonly version: number; readonly url: string }
   | { readonly kind: "updateDismissed" }
   | { readonly kind: "updateStarted" }
+  | { readonly kind: "updatePermissionNeeded" }
+  | { readonly kind: "updateOpenSettings" }
   | { readonly kind: "updateDownloaded"; readonly path: string }
   | { readonly kind: "updateFailed"; readonly error: string }
   // Back to numbering the top level.
@@ -700,6 +704,15 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // The installer takes it from here. Idle and dismissed: the job is done
       // whether the user taps through or cancels.
       m.update = { ...idleUpdate, dismissed: true };
+      return null;
+    }
+    case "updatePermissionNeeded": {
+      m.update = { ...m.update, status: "permission" };
+      return null;
+    }
+    case "updateOpenSettings": {
+      // Fire-and-forget by design: the answer arrives as the user coming back,
+      // which resumed already observes.
       return null;
     }
     case "updateFailed": {

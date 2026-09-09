@@ -22,7 +22,7 @@ import {
   type Proposal,
 } from "./model.ts";
 import { loadDone, saveDone } from "./checkins.ts";
-import { downloadUpdate, installUpdate } from "./update.ts";
+import { canInstall, downloadUpdate, installUpdate, openInstallSettings } from "./update.ts";
 import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
@@ -100,6 +100,26 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let idle: Promise<void> = Promise.resolve();
   const track = (work: Promise<unknown>): void => {
     idle = Promise.all([idle, work]).then(() => undefined);
+  };
+
+  // One place that starts (or restarts) the update machine. Permission first:
+  // downloading without it is what produced the original silent nothing.
+  const beginUpdate = async (): Promise<void> => {
+    // A bridge that throws instead of answering is a failure with a name,
+    // not an unhandled rejection in the console.
+    let allowed: boolean;
+    try {
+      allowed = await canInstall();
+    } catch (error) {
+      propose({ kind: "updateFailed", error: `Install check failed: ${String(error)}` });
+      return;
+    }
+    if (!allowed) {
+      propose({ kind: "updatePermissionNeeded" });
+      return;
+    }
+    const found = await downloadUpdate(model.update.url);
+    propose(found);
   };
 
   const capture = (text: string) => {
@@ -458,16 +478,31 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // the state, the work after it is tracked, and whatever comes back is
     // another proposal. The installer itself is fire-and-forget — cancelling
     // it means nothing happened, which the idle state already describes.
+    // Update goes permission, then download, then installer — each step a
+    // proposal, so whatever stops always names itself in the banner.
     if (p.kind === "updateStarted" && rejection === null) {
-      const url = model.update.url;
-      track(downloadUpdate(url).then(propose));
+      track(beginUpdate());
+    }
+    if (p.kind === "updateOpenSettings" && rejection === null) {
+      // No state change: the answer is the user coming back, which resumed
+      // observes. A settings screen that fails to open is worth hearing about.
+      track(
+        openInstallSettings().catch((error: unknown) =>
+          propose({ kind: "updateFailed", error: `Settings failed: ${String(error)}` }),
+        ),
+      );
     }
     if (p.kind === "updateDownloaded" && rejection === null) {
       track(
         installUpdate(p.path).catch((error: unknown) =>
-          propose({ kind: "updateFailed", error: String(error) }),
+          propose({ kind: "updateFailed", error: `Install failed: ${String(error)}` }),
         ),
       );
+    }
+    if (p.kind === "resumed" && model.update.status === "permission") {
+      // Back from the settings screen: if the toggle was flipped, carry on
+      // without making them tap Update again.
+      track(beginUpdate());
     }
     // Done-ness outlives the reload, so it is written on every toggle — after
     // present(), which is what actually flips the set. A write here rather
