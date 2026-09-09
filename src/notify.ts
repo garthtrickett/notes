@@ -24,6 +24,8 @@
 // release it fetches while the trace is being read.
 // Dummy-commit anchor 8: 19 stops awaiting the plugin proxy, which is the
 // hang itself; this no-op 20 is what it finally downloads.
+// Dummy-commit anchor 9: 21 is the first clean build after the tracing came
+// out; this no-op 22 is what the sideloaded phone proves itself against.
 import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 
