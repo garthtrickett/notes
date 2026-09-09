@@ -14,6 +14,9 @@
 // this no-op 9 proves the whole road from banner to installer.
 // Dummy-commit anchor 4: versionCode 12 proved the streamed download on
 // hardware; this no-op 13 proves the banner goes quiet afterwards.
+// Dummy-commit anchor 5: versionCode 14 moved the download into Java, where a
+// release asset's missing CORS header cannot refuse it; this no-op 15 is the
+// newer release that 14 needs before it will offer to update to anything.
 import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 
