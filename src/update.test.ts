@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 import { canInstall, checkForUpdate, downloadUpdate, installUpdate, parseRelease } from "./update.ts";
 
 const release = (version: number) => ({
@@ -66,6 +67,21 @@ describe("the native gate", () => {
 
   // The bytes travel in Java now, so this settles instead of reaching for a
   // plugin that is not there.
+  // The hang that cost five builds. installer() hands back a Capacitor proxy,
+  // and a proxy turns every property access into a bridge call — so awaiting
+  // it makes the promise machinery reach for .then and invoke Update.then(),
+  // which no plugin implements. The await never settles, canInstall never
+  // returns, and the banner reads Downloading forever.
+  //
+  // This is asserted against the source because it cannot be reached at
+  // runtime here: every entry checks isNativePlatform() and returns first,
+  // which is exactly why the suite went on passing while the phone hung.
+  it("never awaits the plugin proxy", () => {
+    const source = readFileSync(new URL("./update.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/await\s*\(\s*await\s+installer\(\)/);
+    expect(source).not.toMatch(/await\s+installer\(\)\s*[;,)]/);
+  });
+
   it("refuses to download without the Android shell", async () => {
     expect(await downloadUpdate("https://example.com/notes.apk")).toEqual({
       kind: "updateFailed",

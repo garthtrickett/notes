@@ -7,7 +7,7 @@
 // web this module loads and does nothing: the web updates through Vercel, and
 // offering an APK there would be nonsense.
 
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { Proposal } from "./model.ts";
 
 export interface Release {
@@ -95,7 +95,7 @@ export const downloadUpdate = async (url: string): Promise<Proposal> => {
     return { kind: "updateFailed", error: "Download failed: needs the Android shell" };
   try {
     trace("download bridge call issued");
-    const { path } = await (await installer()).download({ url });
+    const { path } = await installer().download({ url });
     trace(`download bridge resolved ${path}`);
     return { kind: "updateDownloaded", path };
   } catch (error) {
@@ -114,10 +114,18 @@ export interface Installer {
   download(options: { url: string }): Promise<{ path: string }>;
 }
 
-const installer = async (): Promise<Installer> => {
-  const { registerPlugin } = await import("@capacitor/core");
-  return registerPlugin<Installer>("Update");
-};
+// Synchronous, and it must stay that way. Returning the plugin from an async
+// function meant awaiting it, and awaiting a value makes the promise machinery
+// look for a .then on it — but this is a Capacitor proxy, which turns every
+// property access into a bridge call. So the await invoked Update.then(),
+// which no native plugin implements, and the promise it was resolving never
+// settled. That is the hang: the banner said Downloading forever because
+// canInstall never came back and the download was never reached. It survived
+// four rewrites of the download because none of them were ever run.
+//
+// The tests missed it because both entries check isNativePlatform() first and
+// return before touching the plugin, so off a phone this line never executed.
+const installer = (): Installer => registerPlugin<Installer>("Update");
 
 // Hands the downloaded file to the system installer and returns. There is no
 // result to wait for: if the user cancels, nothing happened, and the banner is
@@ -125,7 +133,7 @@ const installer = async (): Promise<Installer> => {
 export const installUpdate = async (path: string): Promise<void> => {
   if (!Capacitor.isNativePlatform())
     throw new Error("installing an update needs the Android shell");
-  await (await installer()).install({ path });
+  await installer().install({ path });
 };
 
 // Three primitives; the loop orchestrates them. Split (rather than one
@@ -138,11 +146,11 @@ export const canInstall = async (): Promise<boolean> => {
   trace(`canInstall native=${String(Capacitor.isNativePlatform())}`);
   if (!Capacitor.isNativePlatform()) return false;
   trace("canInstall bridge call issued");
-  const answer = await (await installer()).canInstall();
+  const answer = await installer().canInstall();
   trace(`canInstall bridge resolved ${JSON.stringify(answer)}`);
   return answer.allowed;
 };
 
 export const openInstallSettings = async (): Promise<void> => {
-  await (await installer()).openInstallSettings();
+  await installer().openInstallSettings();
 };
