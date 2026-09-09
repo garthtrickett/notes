@@ -74,18 +74,36 @@ export const checkForUpdate = async (
   }
 };
 
-// The file lands in the app cache, which the bundled FileProvider already
-// shares (cache-path). Small file, no progress UI: it is seconds.
+// Chunked: spreading megabytes of bytes across one apply call blows the stack.
+export const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+};
+
+// The bytes travel fetch, not Filesystem.downloadFile. The release URL answers
+// 302 with an empty body to a signed storage URL, and the plugin's downloader
+// hangs on exactly that instead of following it — a banner stuck on
+// "Downloading…" forever, which is how this was found. fetch follows redirects
+// by specification, so the plugin only ever writes bytes it already holds.
+// The timeout is the other half: whatever hangs next becomes a named failure
+// after two minutes instead of a stuck banner.
 export const downloadUpdate = async (url: string): Promise<Proposal> => {
   try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+    if (!res.ok) return { kind: "updateFailed", error: `Download failed: HTTP ${res.status}` };
+    const base64 = bytesToBase64(new Uint8Array(await res.arrayBuffer()));
     const { Filesystem, Directory } = await import("@capacitor/filesystem");
-    const { path } = await Filesystem.downloadFile({
-      url,
+    await Filesystem.writeFile({
       path: "update.apk",
+      data: base64,
       directory: Directory.Cache,
     });
-    if (path === undefined) return { kind: "updateFailed", error: "Download failed: no file came back" };
-    return { kind: "updateDownloaded", path };
+    const { uri } = await Filesystem.getUri({ path: "update.apk", directory: Directory.Cache });
+    return { kind: "updateDownloaded", path: uri.replace(/^file:\/\//, "") };
   } catch (error) {
     return { kind: "updateFailed", error: `Download failed: ${String(error)}` };
   }

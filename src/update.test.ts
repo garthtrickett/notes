@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { canInstall, checkForUpdate, installUpdate, parseRelease } from "./update.ts";
+import { bytesToBase64, canInstall, checkForUpdate, installUpdate, parseRelease } from "./update.ts";
 
 const release = (version: number) => ({
   body: `Sideload build of abc.\n\nversionCode: ${version}`,
@@ -62,5 +62,14 @@ describe("the native gate", () => {
   it("answers safely without a phone", async () => {
     await expect(canInstall()).resolves.toBe(false);
     await expect(installUpdate("/cache/update.apk")).rejects.toThrow();
+  });
+});
+
+describe("bytesToBase64", () => {
+  it("round-trips bytes, including across a chunk boundary", () => {
+    const bytes = new Uint8Array(0x8002);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
+    const back = Uint8Array.from(atob(bytesToBase64(bytes)), (c) => c.charCodeAt(0));
+    expect(back).toEqual(bytes);
   });
 });
