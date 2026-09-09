@@ -466,8 +466,6 @@ const updateBanner = (model: Model, propose: Propose) => {
       <button @click=${() => propose({ kind: "updateDismissed" })}>Later</button></p>`;
   if (u.status === "fetching")
     return html`<p class="update" role="status">Downloading update…</p>`;
-  if (u.status === "saving")
-    return html`<p class="update" role="status">Saving update…</p>`;
   if (u.status === "failed")
     return html`<p class="update" role="alert">Update failed: ${u.error}
       <button @click=${() => propose({ kind: "updateFound", version: u.version, url: u.url })}>Retry</button></p>`;

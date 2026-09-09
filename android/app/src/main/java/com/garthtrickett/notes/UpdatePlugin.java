@@ -11,6 +11,10 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 // The last step of self-update: hand a downloaded APK to the system installer.
 // Three calls, each doing one thing. Installing from an unknown source needs
@@ -27,6 +31,84 @@ public class UpdatePlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("allowed", allowed);
         call.resolve(result);
+    }
+
+    // The bytes are fetched here, in Java, and never cross the bridge.
+    //
+    // The web layer cannot do this. A release asset answers with no
+    // Access-Control-Allow-Origin, so a fetch() from the WebView's origin is
+    // refused before a byte arrives — a download that cannot be made to work
+    // from JavaScript at all. Native HTTP has no such notion, and it also
+    // means megabytes are no longer base64'd through a bridge call to be
+    // written back out again.
+    @PluginMethod
+    public void download(PluginCall call) {
+        String url = call.getString("url");
+        if (url == null) {
+            call.reject("download needs a url");
+            return;
+        }
+        // Off the WebView thread: this moves megabytes and would otherwise
+        // freeze the UI it is trying to keep informed.
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                String current = url;
+                // Redirects are followed by hand. The release URL answers 302
+                // to a signed storage host, and HttpURLConnection declines to
+                // follow a redirect by itself when the host changes, so the
+                // automatic follow cannot be relied on for exactly this case.
+                for (int hop = 0; ; hop++) {
+                    if (hop > 5) {
+                        call.reject("Download failed: too many redirects");
+                        return;
+                    }
+                    conn = (HttpURLConnection) new URL(current).openConnection();
+                    conn.setInstanceFollowRedirects(false);
+                    // A hang now ends as a named failure rather than a banner
+                    // that sits there forever.
+                    conn.setConnectTimeout(30000);
+                    conn.setReadTimeout(60000);
+                    int code = conn.getResponseCode();
+                    if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                        String next = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        if (next == null) {
+                            call.reject("Download failed: redirect without a location");
+                            return;
+                        }
+                        current = new URL(new URL(current), next).toString();
+                        continue;
+                    }
+                    if (code != HttpURLConnection.HTTP_OK) {
+                        call.reject("Download failed: HTTP " + code);
+                        return;
+                    }
+                    break;
+                }
+                File out = new File(getContext().getCacheDir(), "update.apk");
+                // A stale partial from an interrupted run must not prefix this
+                // one; a half APK installs as nothing and explains nothing.
+                if (out.exists() && !out.delete()) {
+                    call.reject("Download failed: could not clear the previous download");
+                    return;
+                }
+                try (
+                    InputStream in = conn.getInputStream();
+                    FileOutputStream sink = new FileOutputStream(out)
+                ) {
+                    byte[] buffer = new byte[16384];
+                    for (int n; (n = in.read(buffer)) != -1;) sink.write(buffer, 0, n);
+                }
+                JSObject result = new JSObject();
+                result.put("path", out.getAbsolutePath());
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("Download failed: " + error);
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
     }
 
     @PluginMethod

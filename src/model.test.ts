@@ -890,8 +890,6 @@ describe("self-update state", () => {
     expect(m.update.status).toBe("available");
     expect(present(m, { kind: "updateStarted" })).toBeNull();
     expect(m.update.status).toBe("fetching");
-    expect(present(m, { kind: "updateSaving" })).toBeNull();
-    expect(m.update.status).toBe("saving");
     expect(present(m, { kind: "updateDownloaded", path: "/cache/update.apk" })).toBeNull();
     expect(m.update.status).toBe("idle");
   });

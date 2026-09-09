@@ -145,10 +145,10 @@ export interface Model {
 
 export interface UpdateInfo {
   // permission sits between available and downloading: the OS has not yet
-  // been told this source may install packages. downloading is split in two
-  // so a stuck banner names its step: fetching is the network, saving is the
-  // Filesystem bridge.
-  readonly status: "idle" | "available" | "permission" | "fetching" | "saving" | "failed";
+  // been told this source may install packages. There is one downloading
+  // state, not two, because fetching and saving are now a single native call
+  // — nothing in between is observable from here.
+  readonly status: "idle" | "available" | "permission" | "fetching" | "failed";
   readonly version: number;
   readonly url: string;
   readonly dismissed: boolean;
@@ -227,7 +227,6 @@ export type Proposal =
   | { readonly kind: "updateFound"; readonly version: number; readonly url: string }
   | { readonly kind: "updateDismissed" }
   | { readonly kind: "updateStarted" }
-  | { readonly kind: "updateSaving" }
   | { readonly kind: "updatePermissionNeeded" }
   | { readonly kind: "updateOpenSettings" }
   | { readonly kind: "updateDownloaded"; readonly path: string }
@@ -701,11 +700,6 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       if (m.update.status !== "available" || m.update.dismissed)
         return reject(`Cannot start an update from ${m.update.status}`);
       m.update = { ...m.update, status: "fetching" };
-      return null;
-    }
-    case "updateSaving": {
-      if (m.update.status !== "fetching") return null;
-      m.update = { ...m.update, status: "saving" };
       return null;
     }
     case "updateDownloaded": {

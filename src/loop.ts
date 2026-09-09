@@ -118,9 +118,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       propose({ kind: "updatePermissionNeeded" });
       return;
     }
-    const found = await downloadUpdate(model.update.url, () =>
-      propose({ kind: "updateSaving" }),
-    );
+    const found = await downloadUpdate(model.update.url);
     propose(found);
   };
 
