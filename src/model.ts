@@ -107,6 +107,9 @@ export interface Model {
   // this phone reminded you is not something another device needs to know — so
   // it lives in localStorage, loaded at boot and written on every toggle.
   checkinsDone: Set<string>;
+  // Self-update state. Device-local like the check-ins: the installed build
+  // and its download belong to this phone, not the vault.
+  update: UpdateInfo;
   // Which folder the number badges currently count inside, or null for the top
   // level. A digit on a folder scopes to it, so the next digit reaches its
   // children.
@@ -140,6 +143,22 @@ export interface Model {
   error: string | null;
 }
 
+export interface UpdateInfo {
+  readonly status: "idle" | "available" | "downloading" | "failed";
+  readonly version: number;
+  readonly url: string;
+  readonly dismissed: boolean;
+  readonly error: string | null;
+}
+
+export const idleUpdate: UpdateInfo = {
+  status: "idle",
+  version: 0,
+  url: "",
+  dismissed: false,
+  error: null,
+};
+
 export const createModel = (): Model => ({
   notes: new Map(),
   openPath: null,
@@ -151,6 +170,7 @@ export const createModel = (): Model => ({
   paletteIndex: 0,
   expanded: new Set(),
   checkinsDone: new Set(),
+  update: idleUpdate,
   numberScope: null,
   drag: null,
   hydrated: false,
@@ -200,6 +220,11 @@ export type Proposal =
   // Which top-level row, counting from zero, as shown in the tree.
   | { readonly kind: "jumped"; readonly index: number }
   | { readonly kind: "checkinToggled"; readonly id: string }
+  | { readonly kind: "updateFound"; readonly version: number; readonly url: string }
+  | { readonly kind: "updateDismissed" }
+  | { readonly kind: "updateStarted" }
+  | { readonly kind: "updateDownloaded"; readonly path: string }
+  | { readonly kind: "updateFailed"; readonly error: string }
   // Back to numbering the top level.
   | { readonly kind: "steppedOut" }
   | { readonly kind: "dragStarted"; readonly from: string; readonly folder: boolean }
@@ -650,6 +675,35 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return reject(`Unknown check-in: ${p.id}`);
       if (m.checkinsDone.has(p.id)) m.checkinsDone.delete(p.id);
       else m.checkinsDone.add(p.id);
+      return null;
+    }
+    case "updateFound": {
+      // A newer build than the dismissed one re-opens the question; the same
+      // one stays dismissed.
+      if (p.version === m.update.version && m.update.dismissed) return null;
+      m.update = { status: "available", version: p.version, url: p.url, dismissed: false, error: null };
+      return null;
+    }
+    case "updateDismissed": {
+      m.update = { ...m.update, dismissed: true };
+      return null;
+    }
+    case "updateStarted": {
+      // Downloading twice is just bandwidth; starting from anywhere else is a
+      // caller bug.
+      if (m.update.status !== "available" || m.update.dismissed)
+        return reject(`Cannot start an update from ${m.update.status}`);
+      m.update = { ...m.update, status: "downloading" };
+      return null;
+    }
+    case "updateDownloaded": {
+      // The installer takes it from here. Idle and dismissed: the job is done
+      // whether the user taps through or cancels.
+      m.update = { ...idleUpdate, dismissed: true };
+      return null;
+    }
+    case "updateFailed": {
+      m.update = { ...m.update, status: "failed", error: p.error };
       return null;
     }
     case "jumped": {

@@ -282,6 +282,10 @@ allowed to raise its voice. */
 .checkins li.due button { border-color: var(--accent); }
 .checkins li.upcoming button { color: var(--muted); }
 .checkins .when { margin-left: auto; font-size: 13px; color: var(--muted); }
+/* A newer build. One line, two buttons, in every mode — it is about the app,
+not about wherever you are. */
+.update { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.update button { flex: none; }
 .dump { display: flex; flex-direction: column; height: calc(100dvh - 68px); max-width: 720px; margin: 0 auto; }
 /* One editor, not a stack of boxes, so the day headings are markdown and the
    scroller is CodeMirror's own — hence hidden here rather than auto, which

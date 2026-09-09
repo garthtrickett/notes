@@ -22,6 +22,7 @@ import {
   type Proposal,
 } from "./model.ts";
 import { loadDone, saveDone } from "./checkins.ts";
+import { downloadUpdate, installUpdate } from "./update.ts";
 import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
@@ -453,6 +454,21 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       }
     }
     const rejection = present(model, p);
+    // Self-update downloads follow the attachImage shape: the proposal moves
+    // the state, the work after it is tracked, and whatever comes back is
+    // another proposal. The installer itself is fire-and-forget — cancelling
+    // it means nothing happened, which the idle state already describes.
+    if (p.kind === "updateStarted" && rejection === null) {
+      const url = model.update.url;
+      track(downloadUpdate(url).then(propose));
+    }
+    if (p.kind === "updateDownloaded" && rejection === null) {
+      track(
+        installUpdate(p.path).catch((error: unknown) =>
+          propose({ kind: "updateFailed", error: String(error) }),
+        ),
+      );
+    }
     // Done-ness outlives the reload, so it is written on every toggle — after
     // present(), which is what actually flips the set. A write here rather
     // than in present() for the same reason as the touched map: present() has

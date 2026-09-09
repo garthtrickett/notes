@@ -1487,7 +1487,19 @@ time can never strand a stale alarm). Tapping a notification opens the dump.
 Timing is deliberately inexact: exact alarms need a Play-store-flagged
 permission, and a check-in minutes late is still a check-in.
 
-## 15.3 What was not done
+## 15.4 Self-update from inside the app
+
+CI stamps the run number into the bundle (`__APP_VERSION_CODE__`) and into the
+release body (`versionCode: N`). On boot the app asks the public releases API
+what is latest; newer means a banner with Update and Later. Update downloads
+the APK to the app cache (`@capacitor/filesystem`) and hands it to a 60-line
+`UpdatePlugin` (unknown-sources opt-in, then an install intent through the
+bundled FileProvider) — the system installer always takes one tap of its own,
+so one tap is the ceiling. A failed check is silence, not an error toast: it
+runs on boot, often offline. Everything native is behind `isNativePlatform()`;
+the Java half is proven on the phone, not here.
+
+## 15.5 What was not done
 
 iOS (needs a Mac and $99/yr), the Play Store (an APK over USB is the whole
 distribution for a personal app), exact alarms, and web push (a server,

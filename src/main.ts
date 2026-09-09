@@ -8,6 +8,7 @@ import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
 import { syncCheckinNotifications } from "./notify.ts";
+import { checkForUpdate } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 
 // Worker lifecycle has nothing to do with whether a vault is configured, so it
@@ -94,6 +95,11 @@ if (config === null) {
   void syncCheckinNotifications(() =>
     loop.propose({ kind: "modeChanged", mode: "dump" }),
   );
+  // No-op on the web (checkForUpdate gates on native inside). One quiet ask
+  // per boot; offline or up to date resolves to nothing.
+  void checkForUpdate(fetch).then((found) => {
+    if (found !== null) loop.propose(found);
+  });
 
   // Back and forward. The model decides whether the path names something
   // openable — it is the only thing that knows — and a path that names nothing

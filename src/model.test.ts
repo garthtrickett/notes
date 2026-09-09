@@ -882,3 +882,41 @@ describe("check-in toggles", () => {
     expect(m.checkinsDone.size).toBe(0);
   });
 });
+
+describe("self-update state", () => {
+  it("offers, downloads, and stands down", () => {
+    const m = createModel();
+    expect(present(m, { kind: "updateFound", version: 7, url: "https://example.com/a.apk" })).toBeNull();
+    expect(m.update.status).toBe("available");
+    expect(present(m, { kind: "updateStarted" })).toBeNull();
+    expect(m.update.status).toBe("downloading");
+    expect(present(m, { kind: "updateDownloaded", path: "/cache/update.apk" })).toBeNull();
+    expect(m.update.status).toBe("idle");
+  });
+
+  it("a dismissed version stays dismissed, a newer one re-opens", () => {
+    const m = createModel();
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    present(m, { kind: "updateDismissed" });
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    expect(m.update.dismissed).toBe(true);
+    present(m, { kind: "updateFound", version: 8, url: "u" });
+    expect(m.update.dismissed).toBe(false);
+    expect(m.update.status).toBe("available");
+  });
+
+  it("refuses to start from anywhere but an open offer", () => {
+    const m = createModel();
+    expect(present(m, { kind: "updateStarted" })).not.toBeNull();
+    expect(m.update.status).toBe("idle");
+  });
+
+  it("a failure carries its reason", () => {
+    const m = createModel();
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    present(m, { kind: "updateStarted" });
+    present(m, { kind: "updateFailed", error: "Download failed: gone" });
+    expect(m.update.status).toBe("failed");
+    expect(m.update.error).toBe("Download failed: gone");
+  });
+});

@@ -451,6 +451,22 @@ const status = (model: Model) => {
 // The day's check-ins sit above the scroll, outside the editor: they are UI
 // state about today, not text in any file, so they must not enter the composed
 // document the split writes back.
+// A newer build, offered once per version until dismissed. Next to the status
+// line in every mode: an update is about the app, not about wherever you are.
+const updateBanner = (model: Model, propose: Propose) => {
+  const u = model.update;
+  if (u.status === "available" && !u.dismissed)
+    return html`<p class="update" role="status">Version ${u.version} is ready.
+      <button @click=${() => propose({ kind: "updateStarted" })}>Update</button>
+      <button @click=${() => propose({ kind: "updateDismissed" })}>Later</button></p>`;
+  if (u.status === "downloading")
+    return html`<p class="update" role="status">Downloading update…</p>`;
+  if (u.status === "failed")
+    return html`<p class="update" role="alert">Update failed: ${u.error}
+      <button @click=${() => propose({ kind: "updateFound", version: u.version, url: u.url })}>Retry</button></p>`;
+  return nothing;
+};
+
 const checkins = (model: Model, propose: Propose, now: number) => html`
   <ul class="checkins">
     ${SLOTS.map((slot) => {
@@ -872,6 +888,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
           propose({ kind: "modeChanged", mode: "notes" }),
         )}
         ${status(model)}
+        ${updateBanner(model, propose)}
       </main>
     `;
   }
@@ -883,6 +900,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
         ${filedView(model, propose, model.mode === "trash" ? TRASH : ARCHIVE)}
         ${modal(model, propose, onCapture)}
         ${status(model)}
+        ${updateBanner(model, propose)}
         ${model.error
           ? html`<p class="error" role="alert">${model.error}</p>`
           : nothing}
@@ -897,6 +915,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
         ${dumpView(model, propose, now(), onCapture)}
         ${modal(model, propose, onCapture)}
         ${status(model)}
+        ${updateBanner(model, propose)}
         ${model.error
           ? html`<p class="error" role="alert">${model.error}</p>`
           : nothing}
@@ -921,6 +940,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
       <section>${editor(model, ctx)}</section>
       ${modal(model, propose, onCapture)}
       ${status(model)}
+        ${updateBanner(model, propose)}
       ${model.error
         ? html`<p class="error" role="alert">${model.error}</p>`
         : nothing}

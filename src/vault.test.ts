@@ -543,3 +543,19 @@ describe("check-ins on screen", () => {
     expect(root.querySelector(".checkins li.done")).not.toBeNull();
   });
 });
+
+describe("the update banner", () => {
+  it("appears on an offer and leaves on Later", async () => {
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    expect(root.querySelector(".update")).toBeNull();
+    loop.propose({ kind: "updateFound", version: 7, url: "https://example.com/a.apk" });
+    await settle(loop);
+    expect(root.querySelector(".update")?.textContent).toContain("Version 7 is ready");
+    (root.querySelector(".update button") as HTMLButtonElement).click();
+    await settle(loop);
+    // Update starts a native download; without a phone it fails, which is a
+    // state the banner has to show rather than swallow.
+    expect(root.querySelector(".update")?.textContent).toContain("Update failed");
+  });
+});

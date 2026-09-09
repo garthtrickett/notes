@@ -56,5 +56,7 @@ jobs:
         with:
           tag_name: android-apk
           name: "Android APK (latest)"
-          body: "Sideload build of ${{ github.sha }}. Download, tap to install, allow unknown apps once. Updates install over the previous build."
+          body: "Sideload build of ${{ github.sha }}. Download, tap to install, allow unknown apps once. Updates install over the previous build.
+
+versionCode: ${{ github.run_number }}"
           files: android/app/build/outputs/apk/release/app-release.apk
