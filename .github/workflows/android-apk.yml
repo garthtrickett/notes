@@ -48,8 +48,8 @@ jobs:
       # which would publish an uninstallable APK. Fail here instead.
       - name: Verify the APK is signed
         run: |
-          apksigner="$ANDROID_HOME/build-tools/"*/apksigner
-          $apksigner verify --print-certs android/app/build/outputs/apk/release/app-release.apk | head -3
+          apksigner=$(echo "$ANDROID_HOME"/build-tools/*/apksigner)
+          "$apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk
 
       - name: Publish to rolling release
         uses: softprops/action-gh-release@v2
