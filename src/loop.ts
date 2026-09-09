@@ -323,6 +323,19 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       lastEditorKey = editorKey;
     }
 
+    // Undo and redo are the editor's history, not model state, so the buttons
+    // cannot read them from a paint — but a lit button left lit with nothing
+    // to undo is a lie the thumb discovers. Synced here, after the editor,
+    // the way the path field is. No editor on screen means both dark: the
+    // bin, the archive, settings, preview, and no note open.
+    const editing =
+      model.mode === "dump" ||
+      (model.mode === "notes" && model.openPath !== null && !model.preview);
+    const undoButton = root.querySelector<HTMLButtonElement>("#undo-edit");
+    if (undoButton !== null) undoButton.disabled = !editing || !cm.canUndo();
+    const redoButton = root.querySelector<HTMLButtonElement>("#redo-edit");
+    if (redoButton !== null) redoButton.disabled = !editing || !cm.canRedo();
+
     // Last, because everything above can still change which note is open.
     const url = urlFor(model);
     if (url !== lastUrl) {
@@ -483,6 +496,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (p.kind === "updateStarted" && rejection === null) {
       track(beginUpdate());
     }
+    // Undo and redo act on the editor, not the model: the resulting change
+    // reports back through onEdit like a keystroke, which is what persists it.
+    if (p.kind === "undoEdit" && rejection === null) cm.undo();
+    if (p.kind === "redoEdit" && rejection === null) cm.redo();
     if (p.kind === "updateOpenSettings" && rejection === null) {
       // No state change: the answer is the user coming back, which resumed
       // observes. A settings screen that fails to open is worth hearing about.

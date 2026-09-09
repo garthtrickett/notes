@@ -196,6 +196,10 @@ export type Proposal =
   | { readonly kind: "opened"; readonly path: string }
   | { readonly kind: "created"; readonly path: string }
   | { readonly kind: "edited"; readonly path: string; readonly body: string }
+  // Into the editor's own history, handled by the loop — the model holds no
+  // undo stack, so presenting these changes nothing and must change nothing.
+  | { readonly kind: "undoEdit" }
+  | { readonly kind: "redoEdit" }
   | { readonly kind: "deleted"; readonly path: string }
   // Out of the vault for good, rather than into the bin.
   | { readonly kind: "purged"; readonly path: string }
@@ -571,6 +575,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       if (note.body === p.body) return null;
       m.notes.set(p.path, { ...note, body: p.body, dirty: true, pending: true });
       m.persistBlocked = false;
+      return null;
+    }
+    case "undoEdit":
+    case "redoEdit": {
       return null;
     }
 

@@ -786,6 +786,27 @@ const tabs = (model: Model, propose: Propose) => html`
          the only chrome present in every mode, which is what makes it the one
          place a search button is always reachable from — including a phone,
          where the O shortcut it shares does not exist. -->
+    <!-- Undo and redo live here for the same reason: a phone has no Ctrl+Z.
+         They propose into the editor's own history, and the loop keeps them
+         honest past either end. -->
+    <button
+      id="undo-edit"
+      class="icon-button"
+      title="Undo last edit"
+      aria-label="Undo last edit"
+      @click=${() => propose({ kind: "undoEdit" })}
+    >
+      ↶
+    </button>
+    <button
+      id="redo-edit"
+      class="icon-button"
+      title="Redo last edit"
+      aria-label="Redo last edit"
+      @click=${() => propose({ kind: "redoEdit" })}
+    >
+      ↷
+    </button>
     <button
       class="search-button"
       title="Find a note (O)"

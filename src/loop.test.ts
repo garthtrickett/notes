@@ -184,6 +184,40 @@ const putCaret = (at: number): void => {
     expect(caretAt()).toBe(11);
   });
 
+  it("undoes and redoes through the buttons, and the model follows", async () => {
+    const loop = createLoop(localOnly(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [record("a.md", "hello")],
+    });
+    await paint();
+    loop.propose({ kind: "opened", path: "a.md" });
+    await paint();
+
+    const undo = root.querySelector<HTMLButtonElement>("#undo-edit");
+    const redo = root.querySelector<HTMLButtonElement>("#redo-edit");
+    if (undo === null || redo === null) throw new Error("no undo buttons");
+    // A fresh note: nothing to undo, and both buttons say so.
+    expect(undo.disabled).toBe(true);
+    expect(redo.disabled).toBe(true);
+
+    editorView()?.dispatch({ changes: { from: 5, insert: " world" } });
+    await settle(loop);
+    expect(loop.model.notes.get("a.md")?.body).toBe("hello world");
+    expect(undo.disabled).toBe(false);
+
+    undo.click();
+    await settle(loop);
+    expect(editorText()).toBe("hello");
+    expect(loop.model.notes.get("a.md")?.body).toBe("hello");
+    expect(redo.disabled).toBe(false);
+
+    redo.click();
+    await settle(loop);
+    expect(editorText()).toBe("hello world");
+    expect(loop.model.notes.get("a.md")?.body).toBe("hello world");
+  });
+
   it("loads the note body when the open note changes", async () => {
     const loop = createLoop(localOnly(), root);
     loop.propose({

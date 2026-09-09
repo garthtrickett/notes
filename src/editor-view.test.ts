@@ -141,6 +141,52 @@ describe("the model writing underneath the caret", () => {
   });
 });
 
+describe("undo and redo", () => {
+  test("undo inverts the last user edit and reports it like a keystroke", () => {
+    const edits: string[] = [];
+    const { handle, view } = openEditor("hello", undefined, { onEdit: (b) => edits.push(b) });
+    view.dispatch({ changes: { from: 5, insert: " world" } });
+    expect(edits).toEqual(["hello world"]);
+    expect(handle.canUndo()).toBe(true);
+    expect(handle.canRedo()).toBe(false);
+    expect(handle.undo()).toBe(true);
+    expect(handle.doc()).toBe("hello");
+    expect(edits).toEqual(["hello world", "hello"]);
+    expect(handle.canUndo()).toBe(false);
+    expect(handle.canRedo()).toBe(true);
+    handle.destroy();
+  });
+
+  test("redo re-applies what undo took away", () => {
+    const { handle, view } = openEditor("hello");
+    view.dispatch({ changes: { from: 5, insert: " world" } });
+    handle.undo();
+    expect(handle.redo()).toBe(true);
+    expect(handle.doc()).toBe("hello world");
+    expect(handle.canRedo()).toBe(false);
+    handle.destroy();
+  });
+
+  test("undo past the first edit is a no-op, not an error", () => {
+    const { handle } = openEditor("hello");
+    expect(handle.canUndo()).toBe(false);
+    expect(handle.undo()).toBe(false);
+    expect(handle.doc()).toBe("hello");
+    handle.destroy();
+  });
+
+  test("a fresh state starts a fresh history, so undo stops at the note boundary", () => {
+    const { handle, view } = openEditor("one");
+    view.dispatch({ changes: { from: 3, insert: "!" } });
+    expect(handle.canUndo()).toBe(true);
+    handle.reset("two");
+    expect(handle.doc()).toBe("two");
+    expect(handle.canUndo()).toBe(false);
+    expect(handle.canRedo()).toBe(false);
+    handle.destroy();
+  });
+});
+
 describe("entering the editor", () => {
   test("puts the caret at the top and takes focus", () => {
     const { handle, view } = openEditor("first line\nsecond line");

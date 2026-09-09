@@ -23,7 +23,7 @@ import {
   type Range,
 } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
 import {
   spansFor,
   wikilinkAt,
@@ -56,6 +56,13 @@ export interface EditorHandle {
   // only the editor can do.
   readonly focusAt: (pos: number) => void;
   readonly destroy: () => void;
+  // The editor's own history, for the undo and redo buttons. A phone has no
+  // Ctrl+Z, and the keyboard shortcut already covers the desktop — these are
+  // the same history either way, just a second gesture onto it.
+  readonly undo: () => boolean;
+  readonly redo: () => boolean;
+  readonly canUndo: () => boolean;
+  readonly canRedo: () => boolean;
 }
 
 // A change this file made, so the update listener can tell a pull from a
@@ -321,6 +328,12 @@ export const createEditor = (hooks: EditorHooks): EditorHandle => {
       view.focus();
     },
     destroy: () => view.destroy(),
+    // Undo reports back through the update listener like a keystroke, so the
+    // model follows without any special-casing on this side.
+    undo: () => undo(view),
+    redo: () => redo(view),
+    canUndo: () => undoDepth(view.state) > 0,
+    canRedo: () => redoDepth(view.state) > 0,
   };
 };
 

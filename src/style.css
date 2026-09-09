@@ -193,10 +193,11 @@ section {
 /* Search is an action, not a mode, so it does not stretch with the tabs and it
    is pinned to the far end of the row where it reads as separate. Icon-only
    costs no vertical space, which is the scarce thing on a phone: the tree gets
-   38dvh and the tab row is above it. */
-.tabs .search-button {
+   38dvh and the tab row is above it. Undo and redo are actions too, and share
+   the same square — but not the pin: they sit against search, not the edge. */
+.tabs .search-button,
+.tabs .icon-button {
   flex: 0 0 auto;
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -212,12 +213,25 @@ section {
   transition: transform 160ms ease-out, color 160ms ease, border-color 160ms ease;
 }
 
+.tabs .search-button {
+  margin-left: auto;
+}
+
+/* A dark button is a dead end the thumb should not go down. Opacity, not
+   display: the row must not reflow every time history empties. */
+.tabs button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 /* Touch has no hover to fall back on, so the press itself has to answer. */
-.tabs .search-button:active {
+.tabs .search-button:active,
+.tabs .icon-button:active {
   transform: scale(0.97);
 }
 
-.tabs .search-button:focus-visible {
+.tabs .search-button:focus-visible,
+.tabs .icon-button:focus-visible {
   outline: none;
   color: #fff;
   border-color: var(--accent);
