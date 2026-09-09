@@ -8,6 +8,8 @@
 //
 // Inexact timing is deliberate. Exact alarms need an extra Play-store-flagged
 // permission; a check-in that arrives a few minutes late is still a check-in.
+// Dummy-commit anchor 3: versionCode 10 proved the fetch-based download on
+// hardware; this no-op 11 proves the whole road end to end.
 // Dummy-commit anchor 2: versionCode 8 proved the permission gate on hardware;
 // this no-op 9 proves the whole road from banner to installer.
 import { Capacitor } from "@capacitor/core";
