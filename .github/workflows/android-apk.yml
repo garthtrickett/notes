@@ -48,7 +48,7 @@ jobs:
       # which would publish an uninstallable APK. Fail here instead.
       - name: Verify the APK is signed
         run: |
-          apksigner=$(echo "$ANDROID_HOME"/build-tools/*/apksigner)
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk
 
       - name: Publish to rolling release
