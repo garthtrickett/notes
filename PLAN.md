@@ -1459,3 +1459,36 @@ A `blob:` URL is not on the scheme allowlist, so the preview stripped every
 in the URL is ours — nothing in a note can produce one of those, because a blob
 URL exists only where `createObjectURL` was called.
 
+---
+
+# Phase 15 — check-ins and the Android shell
+
+**Goal:** three daily email/Slack check-ins (9am, 1pm, 5pm) that nudge the phone
+and land somewhere. The boxes come first — notifications without somewhere to
+land are just nagging.
+
+## 15.1 Check-in boxes in the dump
+
+`src/checkins.ts` is pure: slots in, state out, clock injected. Done-ness is
+per-device state in `localStorage` keyed by dump day — whether *this* phone
+reminded you is not something another device needs to know, so it stays out of
+the vault and out of IndexedDB. The model holds the set, `present()` flips it,
+the loop persists it after `present()` (present has no clock and gets none).
+The rows sit above the dump scroll, outside the composed document, so a tick
+can never enter a file.
+
+## 15.2 Capacitor, Android-only
+
+`@capacitor/core` + `@capacitor/android` + `@capacitor/local-notifications`.
+`src/notify.ts` is entirely behind `Capacitor.isNativePlatform()` — on the web
+it loads and does nothing. On boot the shell asks permission once, cancels its
+own pending alarms and reschedules the three slots (idempotent, so a changed
+time can never strand a stale alarm). Tapping a notification opens the dump.
+Timing is deliberately inexact: exact alarms need a Play-store-flagged
+permission, and a check-in minutes late is still a check-in.
+
+## 15.3 What was not done
+
+iOS (needs a Mac and $99/yr), the Play Store (an APK over USB is the whole
+distribution for a personal app), exact alarms, and web push (a server,
+subscriptions, and iOS quirks — the backend the design deleted).

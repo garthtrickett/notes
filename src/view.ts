@@ -26,6 +26,7 @@ import {
   type Proposal,
 } from "./model.ts";
 import type { TreeNode } from "./tree.ts";
+import { SLOTS, stateOf } from "./checkins.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { mimeOf } from "./attachments.ts";
@@ -447,11 +448,36 @@ const status = (model: Model) => {
 // The storage stays one file per day: a single editor over everything would have
 // to parse file boundaries back out of the text, and that breaks the first time
 // a note contains a line that looks like a date header.
+// The day's check-ins sit above the scroll, outside the editor: they are UI
+// state about today, not text in any file, so they must not enter the composed
+// document the split writes back.
+const checkins = (model: Model, propose: Propose, now: number) => html`
+  <ul class="checkins">
+    ${SLOTS.map((slot) => {
+      const state = stateOf(slot, now, model.checkinsDone);
+      const time = `${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}`;
+      return html`<li class=${state}>
+        <button
+          @click=${() => propose({ kind: "checkinToggled", id: slot.id })}
+          aria-pressed=${state === "done"}
+          title=${`${slot.label}, ${time}`}
+        >
+          <span class="box" aria-hidden="true">${state === "done" ? "✓" : ""}</span>
+          ${slot.label} <span class="when">${time}</span>
+        </button>
+      </li>`;
+    })}
+  </ul>
+`;
+
 const dumpView = (
   model: Model,
+  propose: Propose,
+  now: number,
   onCapture: (text: string) => void,
 ): TemplateResult => html`
   <div class="dump">
+    ${checkins(model, propose, now)}
     <div class="days">
       ${dumpDays(model).length === 0
         ? html`<p class="empty">Nothing captured yet.</p>`
@@ -868,7 +894,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
     return html`
       <main class="single">
         ${tabs(model, propose)}
-        ${dumpView(model, onCapture)}
+        ${dumpView(model, propose, now(), onCapture)}
         ${modal(model, propose, onCapture)}
         ${status(model)}
         ${model.error

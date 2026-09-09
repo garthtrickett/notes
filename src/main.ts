@@ -7,6 +7,7 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
+import { syncCheckinNotifications } from "./notify.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 
 // Worker lifecycle has nothing to do with whether a vault is configured, so it
@@ -87,6 +88,12 @@ if (config === null) {
   );
 
   booted = true;
+
+  // No-op on the web. On Android this asks for notification permission once
+  // and keeps the three daily check-ins scheduled.
+  void syncCheckinNotifications(() =>
+    loop.propose({ kind: "modeChanged", mode: "dump" }),
+  );
 
   // Back and forward. The model decides whether the path names something
   // openable — it is the only thing that knows — and a path that names nothing

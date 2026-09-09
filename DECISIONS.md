@@ -53,6 +53,7 @@ Everything enters at the top and leaves at the bottom. Nothing mutates outside
 | Search | `Array.filter` | 1,000 notes × 2 KB is 2 MB. Add FTS when it's measurably slow, not before. |
 | Toolchain | Bun | Fast install, runs TS directly, built-in test runner and `.env`. Low stakes — there is no production runtime, so the compat surface is Vite + tests. `npm i && node` is a one-command exit. |
 | Build | Vite → PWA | |
+| Native shell | Capacitor, **Android-only, sideloaded** | The web cannot wake a phone: no alarm API ever shipped and Periodic Sync is Chromium-only. `@capacitor/local-notifications` lets the OS deliver the three daily check-ins offline with the app closed. No store, no iOS (no Mac, $99/yr, and the phone is Android) — an APK over USB is the whole distribution. The sync architecture is untouched; GitHub is still the backend. |
 
 ---
 

@@ -496,3 +496,50 @@ describe("creating from the dump", () => {
     expect(loop.model.mode).toBe("dump");
   });
 });
+
+describe("check-ins across a reload", () => {
+  const mem = (): Pick<Storage, "getItem" | "setItem"> & { raw(): string | null } => {
+    const m = new Map<string, string>();
+    return {
+      getItem: (k: string) => (m.has(k) ? (m.get(k) as string) : null),
+      setItem: (k: string, v: string) => void m.set(k, v),
+      raw: () => m.get("notes.checkins.2026-09-06") ?? null,
+    };
+  };
+
+  it("writes localStorage on toggle and reads it back on boot", async () => {
+    const storage = mem();
+    const first = await boot({ ...deps(), storage }, root);
+    await settle(first);
+    first.propose({ kind: "checkinToggled", id: "morning" });
+    expect(storage.raw()).toBe('["morning"]');
+
+    const second = await boot({ ...deps(), storage }, root);
+    await settle(second);
+    expect(second.model.checkinsDone.has("morning")).toBe(true);
+  });
+
+  it("does not persist when no storage is injected", async () => {
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    loop.propose({ kind: "checkinToggled", id: "morning" });
+    expect(loop.model.checkinsDone.has("morning")).toBe(true);
+  });
+});
+
+describe("check-ins on screen", () => {
+  it("renders three slots in the dump view and ticks one off", async () => {
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+    const items = [...root.querySelectorAll(".checkins li")];
+    expect(items.length).toBe(3);
+    expect(items[0]?.textContent).toContain("Morning check-in");
+    expect(items[0]?.textContent).toContain("09:00");
+
+    (items[0]?.querySelector("button") as HTMLButtonElement).click();
+    await settle(loop);
+    expect(root.querySelector(".checkins li.done")).not.toBeNull();
+  });
+});

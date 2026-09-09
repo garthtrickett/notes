@@ -1,0 +1,49 @@
+// The daily check-in nudges, on a native shell. Everything here is behind
+// Capacitor.isNativePlatform(): on the web — PWA included — this module loads
+// but does nothing. A closed tab cannot wake a phone, and there is no web API
+// that changes that, so attempting it would be worse than silence.
+//
+// On Android the OS delivers these: offline, app closed, phone locked. Tapping
+// one opens the app, and onTap takes it the rest of the way to the dump.
+//
+// Inexact timing is deliberate. Exact alarms need an extra Play-store-flagged
+// permission; a check-in that arrives a few minutes late is still a check-in.
+import { Capacitor } from "@capacitor/core";
+import { SLOTS } from "./checkins.ts";
+
+export const syncCheckinNotifications = async (
+  onTap: () => void,
+): Promise<void> => {
+  if (!Capacitor.isNativePlatform()) return;
+  const { LocalNotifications } = await import("@capacitor/local-notifications");
+  const permission = await LocalNotifications.requestPermissions();
+  if (permission.display !== "granted") return;
+  // Rescheduled from scratch on every boot. Idempotent, and a changed slot
+  // time can never strand a stale alarm firing at the old one.
+  const pending = await LocalNotifications.getPending();
+  const ours = pending.notifications.filter(
+    (n) => n.id >= 1 && n.id <= SLOTS.length,
+  );
+  if (ours.length > 0) {
+    await LocalNotifications.cancel({
+      notifications: ours.map((n) => ({ id: n.id })),
+    });
+  }
+  await LocalNotifications.schedule({
+    notifications: SLOTS.map((slot, index) => ({
+      id: index + 1,
+      title: "Email + Slack check-in",
+      body: `${slot.label} — inbox zero, then Slack.`,
+      schedule: {
+        on: { hour: slot.hour, minute: slot.minute },
+        allowWhileIdle: true,
+      },
+      autoCancel: true,
+      extra: { checkin: slot.id },
+    })),
+  });
+  await LocalNotifications.addListener(
+    "localNotificationActionPerformed",
+    onTap,
+  );
+};

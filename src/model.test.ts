@@ -865,3 +865,20 @@ describe("present — attachments nothing points at", () => {
     expect(orphanAttachments(m)).toEqual([]);
   });
 });
+
+describe("check-in toggles", () => {
+  it("ticks a slot off and back on", () => {
+    const m = createModel();
+    expect(present(m, { kind: "checkinToggled", id: "morning" })).toBeNull();
+    expect(m.checkinsDone.has("morning")).toBe(true);
+    expect(present(m, { kind: "checkinToggled", id: "morning" })).toBeNull();
+    expect(m.checkinsDone.has("morning")).toBe(false);
+  });
+
+  it("rejects an id no slot owns", () => {
+    const m = createModel();
+    const rejection = present(m, { kind: "checkinToggled", id: "brunch" });
+    expect(rejection).not.toBeNull();
+    expect(m.checkinsDone.size).toBe(0);
+  });
+});

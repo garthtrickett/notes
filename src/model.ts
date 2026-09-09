@@ -26,6 +26,7 @@ import {
   unfiledPath,
   uniquePath,
 } from "./paths.ts";
+import { SLOTS } from "./checkins.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
@@ -102,6 +103,10 @@ export interface Model {
   paletteIndex: number;
   // Open folders. Session-lived UI state, deliberately not persisted.
   expanded: Set<string>;
+  // Check-ins ticked off today. Device-local rather than vault state — whether
+  // this phone reminded you is not something another device needs to know — so
+  // it lives in localStorage, loaded at boot and written on every toggle.
+  checkinsDone: Set<string>;
   // Which folder the number badges currently count inside, or null for the top
   // level. A digit on a folder scopes to it, so the next digit reaches its
   // children.
@@ -145,6 +150,7 @@ export const createModel = (): Model => ({
   history: null,
   paletteIndex: 0,
   expanded: new Set(),
+  checkinsDone: new Set(),
   numberScope: null,
   drag: null,
   hydrated: false,
@@ -193,6 +199,7 @@ export type Proposal =
   | { readonly kind: "folderMoved"; readonly from: string; readonly to: string }
   // Which top-level row, counting from zero, as shown in the tree.
   | { readonly kind: "jumped"; readonly index: number }
+  | { readonly kind: "checkinToggled"; readonly id: string }
   // Back to numbering the top level.
   | { readonly kind: "steppedOut" }
   | { readonly kind: "dragStarted"; readonly from: string; readonly folder: boolean }
@@ -636,6 +643,15 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
+    case "checkinToggled": {
+      // Toggling is the whole behaviour, so an unknown id is a caller bug
+      // rather than something to absorb silently.
+      if (!SLOTS.some((slot) => slot.id === p.id))
+        return reject(`Unknown check-in: ${p.id}`);
+      if (m.checkinsDone.has(p.id)) m.checkinsDone.delete(p.id);
+      else m.checkinsDone.add(p.id);
+      return null;
+    }
     case "jumped": {
       const target = numberedRows(m)[p.index];
       // A digit with nothing in that slot is not a mistake worth reporting, it

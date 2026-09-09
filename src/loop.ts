@@ -21,6 +21,7 @@ import {
   type Note,
   type Proposal,
 } from "./model.ts";
+import { loadDone, saveDone } from "./checkins.ts";
 import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
@@ -42,6 +43,10 @@ export interface Deps {
   // rather than reached for.
   readonly config?: VaultConfig | null;
   readonly saveConfig?: (config: VaultConfig) => void;
+  // Check-in done-ness is per-device state in localStorage. Injected like the
+  // config rather than reached for; absent (as in most tests) it simply does
+  // not persist.
+  readonly storage?: Pick<Storage, "getItem" | "setItem">;
   // Where the app now is. The loop says it; whether that becomes a new history
   // entry or replaces the current one is not a decision it can make, so it
   // does not try to.
@@ -67,8 +72,9 @@ const MAX_BACKOFF_MS = 60_000;
 const QUIET_MS = 1_500;
 
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
-  const { db, github, now, schedule, shrink } = deps;
+  const { db, github, now, schedule, shrink, storage } = deps;
   const model = createModel();
+  if (storage !== undefined) model.checkinsDone = loadDone(storage, now());
   let wakeScheduled = false;
   // When each note was last typed into. Bookkeeping about the loop rather than
   // about notes — the same reason the backoff lives here and not in present(),
@@ -428,6 +434,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // Typing is what the quiet period measures, so it is recorded where the
     // proposal arrives rather than inferred from the note afterwards.
     if (p.kind === "edited") touched.set(p.path, now());
+    // Done-ness outlives the reload, so it is written on every toggle. A write
+    // here rather than in present() for the same reason as the touched map:
+    // present() has no clock and should not be given one.
     if (p.kind === "syncFailed") {
       if (p.error.kind === "rateLimited") {
         // GitHub said exactly when it will answer again. Doubling from one
@@ -444,6 +453,12 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       }
     }
     const rejection = present(model, p);
+    // Done-ness outlives the reload, so it is written on every toggle — after
+    // present(), which is what actually flips the set. A write here rather
+    // than in present() for the same reason as the touched map: present() has
+    // no clock and should not be given one.
+    if (p.kind === "checkinToggled" && rejection === null && storage !== undefined)
+      saveDone(storage, now(), model.checkinsDone);
     if (rejection !== null && import.meta.env.DEV) {
       // A rejection used to vanish. It is almost always a bug in the caller —
       // proposing against a note that is gone — and finding it by watching the

@@ -263,6 +263,25 @@ main:not(.single) section { flex-direction: column; }
 /* dump */
 main.single { display: block; height: 100dvh; padding: 12px; overflow: hidden; }
 main.single .tabs { max-width: 720px; margin: 0 auto 12px; }
+/* The day's check-ins. Above the scroll, outside the editor: done-ness is UI
+state about today, not text in any file. A due check-in is the only thing here
+allowed to raise its voice. */
+.checkins { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.checkins button {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); padding: 10px 12px; font-size: 15px; text-align: left;
+}
+.checkins button:active { transform: scale(0.98); }
+.checkins .box {
+  flex: none; width: 22px; height: 22px; border: 1.5px solid var(--muted);
+  border-radius: 6px; display: grid; place-items: center; font-size: 15px;
+}
+.checkins li.done button { color: var(--muted); }
+.checkins li.done .box { border-color: var(--accent); color: var(--accent); }
+.checkins li.due button { border-color: var(--accent); }
+.checkins li.upcoming button { color: var(--muted); }
+.checkins .when { margin-left: auto; font-size: 13px; color: var(--muted); }
 .dump { display: flex; flex-direction: column; height: calc(100dvh - 68px); max-width: 720px; margin: 0 auto; }
 /* One editor, not a stack of boxes, so the day headings are markdown and the
    scroller is CodeMirror's own — hence hidden here rather than auto, which
