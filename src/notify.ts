@@ -20,6 +20,8 @@
 // Dummy-commit anchor 6: 15 still hung on Downloading, which no timeout in the
 // native path can explain; this no-op 16 is the target an emulator needs to
 // reproduce the hang somewhere logcat can see it.
+// Dummy-commit anchor 7: 17 carries the logcat tracing; this no-op 18 is the
+// release it fetches while the trace is being read.
 import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 
