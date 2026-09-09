@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+// The run number makes each CI build newer than the last, which is what lets
+// Android install it over the previous one. Written as an explicit null check:
+// the Elvis form fails evaluation here with "Value is null".
+static int runNumber() {
+    String run = System.getenv("GITHUB_RUN_NUMBER");
+    return run != null ? run.toInteger() : 1;
+}
+
 android {
     namespace = "com.garthtrickett.notes"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +15,11 @@ android {
         applicationId "com.garthtrickett.notes"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
-        versionName "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        // The run number makes each CI build newer than the last, which is what
+        // lets Android install it over the previous one. Written as an explicit
+        // null check: the Elvis form fails evaluation here with "Value is null".
+        versionCode runNumber()
+        versionName "1.0.${runNumber()}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
