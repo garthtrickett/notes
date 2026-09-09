@@ -44,6 +44,13 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
 
+      # The Gradle signing block silently skips when the secrets are missing,
+      # which would publish an uninstallable APK. Fail here instead.
+      - name: Verify the APK is signed
+        run: |
+          apksigner="$ANDROID_HOME/build-tools/"*/apksigner
+          $apksigner verify --print-certs android/app/build/outputs/apk/release/app-release.apk | head -3
+
       - name: Publish to rolling release
         uses: softprops/action-gh-release@v2
         with:
