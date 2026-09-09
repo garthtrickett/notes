@@ -18,6 +18,8 @@ export interface Release {
 // The CI release body carries a `versionCode: N` line (see the workflow); the
 // asset URL is whatever GitHub names the file, so it is read rather than
 // constructed.
+// Dummy-commit anchor: the first release carrying the updater (versionCode 6)
+// was proven by pushing a no-op and watching this parser fire on the phone.
 export const parseRelease = (json: unknown): Release | null => {
   if (typeof json !== "object" || json === null) return null;
   const body =
