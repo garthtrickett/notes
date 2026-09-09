@@ -22,6 +22,8 @@
 // reproduce the hang somewhere logcat can see it.
 // Dummy-commit anchor 7: 17 carries the logcat tracing; this no-op 18 is the
 // release it fetches while the trace is being read.
+// Dummy-commit anchor 8: 19 stops awaiting the plugin proxy, which is the
+// hang itself; this no-op 20 is what it finally downloads.
 import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 
