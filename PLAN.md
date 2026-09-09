@@ -152,7 +152,7 @@ rendering, `[[links]]`, search, attachments, the PWA manifest.
 
 # Phase 2 — Sync
 
-**Goal:** the app becomes a second writer to the `vault` branch. Notes round-trip
+**Goal:** the app becomes a second writer to the private `notes-vault` repo. Notes round-trip
 to GitHub, and a genuine concurrent edit produces a conflict copy rather than a
 lost one.
 
@@ -209,8 +209,8 @@ whole of sync is testable with no network.
 
 | Operation | Call |
 |---|---|
-| manifest | `GET /repos/{o}/{r}/git/trees/vault?recursive=1` |
-| read | `GET /repos/{o}/{r}/contents/{path}?ref=vault` |
+| manifest | `GET /repos/{o}/{r}/git/trees/main?recursive=1` |
+| read | `GET /repos/{o}/{r}/contents/{path}?ref=main` |
 | write | `PUT /repos/{o}/{r}/contents/{path}` with `sha`, `branch` |
 | delete | `DELETE /repos/{o}/{r}/contents/{path}` with `sha`, `branch` |
 
@@ -1058,8 +1058,8 @@ an afternoon, and it is separable from moving things about.
 
 ## 8.8 Version history (6)
 
-The vault is a git branch, so the history already exists and does not need
-inventing. `GET /commits?path=…&sha=vault` for the list, `GET /contents/…?ref=`
+The vault is a git repo, so the history already exists and does not need
+inventing. `GET /commits?path=…&sha=main` for the list, `GET /contents/…?ref=`
 for a version. Restoring writes the old body as a new edit, so history moves
 forward and nothing is rewritten.
 

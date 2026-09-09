@@ -144,25 +144,27 @@ without evidence. It gets answered by a thumb, not by argument.
 
 ## Repo layout
 
-**One repo, two branches with no shared history.**
+**Two repos: the app is public, the notes are private.**
 
-- `main` — the app. Normal code history.
-- `vault` — an **orphan branch** holding the notes. Nothing else.
+- `notes` (this repo, public) — the app. Normal code history on `main`.
+- `notes-vault` (private) — the notes, at the root, on `main`. Nothing else.
 
-One clone, one token, one privacy switch: if privacy is ever wanted, the whole
-repo goes private in one click. But `main`'s log stays readable, because the
-app's auto-commits land on a branch that shares no history with it.
+It started as one repo with the notes on an orphan `vault` branch. That ended
+2026-09-09: a branch cannot be private while its repo is public, so the vault
+moved to its own private repo. Its history was purged of the secrets that had
+been committed and later removed (mozilla recovery key, post-bank PIN/password,
+electrum seed + address) before the move.
 
-Notes live in folders at the **root of `vault`**, one `.md` per note, plus a
-daily dump for quick capture.
+Notes live in folders at the **root of `notes-vault`**, one `.md` per note,
+plus a daily dump for quick capture.
 
 ```
-main                           # the app
+notes          (public)
   src/
   package.json
   DECISIONS.md
 
-vault                          # orphan branch — notes only, at the root
+notes-vault    (private)
   inbox/
     some-thought.md
   projects/
@@ -177,21 +179,17 @@ vault                          # orphan branch — notes only, at the root
     2026-09-06-a3f19c.webp
 ```
 
-**No path prefix, no manifest filtering.** Because the notes have a branch to
-themselves, everything the Trees API returns for `vault` *is* a note. The sync
-does not have to filter its own source out of the manifest — the branch is the
-boundary. This is the main reason to prefer a branch over a `vault/` directory.
+**No path prefix, no manifest filtering.** Because the notes have a repo to
+themselves, everything the Trees API returns *is* a note. The sync does not
+have to filter its own source out of the manifest — the repo is the boundary.
 
 The cost is one extra parameter on two calls:
 
 | Call | Parameter |
 |---|---|
-| Trees — `GET /git/trees/vault?recursive=1` | branch name as the tree ref |
-| Contents GET | `?ref=vault` |
-| Contents PUT | `"branch": "vault"` in the body |
-
-**Never merge `vault` into `main`.** GitHub will offer a PR after the first
-push; decline it. They are separate histories on purpose.
+| Trees — `GET /git/trees/main?recursive=1` | branch name as the tree ref |
+| Contents GET | `?ref=main` |
+| Contents PUT | `"branch": "main"` in the body |
 
 **Folders are not a data structure.** They are a path prefix. There is no folder
 entity, no tree table, no parent pointers — the Trees API manifest already
@@ -517,15 +515,11 @@ Stated up front so they aren't surprises later.
   Every request is therefore `cache: "no-store"`. Without it the browser serves
   a minute-old tree and a note written on another device simply appears not to
   exist, which reads as sync being broken.
-- **`git clone` no longer gets the notes.** It gets `main`. Export is
-  `git clone -b vault <repo>`, or `git fetch origin vault` in an existing clone.
-  Slightly worse than the one-command story, and the price of a clean `main`.
-- **CI needs the right branch filter.** A workflow scoped to `main` will not fire
-  on note commits, which is the desired behaviour — but a workflow with a bare
-  `on: push` will fire on every captured thought. Scope it explicitly.
-- **Splitting into two repos later is now trivial**, if it ever comes to that:
-  `vault` is already an independent history, so it is one `git push` to a new
-  remote.
+- **Export is a separate clone.** `git clone` of this repo gets the app, not
+  the notes. Export is `git clone` of `notes-vault`.
+- **CI needs the right repo, not just the right branch.** Note commits land in
+  `notes-vault`, so no workflow here fires on them at all — which is the desired
+  behaviour, and better than the branch filter this cost used to describe.
 
 ---
 
@@ -541,9 +535,9 @@ open.
 
 ---|---|
 | Files as the universal interface | The whole design |
-| Shared workspace, not a sandbox | Agent and user both write the `vault` branch |
+| Shared workspace, not a sandbox | Agent and user both write `notes-vault` |
 | Self-documenting structure | `projects/gafu/adaptive-media.md` |
-| Inspectable, portable, no black box | `git clone -b vault` |
+| Inspectable, portable, no black box | `git clone` of `notes-vault` |
 | Conflict model | Already stronger than the article's: `sha` is a real
 compare-and-swap, not last-write-wins |
 
