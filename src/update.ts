@@ -82,13 +82,24 @@ export const checkForUpdate = async (
 // finally found. The native side has no CORS, follows the 302 to the signed
 // storage host by hand, and writes straight to the cache directory, so the
 // megabytes never become a base64 string on a bridge call either.
+// Deliberately console, not a model state: this has to survive in a release
+// build on a device with no debugger attached, and Capacitor forwards console
+// to logcat once loggingBehavior is 'production'.
+export const trace = (step: string): void => {
+  console.log(`[update] ${step}`);
+};
+
 export const downloadUpdate = async (url: string): Promise<Proposal> => {
+  trace(`download start ${url}`);
   if (!Capacitor.isNativePlatform())
     return { kind: "updateFailed", error: "Download failed: needs the Android shell" };
   try {
+    trace("download bridge call issued");
     const { path } = await (await installer()).download({ url });
+    trace(`download bridge resolved ${path}`);
     return { kind: "updateDownloaded", path };
   } catch (error) {
+    trace(`download bridge threw ${String(error)}`);
     return { kind: "updateFailed", error: `Download failed: ${String(error)}` };
   }
 };
@@ -124,8 +135,12 @@ export const canInstall = async (): Promise<boolean> => {
   // The gate comes before any plugin touch. Calling a method on a plugin with
   // no native implementation does not reject — it crashes the process past any
   // try/catch — so every entry here checks the platform first.
+  trace(`canInstall native=${String(Capacitor.isNativePlatform())}`);
   if (!Capacitor.isNativePlatform()) return false;
-  return (await (await installer()).canInstall()).allowed;
+  trace("canInstall bridge call issued");
+  const answer = await (await installer()).canInstall();
+  trace(`canInstall bridge resolved ${JSON.stringify(answer)}`);
+  return answer.allowed;
 };
 
 export const openInstallSettings = async (): Promise<void> => {
