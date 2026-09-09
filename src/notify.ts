@@ -12,6 +12,8 @@
 // hardware; this no-op 11 proves the whole road end to end.
 // Dummy-commit anchor 2: versionCode 8 proved the permission gate on hardware;
 // this no-op 9 proves the whole road from banner to installer.
+// Dummy-commit anchor 4: versionCode 12 proved the streamed download on
+// hardware; this no-op 13 proves the banner goes quiet afterwards.
 import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 
