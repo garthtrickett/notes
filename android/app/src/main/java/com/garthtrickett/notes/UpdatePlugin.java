@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
-import android.util.Log;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -24,17 +23,13 @@ import java.net.URL;
 @CapacitorPlugin(name = "Update")
 public class UpdatePlugin extends Plugin {
 
-    private static final String TAG = "NotesUpdate";
-
     @PluginMethod
     public void canInstall(PluginCall call) {
-        Log.i(TAG, "canInstall entered");
         boolean allowed =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
             getContext().getPackageManager().canRequestPackageInstalls();
         JSObject result = new JSObject();
         result.put("allowed", allowed);
-        Log.i(TAG, "canInstall resolving allowed=" + allowed);
         call.resolve(result);
     }
 
@@ -48,7 +43,6 @@ public class UpdatePlugin extends Plugin {
     // written back out again.
     @PluginMethod
     public void download(PluginCall call) {
-        Log.i(TAG, "download entered");
         String url = call.getString("url");
         if (url == null) {
             call.reject("download needs a url");
@@ -75,9 +69,7 @@ public class UpdatePlugin extends Plugin {
                     // that sits there forever.
                     conn.setConnectTimeout(30000);
                     conn.setReadTimeout(60000);
-                    Log.i(TAG, "download hop " + hop + " -> " + current);
                     int code = conn.getResponseCode();
-                    Log.i(TAG, "download hop " + hop + " answered " + code);
                     if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
                         String next = conn.getHeaderField("Location");
                         conn.disconnect();
@@ -108,12 +100,10 @@ public class UpdatePlugin extends Plugin {
                     byte[] buffer = new byte[16384];
                     for (int n; (n = in.read(buffer)) != -1;) sink.write(buffer, 0, n);
                 }
-                Log.i(TAG, "download wrote " + out.length() + " bytes to " + out.getAbsolutePath());
                 JSObject result = new JSObject();
                 result.put("path", out.getAbsolutePath());
                 call.resolve(result);
             } catch (Exception error) {
-                Log.e(TAG, "download failed", error);
                 call.reject("Download failed: " + error);
             } finally {
                 if (conn != null) conn.disconnect();

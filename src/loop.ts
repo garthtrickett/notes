@@ -22,7 +22,7 @@ import {
   type Proposal,
 } from "./model.ts";
 import { loadDone, saveDone } from "./checkins.ts";
-import { canInstall, downloadUpdate, installUpdate, openInstallSettings, trace } from "./update.ts";
+import { canInstall, downloadUpdate, installUpdate, openInstallSettings } from "./update.ts";
 import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
@@ -107,7 +107,6 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const beginUpdate = async (): Promise<void> => {
     // A bridge that throws instead of answering is a failure with a name,
     // not an unhandled rejection in the console.
-    trace("beginUpdate entered");
     let allowed: boolean;
     try {
       allowed = await canInstall();
@@ -119,9 +118,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       propose({ kind: "updatePermissionNeeded" });
       return;
     }
-    trace(`beginUpdate allowed=${String(allowed)}, downloading ${model.update.url}`);
     const found = await downloadUpdate(model.update.url);
-    trace(`beginUpdate got ${found.kind}`);
     propose(found);
   };
 
