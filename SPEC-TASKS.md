@@ -115,9 +115,15 @@ kind, it has stopped being this spec.
   not steal focus on tap (the list must not yank the caret out of an
   editing session elsewhere — there is no editor on this screen, but the
   rule is stated so a later layout keeps it).
-- The list scrolls internally (`height` + `overflow-y`, mirroring `.dump`):
-  `main.single` is `overflow: hidden`, so an unbounded list clips past one
-  page with no way to reach it.
+- The list scrolls internally: `main.single` is `overflow: hidden`, so an
+  unbounded list clips past one page with no way to reach it. The height comes
+  from `main.single` being a flex column and the list taking `flex: 1;
+  min-height: 0` — not from subtracting a guessed tab-bar height, which is
+  wrong by a whole row once the tabs wrap on a phone.
+- Each group is `flex: none`. A height-bounded flex column shrinks its items,
+  and the sheet's `section { min-height: 0 }` (there for the two-pane grid)
+  turns off the automatic minimum that would otherwise stop it — so groups
+  collapsed to slivers and painted their rows over the groups below.
 - Phone and desktop render the same list from the same bodies. No
   `isNativePlatform` branch anywhere in this spec.
 

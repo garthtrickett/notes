@@ -275,7 +275,12 @@ nav ul ul {
 main:not(.single) section { flex-direction: column; }
 
 /* dump */
-main.single { display: block; height: 100dvh; padding: 12px; overflow: hidden; }
+/* A column, not a block: the view under the tabs gets exactly the height they
+   leave. It used to be `calc(100dvh - 68px)` on each view, which guessed one
+   row of tabs — on a phone they wrap to two, and the last 50px of the list sat
+   under this `overflow: hidden`, unreachable no matter how far you scrolled. */
+main.single { display: flex; flex-direction: column; height: 100dvh; padding: 12px; overflow: hidden; }
+main.single > .tabs { flex: none; }
 main.single .tabs { max-width: 720px; margin: 0 auto 12px; }
 /* The day's check-ins. Above the scroll, outside the editor: done-ness is UI
 state about today, not text in any file. A due check-in is the only thing here
@@ -300,12 +305,18 @@ allowed to raise its voice. */
 not about wherever you are. */
 .update { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .update button { flex: none; }
-.dump { display: flex; flex-direction: column; height: calc(100dvh - 68px); max-width: 720px; margin: 0 auto; }
+.dump { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 720px; margin: 0 auto; }
 /* Every open box, grouped by file. Rows reuse the check-in shape — a 22px
    target beside a full-width button — so a thumb trained on one already
    knows the other. Done rows hide in a native disclosure: no state to keep,
    and reopening is the same toggle coming back. */
-.tasks { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; height: calc(100dvh - 68px); overflow-y: auto; }
+.tasks { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; flex: 1; min-height: 0; overflow-y: auto; }
+/* A group is as tall as its rows. `section { min-height: 0 }` above — set so
+   the two-pane grid would scroll — also turns off a flex item's automatic
+   minimum size, and a taskgroup is a section. Inside a height-bounded column
+   that let every group shrink to a sliver while its rows kept their size, so
+   each group's tasks painted straight over the groups below it. */
+.taskgroup { flex: none; }
 /* Triage header: how much is open, and the one switch for everything
    finished. Done stays off the page unless asked for. */
 .tasks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -905,10 +916,6 @@ kbd {
   nav {
     max-height: 38dvh;
     overflow-y: auto;
-  }
-
-  main.single {
-    grid-template-rows: auto minmax(0, 1fr);
   }
 
   nav {
