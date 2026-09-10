@@ -305,7 +305,7 @@ not about wherever you are. */
    target beside a full-width button — so a thumb trained on one already
    knows the other. Done rows hide in a native disclosure: no state to keep,
    and reopening is the same toggle coming back. */
-.tasks { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; }
+.tasks { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; height: calc(100dvh - 68px); overflow-y: auto; }
 .taskgroup h2 {
   margin: 0 0 6px;
   font-size: 13px;

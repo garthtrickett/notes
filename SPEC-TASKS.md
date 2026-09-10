@@ -105,6 +105,9 @@ kind, it has stopped being this spec.
   not steal focus on tap (the list must not yank the caret out of an
   editing session elsewhere — there is no editor on this screen, but the
   rule is stated so a later layout keeps it).
+- The list scrolls internally (`height` + `overflow-y`, mirroring `.dump`):
+  `main.single` is `overflow: hidden`, so an unbounded list clips past one
+  page with no way to reach it.
 - Phone and desktop render the same list from the same bodies. No
   `isNativePlatform` branch anywhere in this spec.
 
