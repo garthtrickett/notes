@@ -330,6 +330,54 @@ describe("resumed", () => {
   });
 });
 
+describe("polling the branch head", () => {
+  it("records the first sighting without pulling", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [] });
+    m.lastSyncedAt = 12345;
+    present(m, { kind: "headSeen", head: "abc" });
+    // Boot has already pulled. Treating "nobody has looked yet" as a change
+    // would fetch the whole tree a second time for nothing.
+    expect(m.remoteHead).toBe("abc");
+    expect(m.lastSyncedAt).toBe(12345);
+  });
+
+  it("pulls when the head has moved", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [] });
+    m.lastSyncedAt = 12345;
+    present(m, { kind: "headSeen", head: "abc" });
+    present(m, { kind: "headSeen", head: "def" });
+    expect(m.remoteHead).toBe("def");
+    expect(m.lastSyncedAt).toBeNull();
+  });
+
+  it("does nothing while the head sits still", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [] });
+    present(m, { kind: "headSeen", head: "abc" });
+    m.lastSyncedAt = 12345;
+    present(m, { kind: "headSeen", head: "abc" });
+    // The whole point: 120 of these an hour must cost one small request each
+    // and never the tree.
+    expect(m.lastSyncedAt).toBe(12345);
+  });
+
+  it("records a head that moves during the pull it triggered", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [] });
+    present(m, { kind: "headSeen", head: "abc" });
+    present(m, { kind: "headSeen", head: "def" });
+    m.syncing = true;
+    m.lastSyncedAt = 999;
+    present(m, { kind: "headSeen", head: "ghi" });
+    // The sighting is kept even though the pull in flight must not be
+    // interrupted, so the next tick still sees ghi != the head it pulled.
+    expect(m.remoteHead).toBe("ghi");
+    expect(m.lastSyncedAt).toBe(999);
+  });
+});
+
 describe("quick capture from anywhere", () => {
   it("opens over the notes view and captures to today's dump", async () => {
     const loop = await boot(deps(), root);

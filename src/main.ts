@@ -11,6 +11,11 @@ import { syncCheckinNotifications } from "./notify.ts";
 import { checkForUpdate } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 
+// Half a minute: fast enough that the other screen feels live, slow enough that
+// 120 requests an hour is nothing against GitHub's 5000 and nothing against a
+// battery. Only paid while the tab is visible.
+const POLL_MS = 30_000;
+
 // Worker lifecycle has nothing to do with whether a vault is configured, so it
 // runs before anything else. Putting it inside the configured branch left anyone
 // on the settings screen stuck with a stale worker and no way out.
@@ -68,11 +73,13 @@ if (config === null) {
     history[method](null, "", url);
   };
 
+  const github = createGithub(config);
+
   const loop = await boot(
     {
       db: await openDb(),
       shrink: canvasShrinker,
-      github: createGithub(config),
+      github,
       now: () => Date.now(),
       schedule: (ms, fire) => void setTimeout(fire, ms),
       config,
@@ -170,6 +177,28 @@ if (config === null) {
         return;
     }
   });
+
+  // Both screens open at once is the case focus cannot serve: neither window
+  // ever loses focus, so neither ever pulls. There is no server to push from,
+  // so the device has to ask — but asking with the tree costs ~150KB to nearly
+  // always learn nothing moved. Ask for the branch head instead, a few hundred
+  // bytes, and let the reducer decide whether that is worth a pull.
+  //
+  // Seeded once here so the first tick has something to compare against and
+  // does not read "nobody has looked yet" as a change.
+  const pollHead = () => {
+    void github.head().then((head) => {
+      if (head.ok) loop.propose({ kind: "headSeen", head: head.value });
+    });
+  };
+  pollHead();
+  // Visible only: a backgrounded phone must not be woken every half minute for
+  // a branch nobody is looking at, and coming back to it fires focus anyway.
+  setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    if (!loop.model.online || loop.model.syncing) return;
+    pollHead();
+  }, POLL_MS);
 
   const resumed = () => loop.propose({ kind: "resumed" });
   // Without these the app pulls once per session, so a note written on the

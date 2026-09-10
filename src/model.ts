@@ -134,6 +134,10 @@ export interface Model {
   online: boolean;
   syncError: SyncError | null;
   lastSyncedAt: number | null;
+  // The branch head as of the last time anything looked. The poll compares
+  // against this, so `null` means "nobody has looked yet" and must not be read
+  // as "the branch moved" — the first sighting only records.
+  remoteHead: string | null;
   // Paths whose record must be dropped from this device. Removing a note from
   // the map is not enough: nap() only ever writes notes it can still see, so a
   // vanished record would linger in IndexedDB and be read back on reload — the
@@ -192,6 +196,7 @@ export const createModel = (): Model => ({
   online: true,
   syncError: null,
   lastSyncedAt: null,
+  remoteHead: null,
   forgotten: new Set(),
   error: null,
 });
@@ -249,6 +254,7 @@ export type Proposal =
   | { readonly kind: "linkRefused"; readonly target: string }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
   | { readonly kind: "resumed" }
+  | { readonly kind: "headSeen"; readonly head: string }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
   | { readonly kind: "previewToggled" }
   | { readonly kind: "doneVisibilityToggled" }
@@ -841,6 +847,20 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "resumed": {
       // The window came back. Clearing the watermark is the whole mechanism;
       // nap() notices and pulls.
+      if (!m.syncing) m.lastSyncedAt = null;
+      return null;
+    }
+
+    case "headSeen": {
+      // What a poll saw. Recording it is unconditional — the sha observed is
+      // the sha observed, and a write that lands during the pull it triggers
+      // moves the head again, so the next poll still catches it.
+      const first = m.remoteHead === null;
+      const moved = m.remoteHead !== p.head;
+      m.remoteHead = p.head;
+      // First sighting seeds the comparison; it must not pull, or every boot
+      // would fetch the tree a second time for nothing.
+      if (first || !moved) return null;
       if (!m.syncing) m.lastSyncedAt = null;
       return null;
     }

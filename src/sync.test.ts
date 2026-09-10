@@ -16,6 +16,13 @@ const fakeGithub = () => {
   const calls: string[] = [];
 
   const github: Github = {
+    // A real branch head moves whenever anything under it does, and that is the
+    // only property the poll depends on.
+    head: async () => {
+      calls.push("head");
+      if (failWith) return err(failWith);
+      return ok([...files.values()].map((f) => f.sha).join("-") || "empty");
+    },
     manifest: async () => {
       calls.push("manifest");
       if (failWith) return err(failWith);

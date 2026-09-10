@@ -31,6 +31,12 @@ export interface Revision {
 }
 
 export interface Github {
+  // The branch's commit sha, and nothing else. GitHub cannot push to a device
+  // with no server behind it, so noticing another device's write has to be the
+  // device asking — and asking with `manifest` costs the whole tree (523
+  // entries, ~150KB on this vault) to usually learn nothing changed. This is a
+  // few hundred bytes, so it can be asked often and the tree stays behind it.
+  readonly head: () => Promise<Result<string, SyncError>>;
   readonly manifest: () => Promise<Result<RemoteEntry[], SyncError>>;
   // The encoding decides whether the body is converted or passed through. An
   // attachment is already base64, and the Contents API wants base64, so
@@ -144,6 +150,22 @@ export const createGithub = (config: Config): Github => {
     );
 
   return {
+    head: async () => {
+      const res = await send(`${base}/git/ref/heads/${config.branch}`);
+      if (!res.ok) return res;
+      if (!res.value.ok) return err(responseToError(res.value));
+
+      const body = await json<{ object?: { sha?: string } }>(res.value);
+      if (!body.ok) return body;
+      const sha = body.value.object?.sha;
+      // A ref with no sha is not a branch we can reason about, and treating it
+      // as "unchanged" would silently stop every later poll.
+      if (typeof sha !== "string" || sha === "") {
+        return err({ kind: "github", status: res.value.status });
+      }
+      return ok(sha);
+    },
+
     manifest: async () => {
       const res = await send(
         `${base}/git/trees/${config.branch}?recursive=1`,
