@@ -61,6 +61,10 @@ export const keyAction = (
       return model.mode === "dump"
         ? null
         : propose({ kind: "modeChanged", mode: "dump" });
+    case "k":
+      return model.mode === "tasks"
+        ? null
+        : propose({ kind: "modeChanged", mode: "tasks" });
     case "e":
       // Only where there is something to preview.
       return model.mode === "notes" && model.openPath !== null

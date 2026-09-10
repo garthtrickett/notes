@@ -42,6 +42,13 @@ describe("shortcuts", () => {
     } });
   });
 
+  it("K goes to tasks", () => {
+    expect(keyAction(press("k"), model())).toEqual({ kind: "propose", proposal: {
+      kind: "modeChanged",
+      mode: "tasks",
+    } });
+  });
+
   it("E toggles preview", () => {
     expect(keyAction(press("e"), model())).toEqual({ kind: "propose", proposal: { kind: "previewToggled" } });
   });

@@ -544,6 +544,82 @@ describe("check-ins on screen", () => {
   });
 });
 
+describe("tasks on screen", () => {
+  const toTasks = async (loop: Loop) => {
+    loop.propose({ kind: "modeChanged", mode: "tasks" });
+    await settle(loop);
+  };
+  const boxes = () =>
+    [...root.querySelectorAll(".taskgroup")].map((g) => ({
+      head: g.querySelector("h2")?.textContent ?? "",
+      open: [...g.querySelectorAll(":scope > ul input[type=checkbox]")],
+      done: g.querySelector("details summary")?.textContent ?? null,
+    }));
+
+  it("lists open boxes grouped by note with counts", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        note("b.md", { body: "- [x] done\n" }),
+        note("a.md", { body: "- [ ] one\n- [ ] two\n" }),
+      ],
+    });
+    await settle(loop);
+    await toTasks(loop);
+
+    const groups = boxes();
+    expect(groups.map((g) => g.head)).toEqual(["a.md — 2/2", "b.md — 0/1"]);
+    expect(groups[0]?.open.length).toBe(2);
+    // Done-only notes contribute only their collapsed section.
+    expect(groups[1]?.open.length).toBe(0);
+    expect(groups[1]?.done).toContain("Done (1)");
+  });
+
+  it("ticking a box flips it in the source note", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("a.md", { body: "- [ ] milk\n" })],
+    });
+    await settle(loop);
+    await toTasks(loop);
+
+    const box = root.querySelector<HTMLInputElement>(".taskgroup input[type=checkbox]");
+    if (box === null) throw new Error("no box");
+    box.click();
+    await settle(loop);
+
+    expect(loop.model.notes.get("a.md")?.body).toBe("- [x] milk\n");
+    // The row moved from the open list into the done section.
+    expect(root.querySelectorAll(".taskgroup > ul input").length).toBe(0);
+    expect(root.querySelector(".taskgroup details summary")?.textContent).toContain("Done (1)");
+  });
+
+  it("tapping a title opens its note", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("a.md", { body: "- [ ] milk\n" })],
+    });
+    await settle(loop);
+    await toTasks(loop);
+
+    (root.querySelector(".task-title") as HTMLButtonElement).click();
+    await settle(loop);
+    expect(loop.model.mode).toBe("notes");
+    expect(loop.model.openPath).toBe("a.md");
+  });
+
+  it("says so when there is nothing to do", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    await settle(loop);
+    await toTasks(loop);
+    expect(root.textContent).toContain("No open tasks.");
+  });
+});
+
 describe("the update banner", () => {
   it("appears on an offer and leaves on Later", async () => {
     const loop = await boot(deps(), root);

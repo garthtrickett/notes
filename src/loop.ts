@@ -27,6 +27,7 @@ import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
+import { createTaskCache } from "./tasks.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
@@ -90,6 +91,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let lastPaletteIndex: number | null = null;
   let lastUrl: string | null = null;
   const previewCache = createPreviewCache();
+  // File bodies scan identically every paint, so the task list keeps a
+  // per-path memo beside the preview cache.
+  const tasks = createTaskCache();
   // Bytes are read from the blob store when something needs to show them, and
   // held as object URLs rather than on the notes themselves.
   const media = createMedia(db, () => scheduleRender());
@@ -243,6 +247,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         onCapture: capture,
         previewCache,
         media,
+        tasks,
         config: deps.config ?? null,
         onSaveConfig: (next) => deps.saveConfig?.(next),
       }),

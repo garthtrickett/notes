@@ -31,6 +31,7 @@ import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { mimeOf } from "./attachments.ts";
 import type { Media } from "./media.ts";
+import { flipTask, tasksInVault, type TaskCache, type TaskRef } from "./tasks.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 import { settingsView, type VaultConfig } from "./view-settings.ts";
 
@@ -48,6 +49,9 @@ export interface ViewCtx {
   // to the loop; the view only asks.
   readonly onSaveConfig: (config: VaultConfig) => void;
   readonly config: VaultConfig | null;
+  // The task list reads straight from file bodies, so it takes the scanner
+  // cache the way the preview takes its node cache.
+  readonly tasks: TaskCache;
 }
 
 // Only the top ten rows carry a digit, because only ten digits exist. Anything
@@ -522,6 +526,61 @@ const dumpView = (
   </div>
 `;
 
+// Every open box in the vault, grouped by the file holding it. Toggling flips
+// one character in that file and proposes it as an edit, so everything below
+// — persist, push, echo, undo — treats it like typing. Done rows sit
+// collapsed; reopening moves them back on the next paint.
+const tasksView = (model: Model, ctx: ViewCtx) => {
+  const { propose, tasks } = ctx;
+  const toggle = (ref: TaskRef): void => {
+    const body = model.notes.get(ref.path)?.body;
+    if (body === undefined) return;
+    const next = flipTask(body, ref);
+    if (next !== body) propose({ kind: "edited", path: ref.path, body: next });
+  };
+  const row = (ref: TaskRef) => html`<li>
+    <input
+      type="checkbox"
+      ?checked=${ref.done}
+      aria-label=${ref.done ? `Reopen ${ref.title}` : `Tick off ${ref.title}`}
+      @change=${() => toggle(ref)}
+    />
+    <button
+      class="task-title"
+      title=${ref.path}
+      @click=${() => propose({ kind: "opened", path: ref.path })}
+    >
+      ${ref.title}
+    </button>
+  </li>`;
+  const groups = tasksInVault(model.notes, tasks);
+  if (groups.length === 0) return html`<p class="empty">No open tasks.</p>`;
+  return html`
+    <div class="tasks">
+      ${groups.map(({ path, refs }) => {
+        const open = refs.filter((r) => !r.done);
+        const shut = refs.filter((r) => r.done);
+        return html`<section class="taskgroup">
+          <h2>${path} — ${open.length}/${refs.length}</h2>
+          ${open.length > 0
+            ? html`<ul>
+                ${open.map(row)}
+              </ul>`
+            : nothing}
+          ${shut.length > 0
+            ? html`<details>
+                <summary>Done (${shut.length})</summary>
+                <ul>
+                  ${shut.map(row)}
+                </ul>
+              </details>`
+            : nothing}
+        </section>`;
+      })}
+    </div>
+  `;
+};
+
 // Capture and new-note are the same shape — one field, submit — so they share a
 // box told what it is. The open palette is not that shape and does not share it:
 // it filters as you type and has a selection.
@@ -759,6 +818,14 @@ const tabs = (model: Model, propose: Propose) => html`
         Dump <kbd>D</kbd>
       </button>
       <button
+        class=${model.mode === "tasks" ? "on" : ""}
+        title="Tasks (K)"
+        aria-keyshortcuts="K"
+        @click=${() => propose({ kind: "modeChanged", mode: "tasks" })}
+      >
+        Tasks <kbd>K</kbd>
+      </button>
+      <button
         class=${model.mode === "archive" ? "on" : ""}
         title="Archive (V)"
         aria-keyshortcuts="V"
@@ -939,6 +1006,21 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
       <main class="single">
         ${tabs(model, propose)}
         ${dumpView(model, propose, now(), onCapture)}
+        ${modal(model, propose, onCapture)}
+        ${status(model)}
+        ${updateBanner(model, propose)}
+        ${model.error
+          ? html`<p class="error" role="alert">${model.error}</p>`
+          : nothing}
+      </main>
+    `;
+  }
+
+  if (model.mode === "tasks") {
+    return html`
+      <main class="single">
+        ${tabs(model, propose)}
+        ${tasksView(model, ctx)}
         ${modal(model, propose, onCapture)}
         ${status(model)}
         ${updateBanner(model, propose)}

@@ -54,7 +54,7 @@ export interface Note extends NoteRecord {
   readonly dirty: boolean;
 }
 
-export type Mode = "notes" | "dump" | "archive" | "trash" | "settings";
+export type Mode = "notes" | "dump" | "tasks" | "archive" | "trash" | "settings";
 
 // The vault is a git branch, so a note's history is its commits. Nothing is
 // stored: this is emptied when the panel closes.

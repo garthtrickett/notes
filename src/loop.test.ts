@@ -89,6 +89,24 @@ describe("the loop", () => {
     ]);
   });
 
+  it("persists a ticked box exactly like a typed edit", async () => {
+    // This is the entire contract the tasks view relies on: the button sends
+    // an edited proposal with one character flipped, and everything below
+    // treats it as typing.
+    const loop = await boot(localOnly(), root);
+    loop.propose({ kind: "created", path: "a.md" });
+    await settle(loop);
+    loop.propose({ kind: "edited", path: "a.md", body: "- [ ] milk\n" });
+    await settle(loop);
+    loop.propose({ kind: "edited", path: "a.md", body: "- [x] milk\n" });
+    await settle(loop);
+
+    expect((await getAll(theDb())).map((r) => [r.path, r.body])).toEqual([
+      ["a.md", "- [x] milk\n"],
+    ]);
+    expect(loop.model.notes.get("a.md")?.dirty).toBe(false);
+  });
+
   it("survives a reload — the gate for this phase", async () => {
     const first = await boot(localOnly(), root);
     first.propose({ kind: "created", path: "inbox/thought.md" });

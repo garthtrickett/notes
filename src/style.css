@@ -301,6 +301,49 @@ not about wherever you are. */
 .update { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .update button { flex: none; }
 .dump { display: flex; flex-direction: column; height: calc(100dvh - 68px); max-width: 720px; margin: 0 auto; }
+/* Every open box, grouped by file. Rows reuse the check-in shape — a 22px
+   target beside a full-width button — so a thumb trained on one already
+   knows the other. Done rows hide in a native disclosure: no state to keep,
+   and reopening is the same toggle coming back. */
+.tasks { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; }
+.taskgroup h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: normal;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.taskgroup ul { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
+.taskgroup li { display: flex; align-items: center; gap: 10px; }
+.taskgroup input[type="checkbox"] {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.task-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.task-title:active { transform: scale(0.98); }
+.taskgroup details summary {
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0;
+}
 /* One editor, not a stack of boxes, so the day headings are markdown and the
    scroller is CodeMirror's own — hence hidden here rather than auto, which
    would put a second scrollbar around the first. */
