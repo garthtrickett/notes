@@ -296,9 +296,15 @@ export const visible = (m: Model): Note[] =>
 // The dump, newest day first. One definition, because the view renders it, the
 // loop composes the document from it and the split reads it back — three
 // answers to "which days, in what order" is three chances to disagree.
+// Empty days are left out, and that is the whole fix for a day file that says
+// nothing still showing as a bare heading: composeDump emits one per day it is
+// given, and dumpEdits only ever edits the days it is given, so a day nobody
+// can see is also a day nobody can accidentally write to. Filtering here rather
+// than in composeDump is what keeps compose, split and sections agreeing — they
+// are all fed from this one list.
 export const dumpDays = (m: Model): Note[] =>
   visible(m)
-    .filter((n) => isDumpPath(n.path))
+    .filter((n) => isDumpPath(n.path) && n.body.trim() !== "")
     .sort((a, b) => b.path.localeCompare(a.path));
 
 // What the notes view can show and open. An attachment is a record, not a note,

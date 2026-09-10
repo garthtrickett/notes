@@ -220,13 +220,78 @@ describe("the dump view", () => {
 
   it("heads each day with its date, which is what makes the split reversible", async () => {
     const loop = await boot(deps(), root);
-    loop.propose({ kind: "hydrated", notes: [note("dump/2026-09-06.md")] });
+    // With something in it: a day that says nothing is not shown at all.
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("dump/2026-09-06.md", { body: "09:05 up\n" })],
+    });
     loop.propose({ kind: "modeChanged", mode: "dump" });
     await settle(loop);
 
     // The old view said "Today" for the live day. A heading in a document has
     // to name the file it stands for, or an edit cannot be written back.
     expect(root.querySelector("#editor-host")?.textContent).toContain("2026-09-06");
+  });
+
+  it("does not head a day that says nothing", async () => {
+    const loop = await boot(deps(), root);
+    // Today, deliberately: it is the one empty day the collector keeps, so
+    // this asks the filter rather than watching the collector do its work.
+    // An older empty day would be gone before the paint and the test would
+    // pass with the filter deleted.
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        note("dump/2026-09-05.md", { body: "09:05 yesterday\n" }),
+        note(dumpPathOf(NOON), { body: "" }),
+      ],
+    });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+
+    // An empty day file used to show as a bare heading that deleting could not
+    // remove: the delete emptied the file and the next paint composed the
+    // heading straight back from the note still sitting there.
+    const doc = root.querySelector("#editor-host")?.textContent ?? "";
+    expect(doc).toContain("2026-09-05");
+    expect(doc).not.toContain("2026-09-06");
+  });
+
+  it("collects an empty day file rather than leaving it in the vault", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        note("dump/2026-09-06.md", { body: "09:05 up\n" }),
+        note("dump/2026-08-14.md", { body: "" }),
+      ],
+    });
+    await settle(loop);
+    // Hiding it would only move the residue out of sight; a day file with no
+    // text is never state, so it should not survive.
+    expect(loop.model.notes.get("dump/2026-08-14.md")?.deleted).toBe(true);
+  });
+
+  it("does not collect today, even when it is empty", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note(dumpPathOf(NOON), { body: "" })] });
+    await settle(loop);
+    // Today is the day capture and the check-ins are about to write into, in a
+    // proposal after the one that creates the file. Collecting it is a race
+    // against work that has not happened yet, so it is simply not collected.
+    expect(loop.model.notes.get(dumpPathOf(NOON))?.deleted).toBe(false);
+  });
+
+  it("still lets capture build today from nothing", async () => {
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    for (const p of captureProposals(loop.model.notes, "a thought", () => NOON)) {
+      loop.propose(p);
+    }
+    await settle(loop);
+    const today = loop.model.notes.get(dumpPathOf(NOON));
+    expect(today?.deleted).toBe(false);
+    expect(today?.body).toContain("a thought");
   });
 
   it("shows a captured line without being asked to re-read the file", async () => {

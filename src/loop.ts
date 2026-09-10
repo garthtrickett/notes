@@ -22,7 +22,7 @@ import {
   type Proposal,
 } from "./model.ts";
 import { canInstall, downloadUpdate, installUpdate, openInstallSettings } from "./update.ts";
-import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
+import { composeDump, dumpEdits, dumpPathOf, dumpSpotAt, isDumpPath } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
@@ -403,6 +403,34 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       if (dirty.length > 0) {
         model.persisting = true;
         track(actions.persist(db, dirty).then(propose));
+        return;
+      }
+    }
+
+    // 1b. An empty dump day is residue, never state: a day file is only ever
+    //     created with something already in it. Left behind it is a file the
+    //     dump cannot remove, because dumpEdits loops over the days that exist
+    //     and only ever emits edits — deleting the heading empties the file and
+    //     the next paint composes it straight back.
+    //
+    //     Today is exempt. nap() runs at the end of every propose, and both
+    //     capture and the check-ins create the day file in one proposal before
+    //     writing to it in the next — so an empty today is a file something is
+    //     about to fill, and collecting it races work that has not happened
+    //     yet. Step 1 above happens to intervene on that exact path today, by
+    //     starting a persist and returning before this rule is reached; the
+    //     exemption is here so the rule does not depend on that ordering.
+    if (model.hydrated && !model.persisting) {
+      const today = dumpPathOf(now());
+      const residue = [...model.notes.values()].find(
+        (n) =>
+          !n.deleted &&
+          isDumpPath(n.path) &&
+          n.path !== today &&
+          n.body.trim() === "",
+      );
+      if (residue !== undefined) {
+        propose({ kind: "purged", path: residue.path });
         return;
       }
     }
