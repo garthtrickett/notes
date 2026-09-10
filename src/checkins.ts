@@ -1,9 +1,16 @@
-// The three daily email/Slack check-ins. Pure: slots in, state out, with no
-// knowledge of the model, the view, or how a reminder gets delivered.
+// The three daily email/Slack check-ins.
 //
-// Done-ness is per device, not per vault. Whether *this* phone reminded you is
-// not something another device needs to know, so it lives in localStorage
-// keyed by dump day rather than in a note or in IndexedDB.
+// Done-ness is a fact about the day, not about the device that noticed it, so
+// it lives where every other fact about the day lives: as ordinary task lines
+// at the top of that day's dump file. Ticking one is a one-character flip fed
+// back through the ordinary `edited` proposal, exactly like the Tasks tab —
+// which means persist, push, pull, undo and conflict handling all already know
+// what to do with it, and it reaches the other device for free.
+//
+// It used to live in localStorage, keyed by dump day. That was per device, and
+// the reason given was that a reminder is a local matter — but notify.ts
+// schedules all three slots on every boot and never reads done-ness, so the
+// tick suppressed nothing. It was a checklist pretending to be a reminder.
 
 import { dumpDayOf } from "./dump.ts";
 
@@ -37,28 +44,62 @@ export const stateOf = (
   return passed ? "due" : "upcoming";
 };
 
-const keyOf = (day: string): string => `notes.checkins.${day}`;
+// The label is the identity, because the label is what the file says. Renaming
+// a slot orphans its line rather than silently adopting it — the same bargain
+// the Tasks tab makes, and the honest one when the file is the truth.
+const LINE = /^- \[([ xX])\] (.+?)\s*$/;
 
-export const loadDone = (
-  storage: Pick<Storage, "getItem">,
-  now: number,
-): Set<string> => {
-  try {
-    const raw = storage.getItem(keyOf(dumpDayOf(now)));
-    if (raw === null) return new Set();
-    const ids: unknown = JSON.parse(raw);
-    if (!Array.isArray(ids)) return new Set();
-    return new Set(ids.filter((id): id is string => typeof id === "string"));
-  } catch {
-    // A corrupt value is a missed morning, not a crash.
-    return new Set();
+const slotOfLabel = (label: string): CheckinSlot | undefined =>
+  SLOTS.find((slot) => slot.label === label);
+
+export const checkinLine = (slot: CheckinSlot, done: boolean): string =>
+  `- [${done ? "x" : " "}] ${slot.label}`;
+
+// Which slots this day's body says are done. A slot with no line is not done;
+// nothing is written until the first tick, so an untouched day stays an
+// untouched file and two devices cannot race to seed one.
+export const doneIn = (body: string): Set<string> => {
+  const done = new Set<string>();
+  for (const line of body.split("\n")) {
+    const m = LINE.exec(line);
+    if (m === null) continue;
+    const slot = slotOfLabel(m[2] as string);
+    if (slot !== undefined && (m[1] as string) !== " ") done.add(slot.id);
   }
+  return done;
 };
 
-export const saveDone = (
-  storage: Pick<Storage, "setItem">,
-  now: number,
-  done: ReadonlySet<string>,
-): void => {
-  storage.setItem(keyOf(dumpDayOf(now)), JSON.stringify([...done]));
+// Flip one slot in one day's body. Lines that exist keep their order fixed to
+// SLOTS, so a day never ends up with evening above morning; everything else in
+// the file is left exactly where it was.
+export const toggleCheckin = (body: string, slot: CheckinSlot): string => {
+  const present = new Map<string, boolean>();
+  const rest: string[] = [];
+  for (const line of body.split("\n")) {
+    const m = LINE.exec(line);
+    const found = m === null ? undefined : slotOfLabel(m[2] as string);
+    if (m !== null && found !== undefined) {
+      present.set(found.id, (m[1] as string) !== " ");
+      continue;
+    }
+    rest.push(line);
+  }
+  // Absent means never ticked, so the first tick is what writes the line.
+  present.set(slot.id, !(present.get(slot.id) ?? false));
+
+  const head = SLOTS.filter((s) => present.has(s.id)).map((s) =>
+    checkinLine(s, present.get(s.id) as boolean),
+  );
+  // One trailing newline and no leading blank line: the shape dump.ts stores
+  // and compares against, so ticking a box cannot show up as a whitespace edit
+  // to the whole day.
+  const tail = rest.join("\n").replace(/^\s*\n+/, "").replace(/\s+$/, "");
+  if (head.length === 0) return tail === "" ? "" : `${tail}\n`;
+  return tail === ""
+    ? `${head.join("\n")}\n`
+    : `${head.join("\n")}\n\n${tail}\n`;
 };
+
+// Which day's file a check-in tapped now belongs to. One definition, shared
+// with capture, so the two can never disagree about where "today" is.
+export { dumpDayOf };

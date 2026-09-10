@@ -26,7 +26,7 @@ import {
   type Proposal,
 } from "./model.ts";
 import type { TreeNode } from "./tree.ts";
-import { SLOTS, stateOf } from "./checkins.ts";
+import { SLOTS, doneIn, stateOf, type CheckinSlot } from "./checkins.ts";
 import { dayOfPath, dumpPathOf, isDumpPath } from "./dump.ts";
 import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { mimeOf } from "./attachments.ts";
@@ -43,6 +43,9 @@ export interface ViewCtx {
   readonly propose: Propose;
   readonly now: () => number;
   readonly onCapture: (text: string) => void;
+  // A tick is an edit to today's dump file, so it needs the same two-proposal
+  // route as capture — the file may not exist until the first tick makes it.
+  readonly onCheckin: (slot: CheckinSlot) => void;
   readonly previewCache: PreviewCache;
   readonly media: Media;
   // Saving the vault config is ambient state, so it belongs to main rather than
@@ -476,14 +479,19 @@ const updateBanner = (model: Model, propose: Propose) => {
   return nothing;
 };
 
-const checkins = (model: Model, propose: Propose, now: number) => html`
+// Done-ness is read straight out of today's dump body, so this is a view of
+// the file rather than of anything the loop remembers. A day with no file yet
+// has no ticks, which is exactly what an untouched morning should look like.
+const checkins = (model: Model, ctx: ViewCtx, now: number) => {
+  const done = doneIn(model.notes.get(dumpPathOf(now))?.body ?? "");
+  return html`
   <ul class="checkins">
     ${SLOTS.map((slot) => {
-      const state = stateOf(slot, now, model.checkinsDone);
+      const state = stateOf(slot, now, done);
       const time = `${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}`;
       return html`<li class=${state}>
         <button
-          @click=${() => propose({ kind: "checkinToggled", id: slot.id })}
+          @click=${() => ctx.onCheckin(slot)}
           aria-pressed=${state === "done"}
           title=${`${slot.label}, ${time}`}
         >
@@ -494,15 +502,17 @@ const checkins = (model: Model, propose: Propose, now: number) => html`
     })}
   </ul>
 `;
+};
 
 const dumpView = (
   model: Model,
   propose: Propose,
   now: number,
   onCapture: (text: string) => void,
+  ctx: ViewCtx,
 ): TemplateResult => html`
   <div class="dump">
-    ${checkins(model, propose, now)}
+    ${checkins(model, ctx, now)}
     <div class="days">
       ${dumpDays(model).length === 0
         ? html`<p class="empty">Nothing captured yet.</p>`
@@ -1023,7 +1033,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
     return html`
       <main class="single">
         ${tabs(model, propose)}
-        ${dumpView(model, propose, now(), onCapture)}
+        ${dumpView(model, propose, now(), onCapture, ctx)}
         ${modal(model, propose, onCapture)}
         ${status(model)}
         ${updateBanner(model, propose)}

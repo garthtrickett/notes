@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { loadDone, saveDone, SLOTS, stateOf, type CheckinSlot } from "./checkins.ts";
+import { checkinLine, doneIn, SLOTS, stateOf, toggleCheckin, type CheckinSlot } from "./checkins.ts";
 
 const slot = (id: string): CheckinSlot => {
   const found = SLOTS.find((s) => s.id === id);
@@ -10,14 +10,6 @@ const slot = (id: string): CheckinSlot => {
 // 2026-09-06 is a Sunday; the dump day matches the calendar day here.
 const at = (h: number, m = 0): number =>
   new Date(`2026-09-06T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`).getTime();
-
-const mem = (): Pick<Storage, "getItem" | "setItem"> => {
-  const m = new Map<string, string>();
-  return {
-    getItem: (k: string) => (m.has(k) ? (m.get(k) as string) : null),
-    setItem: (k: string, v: string) => void m.set(k, v),
-  };
-};
 
 describe("check-in state", () => {
   it("is upcoming before its time", () => {
@@ -36,26 +28,66 @@ describe("check-in state", () => {
   });
 });
 
-describe("check-in storage", () => {
-  it("round-trips the done set for the day", () => {
-    const storage = mem();
-    expect(loadDone(storage, at(10, 0))).toEqual(new Set());
-    saveDone(storage, at(10, 0), new Set(["morning"]));
-    expect(loadDone(storage, at(15, 0))).toEqual(new Set(["morning"]));
+describe("reading done-ness out of a day's body", () => {
+  it("finds nothing in a day nobody has ticked", () => {
+    expect(doneIn("")).toEqual(new Set());
+    expect(doneIn("09:12 something\n")).toEqual(new Set());
   });
 
-  it("starts fresh on a new dump day", () => {
-    const storage = mem();
-    saveDone(storage, at(10, 0), new Set(["morning", "midday"]));
-    const next = at(10, 0) + 24 * 60 * 60 * 1000;
-    expect(loadDone(storage, next)).toEqual(new Set());
+  it("reads a ticked line and ignores an unticked one", () => {
+    const body = "- [x] Morning check-in\n- [ ] Evening check-in\n";
+    expect(doneIn(body)).toEqual(new Set(["morning"]));
   });
 
-  it("treats a corrupt value as nothing done", () => {
-    const storage = mem();
-    storage.setItem("notes.checkins.2026-09-06", "{broken");
-    expect(loadDone(storage, at(10, 0))).toEqual(new Set());
-    storage.setItem("notes.checkins.2026-09-06", '"just a string"');
-    expect(loadDone(storage, at(10, 0))).toEqual(new Set());
+  it("ignores tasks that are not check-ins", () => {
+    // The Tasks tab and the dump share these files. A todo written into the
+    // day must not light up a check-in.
+    expect(doneIn("- [x] buy milk\n")).toEqual(new Set());
+  });
+
+  it("accepts either case of the marker, as the markdown grammar does", () => {
+    expect(doneIn("- [X] Midday check-in\n")).toEqual(new Set(["midday"]));
+  });
+});
+
+describe("ticking a check-in in a day's body", () => {
+  it("writes the line on the first tick, so an untouched day stays untouched", () => {
+    // Nothing is seeded up front: two devices opening the dump on the same
+    // morning must not both create the same file.
+    expect(toggleCheckin("", slot("morning"))).toBe("- [x] Morning check-in\n");
+  });
+
+  it("flips a line that is already there", () => {
+    const on = toggleCheckin("", slot("morning"));
+    expect(doneIn(toggleCheckin(on, slot("morning")))).toEqual(new Set());
+  });
+
+  it("keeps the day's entries and puts the check-ins above them", () => {
+    const body = "09:12 wrote the thing\n10:40 and another\n";
+    const next = toggleCheckin(body, slot("midday"));
+    expect(next).toBe("- [x] Midday check-in\n\n09:12 wrote the thing\n10:40 and another\n");
+  });
+
+  it("holds the lines in slot order however they were ticked", () => {
+    let body = toggleCheckin("", slot("evening"));
+    body = toggleCheckin(body, slot("morning"));
+    expect(body.split("\n").slice(0, 2)).toEqual([
+      "- [x] Morning check-in",
+      "- [x] Evening check-in",
+    ]);
+  });
+
+  it("leaves other tasks in the day alone", () => {
+    const body = "- [ ] buy milk\n";
+    const next = toggleCheckin(body, slot("morning"));
+    expect(next).toBe("- [x] Morning check-in\n\n- [ ] buy milk\n");
+    expect(doneIn(next)).toEqual(new Set(["morning"]));
+  });
+
+  it("round-trips through the line it writes", () => {
+    for (const s of SLOTS) {
+      expect(doneIn(checkinLine(s, true))).toEqual(new Set([s.id]));
+      expect(doneIn(checkinLine(s, false))).toEqual(new Set());
+    }
   });
 });

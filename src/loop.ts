@@ -21,13 +21,13 @@ import {
   type Note,
   type Proposal,
 } from "./model.ts";
-import { loadDone, saveDone } from "./checkins.ts";
 import { canInstall, downloadUpdate, installUpdate, openInstallSettings } from "./update.ts";
 import { composeDump, dumpEdits, dumpSpotAt } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createTaskCache } from "./tasks.ts";
+import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
@@ -48,7 +48,6 @@ export interface Deps {
   // Check-in done-ness is per-device state in localStorage. Injected like the
   // config rather than reached for; absent (as in most tests) it simply does
   // not persist.
-  readonly storage?: Pick<Storage, "getItem" | "setItem">;
   // Where the app now is. The loop says it; whether that becomes a new history
   // entry or replaces the current one is not a decision it can make, so it
   // does not try to.
@@ -74,9 +73,8 @@ const MAX_BACKOFF_MS = 60_000;
 const QUIET_MS = 1_500;
 
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
-  const { db, github, now, schedule, shrink, storage } = deps;
+  const { db, github, now, schedule, shrink } = deps;
   const model = createModel();
-  if (storage !== undefined) model.checkinsDone = loadDone(storage, now());
   let wakeScheduled = false;
   // When each note was last typed into. Bookkeeping about the loop rather than
   // about notes — the same reason the backoff lives here and not in present(),
@@ -128,6 +126,12 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
 
   const capture = (text: string) => {
     for (const p of actions.captureProposals(model.notes, text, now)) propose(p);
+  };
+
+  // Ticking a check-in is an edit to today's dump file and nothing else, so it
+  // takes capture's route rather than growing a proposal of its own.
+  const checkin = (slot: CheckinSlot) => {
+    for (const p of actions.checkinProposals(model.notes, slot, now)) propose(p);
   };
 
   // Where the caret is differs by surface; what to do with a pasted image does
@@ -245,6 +249,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         propose,
         now,
         onCapture: capture,
+        onCheckin: checkin,
         previewCache,
         media,
         tasks,
@@ -526,12 +531,6 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       // without making them tap Update again.
       track(beginUpdate());
     }
-    // Done-ness outlives the reload, so it is written on every toggle — after
-    // present(), which is what actually flips the set. A write here rather
-    // than in present() for the same reason as the touched map: present() has
-    // no clock and should not be given one.
-    if (p.kind === "checkinToggled" && rejection === null && storage !== undefined)
-      saveDone(storage, now(), model.checkinsDone);
     if (rejection !== null && import.meta.env.DEV) {
       // A rejection used to vanish. It is almost always a bug in the caller —
       // proposing against a note that is gone — and finding it by watching the

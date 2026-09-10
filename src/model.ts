@@ -26,7 +26,6 @@ import {
   unfiledPath,
   uniquePath,
 } from "./paths.ts";
-import { SLOTS } from "./checkins.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
@@ -110,7 +109,6 @@ export interface Model {
   // Check-ins ticked off today. Device-local rather than vault state — whether
   // this phone reminded you is not something another device needs to know — so
   // it lives in localStorage, loaded at boot and written on every toggle.
-  checkinsDone: Set<string>;
   // Self-update state. Device-local like the check-ins: the installed build
   // and its download belong to this phone, not the vault.
   update: UpdateInfo;
@@ -182,7 +180,6 @@ export const createModel = (): Model => ({
   history: null,
   paletteIndex: 0,
   expanded: new Set(),
-  checkinsDone: new Set(),
   update: idleUpdate,
   numberScope: null,
   drag: null,
@@ -237,7 +234,6 @@ export type Proposal =
   | { readonly kind: "folderMoved"; readonly from: string; readonly to: string }
   // Which top-level row, counting from zero, as shown in the tree.
   | { readonly kind: "jumped"; readonly index: number }
-  | { readonly kind: "checkinToggled"; readonly id: string }
   | { readonly kind: "updateFound"; readonly version: number; readonly url: string }
   | { readonly kind: "updateDismissed" }
   | { readonly kind: "updateStarted" }
@@ -694,15 +690,6 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
-    case "checkinToggled": {
-      // Toggling is the whole behaviour, so an unknown id is a caller bug
-      // rather than something to absorb silently.
-      if (!SLOTS.some((slot) => slot.id === p.id))
-        return reject(`Unknown check-in: ${p.id}`);
-      if (m.checkinsDone.has(p.id)) m.checkinsDone.delete(p.id);
-      else m.checkinsDone.add(p.id);
-      return null;
-    }
     case "updateFound": {
       // A newer build than the dismissed one re-opens the question; the same
       // one stays dismissed.

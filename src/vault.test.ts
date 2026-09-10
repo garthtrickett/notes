@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { openDb } from "./idb.ts";
 import { boot, type Deps, type Loop } from "./loop.ts";
 import { createModel, dumpDays, present, visible, type Note } from "./model.ts";
-import { dumpEdits } from "./dump.ts";
-import { captureProposals } from "./actions.ts";
+import { dumpEdits, dumpPathOf } from "./dump.ts";
+import { captureProposals, checkinProposals } from "./actions.ts";
+import { doneIn, SLOTS, type CheckinSlot } from "./checkins.ts";
 
 let db: IDBDatabase | undefined;
 let root: HTMLElement;
@@ -546,32 +547,32 @@ describe("creating from the dump", () => {
 });
 
 describe("check-ins across a reload", () => {
-  const mem = (): Pick<Storage, "getItem" | "setItem"> & { raw(): string | null } => {
-    const m = new Map<string, string>();
-    return {
-      getItem: (k: string) => (m.has(k) ? (m.get(k) as string) : null),
-      setItem: (k: string, v: string) => void m.set(k, v),
-      raw: () => m.get("notes.checkins.2026-09-06") ?? null,
-    };
-  };
-
-  it("writes localStorage on toggle and reads it back on boot", async () => {
-    const storage = mem();
-    const first = await boot({ ...deps(), storage }, root);
+  it("writes today's dump file, so a reboot reads the tick back", async () => {
+    const first = await boot(deps(), root);
     await settle(first);
-    first.propose({ kind: "checkinToggled", id: "morning" });
-    expect(storage.raw()).toBe('["morning"]');
+    for (const p of checkinProposals(first.model.notes, SLOTS[0] as CheckinSlot, () => NOON)) {
+      first.propose(p);
+    }
+    await settle(first);
+    const path = dumpPathOf(NOON);
+    expect(first.model.notes.get(path)?.body).toContain("- [x] Morning check-in");
 
-    const second = await boot({ ...deps(), storage }, root);
+    // Survives because it is a note, through the same IndexedDB every other
+    // note uses. The old localStorage route was never wired into main.ts at
+    // all, so a tick did not even outlive a reload.
+    const second = await boot(deps(), root);
     await settle(second);
-    expect(second.model.checkinsDone.has("morning")).toBe(true);
+    expect(doneIn(second.model.notes.get(path)?.body ?? "")).toEqual(
+      new Set(["morning"]),
+    );
   });
 
-  it("does not persist when no storage is injected", async () => {
+  it("does not touch the vault until the first tick", async () => {
     const loop = await boot(deps(), root);
     await settle(loop);
-    loop.propose({ kind: "checkinToggled", id: "morning" });
-    expect(loop.model.checkinsDone.has("morning")).toBe(true);
+    // Seeding three lines on sight of the dump would have both devices
+    // creating the same file on the same morning.
+    expect(loop.model.notes.get(dumpPathOf(NOON))).toBeUndefined();
   });
 });
 

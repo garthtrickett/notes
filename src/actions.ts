@@ -11,6 +11,7 @@ import * as idb from "./idb.ts";
 import type { Encoding, Note, NoteRecord, Proposal } from "./model.ts";
 import type { Github, SyncError } from "./github.ts";
 import { appendEntry, dumpPathOf } from "./dump.ts";
+import { toggleCheckin, type CheckinSlot } from "./checkins.ts";
 import {
   attachmentPath,
   base64Of,
@@ -313,6 +314,29 @@ export const captureProposals = (
   return [
     { kind: "edited", path, body: appendEntry(existing.body, text, at) },
   ];
+};
+
+// Ticking a check-in is capture's shape: the day file may not exist yet, and
+// the first tick is what creates it. Nothing is written before that, so two
+// devices opening the dump on the same morning do not race to seed a file.
+export const checkinProposals = (
+  notes: ReadonlyMap<string, Note>,
+  slot: CheckinSlot,
+  now: () => number,
+): Proposal[] => {
+  const at = now();
+  const path = dumpPathOf(at);
+  const existing = notes.get(path);
+
+  if (!existing || existing.deleted) {
+    return [
+      { kind: "created", path },
+      { kind: "edited", path, body: toggleCheckin("", slot) },
+    ];
+  }
+  const body = toggleCheckin(existing.body, slot);
+  if (body === existing.body) return [];
+  return [{ kind: "edited", path, body }];
 };
 
 export const attach = async (
