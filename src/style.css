@@ -306,6 +306,10 @@ not about wherever you are. */
    knows the other. Done rows hide in a native disclosure: no state to keep,
    and reopening is the same toggle coming back. */
 .tasks { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; height: calc(100dvh - 68px); overflow-y: auto; }
+/* Triage header: how much is open, and the one switch for everything
+   finished. Done stays off the page unless asked for. */
+.tasks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tasks-head > span { font-size: 13px; color: var(--muted); }
 .taskgroup h2 {
   margin: 0 0 6px;
   font-size: 13px;

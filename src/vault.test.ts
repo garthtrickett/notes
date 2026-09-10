@@ -556,7 +556,7 @@ describe("tasks on screen", () => {
       done: g.querySelector("details summary")?.textContent ?? null,
     }));
 
-  it("lists open boxes grouped by note with counts", async () => {
+  it("lists open boxes grouped by note with counts, done hidden", async () => {
     const loop = await boot(deps(), root);
     loop.propose({
       kind: "hydrated",
@@ -569,11 +569,34 @@ describe("tasks on screen", () => {
     await toTasks(loop);
 
     const groups = boxes();
-    expect(groups.map((g) => g.head)).toEqual(["a.md — 2/2", "b.md — 0/1"]);
+    // Done-only notes stay off the page until asked for.
+    expect(groups.map((g) => g.head)).toEqual(["a.md — 2/2"]);
     expect(groups[0]?.open.length).toBe(2);
-    // Done-only notes contribute only their collapsed section.
-    expect(groups[1]?.open.length).toBe(0);
+    expect(root.querySelector(".taskgroup details")).toBeNull();
+    expect(root.querySelector(".tasks-head span")?.textContent).toContain("2 open");
+    expect(root.querySelector(".tasks-head button")?.textContent).toContain("Show done");
+  });
+
+  it("shows done work on toggle, per group", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [
+        note("b.md", { body: "- [x] done\n" }),
+        note("a.md", { body: "- [ ] one\n- [x] old\n" }),
+      ],
+    });
+    await settle(loop);
+    await toTasks(loop);
+
+    (root.querySelector(".tasks-head button") as HTMLButtonElement).click();
+    await settle(loop);
+
+    const groups = boxes();
+    expect(groups.map((g) => g.head)).toEqual(["a.md — 1/2", "b.md — 0/1"]);
+    expect(groups[0]?.done).toContain("Done (1)");
     expect(groups[1]?.done).toContain("Done (1)");
+    expect(root.querySelector(".tasks-head button")?.textContent).toContain("Hide done");
   });
 
   it("ticking a box flips it in the source note", async () => {
@@ -591,8 +614,12 @@ describe("tasks on screen", () => {
     await settle(loop);
 
     expect(loop.model.notes.get("a.md")?.body).toBe("- [x] milk\n");
-    // The row moved from the open list into the done section.
+    // The row left the open list; done stays hidden until toggled.
     expect(root.querySelectorAll(".taskgroup > ul input").length).toBe(0);
+    expect(root.querySelector(".taskgroup details")).toBeNull();
+
+    (root.querySelector(".tasks-head button") as HTMLButtonElement).click();
+    await settle(loop);
     expect(root.querySelector(".taskgroup details summary")?.textContent).toContain("Done (1)");
   });
 

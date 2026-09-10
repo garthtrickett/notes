@@ -554,12 +554,30 @@ const tasksView = (model: Model, ctx: ViewCtx) => {
     </button>
   </li>`;
   const groups = tasksInVault(model.notes, tasks);
+  const openGroups = groups.filter((g) => g.refs.some((r) => !r.done));
+  const shown = model.showDone ? groups : openGroups;
   if (groups.length === 0) return html`<p class="empty">No open tasks.</p>`;
+  const openTotal = groups.reduce(
+    (n, g) => n + g.refs.filter((r) => !r.done).length,
+    0,
+  );
   return html`
     <div class="tasks">
-      ${groups.map(({ path, refs }) => {
+      <div class="tasks-head">
+        <span>${openTotal} open</span>
+        <button
+          class="toggle"
+          title="Show or hide finished tasks"
+          @click=${() => propose({ kind: "doneVisibilityToggled" })}
+        >
+          ${model.showDone ? "Hide done" : "Show done"}
+        </button>
+      </div>
+      ${shown.length === 0
+        ? html`<p class="empty">No open tasks.</p>`
+        : shown.map(({ path, refs }) => {
         const open = refs.filter((r) => !r.done);
-        const shut = refs.filter((r) => r.done);
+        const shut = model.showDone ? refs.filter((r) => r.done) : [];
         return html`<section class="taskgroup">
           <h2>${path} — ${open.length}/${refs.length}</h2>
           ${open.length > 0

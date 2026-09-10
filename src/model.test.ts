@@ -883,6 +883,17 @@ describe("check-in toggles", () => {
   });
 });
 
+describe("done visibility", () => {
+  it("starts hidden and toggles", () => {
+    const m = createModel();
+    expect(m.showDone).toBe(false);
+    expect(present(m, { kind: "doneVisibilityToggled" })).toBeNull();
+    expect(m.showDone).toBe(true);
+    expect(present(m, { kind: "doneVisibilityToggled" })).toBeNull();
+    expect(m.showDone).toBe(false);
+  });
+});
+
 describe("self-update state", () => {
   it("offers, downloads, and stands down", () => {
     const m = createModel();

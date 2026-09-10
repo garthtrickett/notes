@@ -92,10 +92,15 @@ kind, it has stopped being this spec.
 - Shortcut: `K` (mnemonic: tasKs; `T` is Trash). Same rules as the rest —
   dead while typing, dead behind a modal, added to `keys.ts` + its tests.
 - Row layout, per group: group header is the note path as plain text with its
-  count (`inbox.md — 2/5`); under it one row per open task, then a collapsed
-  native `<details>` holding the done rows (`<summary>Done (3)</summary>`):
-  no UI state to model, accessible by default, reopening by the same toggle.
-  A done-only note contributes a group with only its collapsed section.
+  count (`inbox.md — 2/5`); under it one row per open task.
+- Done work lives behind one toggle, default off: a header row (`12 open` +
+  `Show done`) sits above the list, and `doneVisibilityToggled` flips a
+  `showDone` boolean — the spec's only model addition, mirroring
+  `previewToggled`. Hidden means hidden: done rows and done-only groups
+  leave the page entirely until asked for. The header stays even when
+  everything is ticked off, so the way back never strands; session state,
+  so a fresh boot opens clean. (First shipped as always-visible collapsed
+  sections; a vault with a busy history proved that a wall.)
 - Groups sort open-first, done-only notes last — alphabetical history must
   never bury live work — alphabetical inside each band. Tasks within a group
   sort by file offset (document order). No undated/dated split — v1 has no
@@ -127,15 +132,20 @@ the next paint with no invalidation protocol.
 
 Unchanged:
 
-- `model.ts`: no new `Proposal`, no new state, no `present()` case.
-- `loop.ts`: no new branch, no editor calls. (Jump-to-task would need the
-  loop — that is v1.1, §9.)
+- `loop.ts`: no new branch, no editor calls. (Caret-precise jump would need
+  the loop — that is v1.1, §9.)
 - Sync, persist, conflicts, outbox: untouched — toggle traffic is `edited`
   traffic.
 - `checkins.ts` / `notify.ts`: untouched. Reminders are the check-ins
   generalization spec, which consumes this scanner but changes nothing here.
 - `keys.ts` gains one case; everything else about input stays.
 - `url.ts`: untouched — like dump/archive/trash, tasks mode is root `/`.
+
+Changed, minimally and only this:
+
+- `model.ts`: `showDone` boolean + `doneVisibilityToggled` case — the one
+  exception to "no model change", taken because the alternative (DOM-kept
+  toggle state) wipes on every mode switch.
 
 Touched, exhaustively (verified: these are the only sites that switch on
 `Mode` or render tabs):
@@ -148,7 +158,7 @@ Touched, exhaustively (verified: these are the only sites that switch on
 - `keys.ts` — `case "k"` proposing `modeChanged: tasks`.
 - `style.css` — task list, rows, native-checkbox sizing, empty state.
 - Tests: `tasks.test.ts` (new), `loop.test.ts`, `vault.test.ts`,
-  `keys.test.ts`.
+  `keys.test.ts`, `model.test.ts` (toggle starts hidden and flips).
 
 ## 7. Edge cases (decided, not deferred)
 
@@ -188,11 +198,12 @@ Touched, exhaustively (verified: these are the only sites that switch on
   exact proposal the button will send) — model, persist and echo behave;
   this pins the contract §3 relies on without testing the button through it.
 - DOM test (`vault.test.ts`, beside "check-ins on screen"): hydrate notes
-  with boxes, go to tasks mode, assert groups/rows/counts; the done
-  `<details>` holds done rows collapsed; click an open checkbox, settle,
-  assert the source note body flipped and the row moved into the done
-  section; reopen it there and it moves back; click a title, assert the
-  note opened; assert empty state.
+  with boxes, go to tasks mode, assert open groups/counts with done hidden
+  and done-only notes absent; toggle on, assert done rows and done-only
+  groups appear; tick a box and it leaves the page until toggled; reopen it
+  from the done list; click a title, assert the note opened; assert both
+  empty states (nothing at all, and everything ticked off with the header
+  still offering the way back).
 - `keys.test.ts`: `K` proposes `modeChanged: tasks` outside inputs, silent
   while typing or behind a modal.
 - Full suite + typecheck + build stay green; no new dependencies.
@@ -213,12 +224,13 @@ Touched, exhaustively (verified: these are the only sites that switch on
 
 ## 10. Acceptance
 
-- Phone, airplane mode, 500-note vault: Tasks tab lists every open box
-  grouped by note with correct counts; tapping a box ticks it; tapping a
-  title opens its note; done rows sit collapsed per group and reopen from
-  there; reopening the source note shows the tick; killing and relaunching
-  loses nothing.
-- Desktop: `K` opens the mode; boxes tick; done-only notes show only their
-  collapsed section; empty vault says `No open tasks.`
+- Phone, airplane mode, 500-note vault: Tasks tab lists open boxes grouped
+  by note with correct counts and no done anywhere; Show done reveals per-group
+  collapsed done rows and done-only groups; tapping a box ticks it off the
+  page; tapping a title opens its note; reopening the source note shows the
+  tick; killing and relaunching loses nothing and reopens clean.
+- Desktop: `K` opens the mode; boxes tick; ticking the last open box leaves
+  the header offering Show done rather than stranding; empty vault says
+  `No open tasks.`
 - A box ticked in the note editor vanishes from the list on next paint.
 - `bun test`, `tsc --noEmit`, `bun run build`, `git diff --check` green.

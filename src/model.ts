@@ -91,6 +91,10 @@ export interface Model {
   openPath: string | null;
   mode: Mode;
   preview: boolean;
+  // Whether the tasks tab shows done work. Off by default: triage is open
+  // work, and done is one tap away. Session state like preview — a fresh
+  // boot opens clean.
+  showDone: boolean;
   query: string;
   // At most one floating box at a time. One field rather than a boolean each, so
   // opening, dismissing and focusing are one rule instead of one per modal.
@@ -168,6 +172,7 @@ export const createModel = (): Model => ({
   openPath: null,
   mode: "notes",
   preview: false,
+  showDone: false,
   query: "",
   modal: null,
   history: null,
@@ -246,6 +251,7 @@ export type Proposal =
   | { readonly kind: "resumed" }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
   | { readonly kind: "previewToggled" }
+  | { readonly kind: "doneVisibilityToggled" }
   | { readonly kind: "searched"; readonly query: string }
   | { readonly kind: "modalOpened"; readonly modal: Modal }
   | { readonly kind: "modalClosed" }
@@ -889,6 +895,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
 
     case "previewToggled": {
       m.preview = !m.preview;
+      return null;
+    }
+    case "doneVisibilityToggled": {
+      m.showDone = !m.showDone;
       return null;
     }
 
