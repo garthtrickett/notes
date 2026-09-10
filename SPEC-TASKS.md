@@ -60,9 +60,12 @@ export interface TaskRef {
   is hundreds of files and paints happen per keystroke. Bodies are immutable
   strings, so identity comparison is the invalidation — no version counter,
   no model change.
-- Trash and archive are scanned like everything else: a task is a task, and
-  the group header names its file. (Deleting the file still deletes its
-  tasks; the view never resurrects anything.)
+- Trash (`.trash/`), archive (`.archive/`) and tombstones (`deleted`) are not
+  triage and are never scanned: ticking a box in a deleted file is editing
+  nowhere, and dot-paths would sort above everything live. (An earlier draft
+  scanned everything; a vault with a busy bin proved that wrong — deleted
+  files sat on the first screen.) Deleting a live file still deletes its
+  tasks, by virtue of there being no other record of them.
 
 ## 3. Toggle — no model change, no loop change
 

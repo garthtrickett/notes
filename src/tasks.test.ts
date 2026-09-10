@@ -12,7 +12,7 @@ import {
 } from "./tasks.ts";
 import type { Note } from "./model.ts";
 
-const note = (body: string): Note => ({
+const note = (body: string, extra: Partial<Note> = {}): Note => ({
   path: "",
   body,
   baseSha: null,
@@ -20,6 +20,7 @@ const note = (body: string): Note => ({
   deleted: false,
   dirty: false,
   encoding: "utf8",
+  ...extra,
 });
 
 describe("tasksIn", () => {
@@ -135,6 +136,17 @@ describe("tasksInVault", () => {
     ]);
     const groups = tasksInVault(notes, createTaskCache());
     expect(groups.map((g) => g.path)).toEqual(["a.md", "dev/old.md"]);
+  });
+
+  test("trash, archive and tombstones are not triage", () => {
+    const notes = new Map<string, Note>([
+      [".trash/gone.md", note("- [ ] buried\n")],
+      [".archive/old.md", note("- [ ] filed\n")],
+      ["gone.md", note("- [ ] doomed\n", { deleted: true })],
+      ["a.md", note("- [ ] live\n")],
+    ]);
+    const groups = tasksInVault(notes, createTaskCache());
+    expect(groups.map((g) => g.path)).toEqual(["a.md"]);
   });
 });
 

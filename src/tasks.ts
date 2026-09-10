@@ -9,6 +9,7 @@
 
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import type { Note } from "./model.ts";
+import { isArchivePath, isTrashPath } from "./paths.ts";
 
 export interface TaskRef {
   // Vault path of the file holding the box.
@@ -56,15 +57,16 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
 // Every note holding at least one box: open work first, done-only notes
 // last, alphabetical inside each band. Dump days are ordinary files here —
 // no composing, no sections: each day's stored body scans and flips on its
-// own, so the toggle never touches the editor's composite document. Trash
-// and archive scan like everything else; deleting the file still deletes
-// its tasks.
+// own, so the toggle never touches the editor's composite document. Trash,
+// archive and tombstones are not triage: ticking a box in a deleted file is
+// editing nowhere, and dot-paths would sort above everything live.
 export const tasksInVault = (
   notes: ReadonlyMap<string, Note>,
   cache: TaskCache,
 ): { path: string; refs: TaskRef[] }[] => {
   const groups: { path: string; refs: TaskRef[] }[] = [];
   for (const [path, note] of notes) {
+    if (note.deleted || isTrashPath(path) || isArchivePath(path)) continue;
     const refs = cache.forNote(path, note.body);
     if (refs.length > 0) groups.push({ path, refs });
   }
