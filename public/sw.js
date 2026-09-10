@@ -60,6 +60,22 @@ const pruneAssets = async (response) => {
   return response;
 };
 
+// Tapping a reminder should land you in the app, not open a second copy of it.
+// An existing tab is focused if there is one; only otherwise is a window opened.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        for (const client of clients) {
+          if ("focus" in client) return client.focus();
+        }
+        return self.clients.openWindow("/");
+      }),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;

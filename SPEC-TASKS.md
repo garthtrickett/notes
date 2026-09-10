@@ -265,9 +265,29 @@ as not firing. The stamp is anchored to whitespace at both ends, so
 
 ### What actually rings
 
-Android only. The web — PWA included — has no scheduled notification without a
-server to push from, and the loop skips the reminder scan there rather than
-building a set nobody can deliver.
+**Android:** the set is handed to the OS, which delivers it with the app
+closed, the phone locked and no network.
+
+**Web:** timers in the page, which deliver while a tab is open and not
+otherwise. No server is involved — a page may call `showNotification` whenever
+it likes. What the web cannot do is wake code at a chosen minute with
+everything closed:
+
+- `TimestampTrigger` / Notification Triggers was exactly that API and never
+  shipped — `undefined` in Chrome 152, measured rather than remembered.
+- `periodicSync` can wake a service worker, but at the browser's discretion
+  and hours wide, which is not a reminder.
+- Push can wake one at any moment, and *that* is the part that would need a
+  server to do the pushing.
+
+A timer is capped at `setTimeout`'s signed 32-bit delay, about 24.8 days.
+Beyond that it does not fire late, it fires *immediately*, so anything further
+out is left unarmed and picked up on a later visit.
+
+Notification permission is asked for on the gesture that sets a reminder, not
+on boot: an unprompted permission dialog is the fastest way to be denied
+permanently. Both paths report whether they took the set, so the calls that
+happen before the answer arrives are retried rather than recorded.
 
 The OS holds the alarms; the notes decide what they should be. The set is
 rebuilt from scratch whenever it changes: open tasks, with a time, still in the

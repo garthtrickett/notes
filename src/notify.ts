@@ -70,10 +70,23 @@ export const syncCheckinNotifications = async (
 // Task reminders live above the check-ins' id range, so each can be cancelled
 // and rebuilt without touching the other. `getPending` is the only way to find
 // out what we scheduled in a previous run of the app, and it only reports ids.
-// The web has no scheduled notification without a server to push from, so the
-// loop skips the whole reminder scan there rather than building a set nobody
-// can deliver.
-export const remindersDeliverable = (): boolean => Capacitor.isNativePlatform();
+// Android hands the set to the OS, which delivers it with the app closed. The
+// web arms timers in the page, which delivers it with a tab open and not
+// otherwise — see syncWebReminders for why that is the ceiling rather than a
+// shortcut. Either way there is something worth computing the set for.
+export const remindersDeliverable = (): boolean =>
+  Capacitor.isNativePlatform() || typeof Notification === "function";
+
+// Asked for at the moment a reminder is set, which is a gesture, rather than on
+// boot — a permission prompt nobody asked for is the fastest way to have it
+// denied for good.
+export const askToRemind = async (): Promise<boolean> => {
+  if (Capacitor.isNativePlatform()) return true;
+  if (typeof Notification !== "function") return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  return (await Notification.requestPermission()) === "granted";
+};
 
 const TASK_ID_FLOOR = 1000;
 const TASK_ID_CEILING = 2_000_000_000;
@@ -138,5 +151,69 @@ export const syncTaskReminders = async (
       extra: { task: ref.path },
     })),
   });
+  return true;
+};
+
+// The web half, and the honest shape of it.
+//
+// There is no server here and none is needed: a page can call
+// registration.showNotification whenever it likes. What the web cannot do is
+// wake code at a chosen minute with everything closed. Notification Triggers
+// (TimestampTrigger) was the API for exactly that and never shipped —
+// undefined in Chrome 152, measured, not remembered. periodicSync can wake a
+// service worker but at the browser's discretion, hours wide, which is not a
+// reminder. Push can wake one at any moment, and that is the part that needs a
+// server to do the pushing.
+//
+// So: timers in the page, which fire while a tab is open. That is a real
+// capability worth having on a laptop that sits open all day, and it is
+// strictly less than what Android gives. Nothing pretends otherwise.
+let timers: ReturnType<typeof setTimeout>[] = [];
+
+// setTimeout tops out at a signed 32-bit millisecond delay — about 24.8 days —
+// and silently fires immediately if given more. Anything further out is left
+// unarmed rather than fired now; the app will arm it on a later visit, and a
+// tab that has been open for 25 days is not the case to design around.
+const MAX_DELAY = 2_147_483_647;
+
+// Separated from the arming so the rule can be checked without a clock: a
+// delay past MAX_DELAY overflows setTimeout's signed 32-bit argument and fires
+// *immediately* rather than late, which would turn a reminder for next year
+// into an alarm the moment you open the tab.
+export const armableReminders = (
+  refs: readonly TaskRef[],
+  now: number,
+): TaskRef[] =>
+  dueReminders(refs, now).filter((r) => (r.remindAt as number) - now <= MAX_DELAY);
+
+const showOne = async (ref: TaskRef): Promise<void> => {
+  const reg = await navigator.serviceWorker?.getRegistration();
+  const options = { body: ref.path, tag: `task-${reminderId(ref)}`, requireInteraction: false };
+  // Through the service worker where there is one: it is the only route that
+  // works on Android Chrome, and it is what makes a tap able to focus the tab
+  // rather than open a second copy.
+  if (reg) await reg.showNotification(ref.title, options);
+  else new Notification(ref.title, options);
+};
+
+export const clearWebReminders = (): void => {
+  for (const t of timers) clearTimeout(t);
+  timers = [];
+};
+
+export const syncWebReminders = (
+  refs: readonly TaskRef[],
+  now: number,
+): boolean => {
+  if (Capacitor.isNativePlatform()) return false;
+  if (typeof Notification !== "function") return false;
+  // Not granted yet is not a failure to record — say undelivered so the caller
+  // asks again once the answer arrives.
+  if (Notification.permission !== "granted") return false;
+
+  clearWebReminders();
+  for (const ref of armableReminders(refs, now)) {
+    timers.push(setTimeout(() => void showOne(ref), (ref.remindAt as number) - now));
+  }
   return true;
 };

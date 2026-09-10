@@ -27,7 +27,7 @@ import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createTaskCache, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
-import { remindersDeliverable, syncTaskReminders } from "./notify.ts";
+import { askToRemind, remindersDeliverable, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
@@ -141,7 +141,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     const body = model.notes.get(ref.path)?.body;
     if (body === undefined) return;
     const next = setReminder(body, ref, at);
-    if (next !== body) propose({ kind: "edited", path: ref.path, body: next });
+    if (next === body) return;
+    propose({ kind: "edited", path: ref.path, body: next });
+    // Setting one is the gesture that earns the right to ask. The answer moves
+    // nothing in the model — napReminders is already retrying until something
+    // accepts the set — so it is proposed back only to re-run that.
+    if (at !== null) {
+      track(askToRemind().then(() => propose({ kind: "woke" })));
+    }
   };
 
   // Where the caret is differs by surface; what to do with a pasted image does
@@ -412,6 +419,12 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // the answer arrives later, so the first attempts here are refused —
     // caching the key on one of those would leave every reminder unscheduled
     // for the rest of the session.
+    // Android hands the set to the OS; the web arms timers in this page. Both
+    // report whether they took it, and only then is the set recorded.
+    if (syncWebReminders(refs, now())) {
+      lastReminderKey = key;
+      return;
+    }
     track(
       syncTaskReminders(refs, now()).then((delivered) => {
         if (delivered) lastReminderKey = key;

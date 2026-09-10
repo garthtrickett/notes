@@ -5,7 +5,7 @@
 import { describe, expect, it, test } from "bun:test";
 import { spansFor } from "./decorate.ts";
 import { createTaskCache, flipTask, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
-import { dueReminders, reminderId, syncTaskReminders } from "./notify.ts";
+import { armableReminders, dueReminders, reminderId, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import { SLOTS } from "./checkins.ts";
 import type { Note } from "./model.ts";
 
@@ -272,5 +272,46 @@ describe("delivering the set to the OS", () => {
     // never received — which is also what an early call, before the permission
     // answer lands, would do.
     expect(await syncTaskReminders([], Date.now())).toBe(false);
+  });
+});
+
+describe("arming a timer in the page", () => {
+  const now = new Date("2026-09-10T12:00:00").getTime();
+  const ref = (over: Partial<TaskRef>): TaskRef => ({
+    path: "a.md", from: 0, marker: 3, done: false, title: "t",
+    remindAt: null, titleFrom: 5, titleTo: 6, ...over,
+  });
+
+  it("arms one inside setTimeout's range", () => {
+    expect(armableReminders([ref({ remindAt: now + 86_400_000 })], now).length).toBe(1);
+  });
+
+  it("leaves a far-off one unarmed rather than firing it now", () => {
+    // setTimeout takes a signed 32-bit delay — about 24.8 days — and a larger
+    // one does not fire late, it fires immediately. A reminder for next year
+    // would go off the moment the tab opened.
+    const year = now + 365 * 86_400_000;
+    expect(dueReminders([ref({ remindAt: year })], now).length).toBe(1);
+    expect(armableReminders([ref({ remindAt: year })], now).length).toBe(0);
+  });
+
+  it("declines while the permission answer is still outstanding", () => {
+    // Permission is asked for on the gesture that sets a reminder, so the
+    // calls before the answer lands must say undelivered. Recording the set on
+    // one of those leaves every reminder unarmed for the rest of the session.
+    const slot = globalThis as { Notification?: unknown };
+    const original = slot.Notification;
+    slot.Notification = Object.assign(function stub() {}, { permission: "default" });
+    try {
+      expect(syncWebReminders([ref({ remindAt: now + 1000 })], now)).toBe(false);
+    } finally {
+      slot.Notification = original;
+    }
+  });
+
+  it("declines to record a delivery it cannot make", () => {
+    // No Notification in this environment, which is the same answer as
+    // permission not granted yet: say undelivered so the caller asks again.
+    expect(syncWebReminders([ref({ remindAt: now + 1000 })], now)).toBe(false);
   });
 });
