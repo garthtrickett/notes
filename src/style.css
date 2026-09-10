@@ -280,8 +280,12 @@ main:not(.single) section { flex-direction: column; }
    row of tabs — on a phone they wrap to two, and the last 50px of the list sat
    under this `overflow: hidden`, unreachable no matter how far you scrolled. */
 main.single { display: flex; flex-direction: column; height: 100dvh; padding: 12px; overflow: hidden; }
+/* `width: 100%` on the three children below is load-bearing, not decoration: an
+   auto margin in a flex container's cross axis makes the item shrink to its
+   content, so `margin: 0 auto` alone sized the column to the longest line and
+   the whole middle narrowed when the text did. */
 main.single > .tabs { flex: none; }
-main.single .tabs { max-width: 720px; margin: 0 auto 12px; }
+main.single .tabs { width: 100%; max-width: 720px; margin: 0 auto 12px; }
 /* The day's check-ins. Above the scroll, outside the editor: done-ness is UI
 state about today, not text in any file. A due check-in is the only thing here
 allowed to raise its voice. */
@@ -305,12 +309,12 @@ allowed to raise its voice. */
 not about wherever you are. */
 .update { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .update button { flex: none; }
-.dump { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: 720px; margin: 0 auto; }
+.dump { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; max-width: 720px; margin: 0 auto; }
 /* Every open box, grouped by file. Rows reuse the check-in shape — a 22px
    target beside a full-width button — so a thumb trained on one already
    knows the other. Done rows hide in a native disclosure: no state to keep,
    and reopening is the same toggle coming back. */
-.tasks { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; flex: 1; min-height: 0; overflow-y: auto; }
+.tasks { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 720px; margin: 0 auto; flex: 1; min-height: 0; overflow-y: auto; }
 /* A group is as tall as its rows. `section { min-height: 0 }` above — set so
    the two-pane grid would scroll — also turns off a flex item's automatic
    minimum size, and a taskgroup is a section. Inside a height-bounded column
