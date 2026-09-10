@@ -2,14 +2,11 @@
 // Task nodes from the same parser. These pin the contract — what counts,
 // where the flip lands, and how the vault groups.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
 import { spansFor } from "./decorate.ts";
-import {
-  createTaskCache,
-  flipTask,
-  tasksIn,
-  tasksInVault,
-} from "./tasks.ts";
+import { createTaskCache, flipTask, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
+import { dueReminders, reminderId, syncTaskReminders } from "./notify.ts";
+import { SLOTS } from "./checkins.ts";
 import type { Note } from "./model.ts";
 
 const note = (body: string, extra: Partial<Note> = {}): Note => ({
@@ -156,5 +153,124 @@ describe("createTaskCache", () => {
     const first = cache.forNote("a.md", "- [ ] one\n");
     expect(cache.forNote("a.md", "- [ ] one\n")).toBe(first);
     expect(cache.forNote("a.md", "- [ ] one\n- [ ] two\n").length).toBe(2);
+  });
+});
+
+describe("reminders on a task line", () => {
+  const at = (s: string): number => new Date(s).getTime();
+
+  it("is read off the line with the rest of the task", () => {
+    const [ref] = tasksIn("- [ ] call the bank @2026-09-11 14:30\n", "a.md");
+    expect(ref?.title).toBe("call the bank");
+    expect(ref?.remindAt).toBe(at("2026-09-11T14:30:00"));
+    expect(ref?.done).toBe(false);
+  });
+
+  it("is null on an ordinary task", () => {
+    const [ref] = tasksIn("- [ ] call the bank\n", "a.md");
+    expect(ref?.remindAt).toBeNull();
+  });
+
+  it("writes one onto the right line and leaves the others alone", () => {
+    const body = "- [ ] one\n- [ ] two\n- [ ] three\n";
+    const refs = tasksIn(body, "a.md");
+    const next = setReminder(body, refs[1] as TaskRef, at("2026-09-11T09:00:00"));
+    expect(next).toBe("- [ ] one\n- [ ] two @2026-09-11\n- [ ] three\n");
+  });
+
+  it("moves a reminder rather than adding a second", () => {
+    const body = "- [ ] two @2026-09-11\n";
+    const refs = tasksIn(body, "a.md");
+    const next = setReminder(body, refs[0] as TaskRef, at("2026-09-12T18:00:00"));
+    expect(next).toBe("- [ ] two @2026-09-12 18:00\n");
+  });
+
+  it("clears one with null", () => {
+    const body = "- [ ] two @2026-09-11\n";
+    const refs = tasksIn(body, "a.md");
+    expect(setReminder(body, refs[0] as TaskRef, null)).toBe("- [ ] two\n");
+  });
+
+  it("refuses a ref that no longer describes the line", () => {
+    // Same bargain as flipTask: offsets die on the next keystroke, and writing
+    // through a stale one would overwrite whatever is at them now.
+    const body = "- [ ] two @2026-09-11\n";
+    const refs = tasksIn(body, "a.md");
+    const moved = "- [ ] something else entirely\n";
+    expect(setReminder(moved, refs[0] as TaskRef, at("2026-09-12T09:00:00"))).toBe(moved);
+  });
+
+  it("survives a round trip through the scanner", () => {
+    const body = "- [ ] two\n";
+    const refs = tasksIn(body, "a.md");
+    const next = setReminder(body, refs[0] as TaskRef, at("2026-09-11T14:30:00"));
+    const [again] = tasksIn(next, "a.md");
+    expect(again?.title).toBe("two");
+    expect(again?.remindAt).toBe(at("2026-09-11T14:30:00"));
+  });
+});
+
+describe("which reminders the OS should hold", () => {
+  const now = new Date("2026-09-10T12:00:00").getTime();
+  const ref = (over: Partial<TaskRef>): TaskRef => ({
+    path: "a.md", from: 0, marker: 3, done: false, title: "t",
+    remindAt: null, titleFrom: 5, titleTo: 6, ...over,
+  });
+
+  it("keeps open tasks with a future time", () => {
+    const refs = [ref({ remindAt: now + 60_000 })];
+    expect(dueReminders(refs, now).length).toBe(1);
+  });
+
+  it("drops a task that is already done", () => {
+    // Otherwise ticking something off leaves its alarm standing.
+    expect(dueReminders([ref({ done: true, remindAt: now + 60_000 })], now).length).toBe(0);
+  });
+
+  it("drops a time that has already passed", () => {
+    // Capacitor delivers a past `at` immediately, so scheduling one means an
+    // alarm for yesterday every single time the app opens.
+    expect(dueReminders([ref({ remindAt: now - 60_000 })], now).length).toBe(0);
+  });
+
+  it("drops a task with no time at all", () => {
+    expect(dueReminders([ref({})], now).length).toBe(0);
+  });
+});
+
+describe("reminder ids", () => {
+  it("are stable for the same task", () => {
+    const a = reminderId({ path: "a.md", title: "call the bank" });
+    expect(reminderId({ path: "a.md", title: "call the bank" })).toBe(a);
+  });
+
+  it("clears the check-ins' range even when the hash lands inside it", () => {
+    // Check-ins own ids 1..3, and cancelling one of those would silently stop
+    // a daily nudge. Only about one task in two million hashes below the
+    // floor, so sampling proves nothing — this is a witness found by brute
+    // force whose raw hash is 181, which is exactly the case the floor exists
+    // for.
+    const id = reminderId({ path: "a.md", title: "t1404735" });
+    expect(id).toBeGreaterThan(SLOTS.length);
+    expect(id).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("differ by file and by text", () => {
+    expect(reminderId({ path: "a.md", title: "x" })).not.toBe(
+      reminderId({ path: "b.md", title: "x" }),
+    );
+    expect(reminderId({ path: "a.md", title: "x" })).not.toBe(
+      reminderId({ path: "a.md", title: "y" }),
+    );
+  });
+});
+
+describe("delivering the set to the OS", () => {
+  it("reports that it delivered nothing where it cannot", async () => {
+    // The caller caches the set it last handed over. Off a native shell there
+    // is nothing to hand it to, and saying otherwise would cache a set the OS
+    // never received — which is also what an early call, before the permission
+    // answer lands, would do.
+    expect(await syncTaskReminders([], Date.now())).toBe(false);
   });
 });

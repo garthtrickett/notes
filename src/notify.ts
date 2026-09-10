@@ -28,6 +28,7 @@
 // out; this no-op 22 is what the sideloaded phone proves itself against.
 import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
+import type { TaskRef } from "./tasks.ts";
 
 export const syncCheckinNotifications = async (
   onTap: () => void,
@@ -64,4 +65,78 @@ export const syncCheckinNotifications = async (
     "localNotificationActionPerformed",
     onTap,
   );
+};
+
+// Task reminders live above the check-ins' id range, so each can be cancelled
+// and rebuilt without touching the other. `getPending` is the only way to find
+// out what we scheduled in a previous run of the app, and it only reports ids.
+// The web has no scheduled notification without a server to push from, so the
+// loop skips the whole reminder scan there rather than building a set nobody
+// can deliver.
+export const remindersDeliverable = (): boolean => Capacitor.isNativePlatform();
+
+const TASK_ID_FLOOR = 1000;
+const TASK_ID_CEILING = 2_000_000_000;
+
+// A stable id for a task, from the only two things that identify one: the file
+// it lives in and what it says. Renaming the task cancels the old reminder and
+// schedules a new one, which is the honest reading of "it is a different task
+// now". A collision costs one reminder, and cannot corrupt anything, because
+// the whole set is rebuilt from the notes on every sync.
+export const reminderId = (ref: Pick<TaskRef, "path" | "title">): number => {
+  let h = 2166136261;
+  for (const ch of `${ref.path}\u0000${ref.title}`) {
+    h ^= ch.codePointAt(0) as number;
+    h = Math.imul(h, 16777619);
+  }
+  return TASK_ID_FLOOR + (Math.abs(h) % (TASK_ID_CEILING - TASK_ID_FLOOR));
+};
+
+// Which reminders the OS should be holding right now: open tasks, with a time,
+// still in the future. A done task is not a reminder, and a time that has
+// already passed would be delivered the instant it was scheduled — an alarm for
+// something you were reminded about yesterday, every time you open the app.
+export const dueReminders = (
+  refs: readonly TaskRef[],
+  now: number,
+): TaskRef[] =>
+  refs.filter((r) => !r.done && r.remindAt !== null && r.remindAt > now);
+
+// Rebuilt from scratch, like the check-ins: cancel every task reminder the OS
+// is holding, then schedule the current set. Idempotent, and a task that was
+// ticked off or retimed on another device cannot strand an alarm.
+// Answers whether it actually rebuilt anything, because the caller caches the
+// set it last delivered. Permission is asked for once, by the check-ins, on
+// boot — so an early call here lands before the answer and must say so rather
+// than let the caller record a set the OS never received.
+export const syncTaskReminders = async (
+  refs: readonly TaskRef[],
+  now: number,
+): Promise<boolean> => {
+  if (!Capacitor.isNativePlatform()) return false;
+  const { LocalNotifications } = await import("@capacitor/local-notifications");
+  const permission = await LocalNotifications.checkPermissions();
+  if (permission.display !== "granted") return false;
+
+  const pending = await LocalNotifications.getPending();
+  const ours = pending.notifications.filter((n) => n.id >= TASK_ID_FLOOR);
+  if (ours.length > 0) {
+    await LocalNotifications.cancel({
+      notifications: ours.map((n) => ({ id: n.id })),
+    });
+  }
+
+  const due = dueReminders(refs, now);
+  if (due.length === 0) return true;
+  await LocalNotifications.schedule({
+    notifications: due.map((ref) => ({
+      id: reminderId(ref),
+      title: ref.title,
+      body: ref.path,
+      schedule: { at: new Date(ref.remindAt as number), allowWhileIdle: true },
+      autoCancel: true,
+      extra: { task: ref.path },
+    })),
+  });
+  return true;
 };

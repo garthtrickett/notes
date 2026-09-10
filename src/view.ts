@@ -32,6 +32,7 @@ import { backlinksTo, followLink, resolveLink, searchNotes } from "./links.ts";
 import { mimeOf } from "./attachments.ts";
 import type { Media } from "./media.ts";
 import { flipTask, tasksInVault, type TaskCache, type TaskRef } from "./tasks.ts";
+import { CHOICES, describe as describeDue } from "./reminders.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 import { settingsView, type VaultConfig } from "./view-settings.ts";
 
@@ -46,6 +47,9 @@ export interface ViewCtx {
   // A tick is an edit to today's dump file, so it needs the same two-proposal
   // route as capture — the file may not exist until the first tick makes it.
   readonly onCheckin: (slot: CheckinSlot) => void;
+  // Setting a reminder rewrites the task's own line, so it takes the same route
+  // as ticking one. Null clears it.
+  readonly onRemind: (ref: TaskRef, at: number | null) => void;
   readonly previewCache: PreviewCache;
   readonly media: Media;
   // Saving the vault config is ambient state, so it belongs to main rather than
@@ -540,7 +544,7 @@ const dumpView = (
 // one character in that file and proposes it as an edit, so everything below
 // — persist, push, echo, undo — treats it like typing. Done rows sit
 // collapsed; reopening moves them back on the next paint.
-const tasksView = (model: Model, ctx: ViewCtx) => {
+const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
   const { propose, tasks } = ctx;
   const toggle = (ref: TaskRef): void => {
     const body = model.notes.get(ref.path)?.body;
@@ -548,6 +552,33 @@ const tasksView = (model: Model, ctx: ViewCtx) => {
     const next = flipTask(body, ref);
     if (next !== body) propose({ kind: "edited", path: ref.path, body: next });
   };
+  const at = now();
+  // A native <select> rather than a popup of our own: the phone renders it as a
+  // proper picker, it is reachable by keyboard for free, and there is no menu
+  // state to keep. Exact times are typed into the line itself.
+  const remind = (ref: TaskRef) => html`<select
+    class="remind ${ref.remindAt === null ? "" : "set"}"
+    aria-label=${`Remind me about ${ref.title}`}
+    .value=${""}
+    @change=${(e: Event) => {
+      const el = e.target as HTMLSelectElement;
+      const picked = el.value;
+      el.value = "";
+      if (picked === "") return;
+      if (picked === "clear") return ctx.onRemind(ref, null);
+      const choice = CHOICES.find((c) => c.id === picked);
+      if (choice) ctx.onRemind(ref, choice.at(at));
+    }}
+  >
+    <option value="">
+      ${ref.remindAt === null ? "remind" : describeDue(ref.remindAt, at)}
+    </option>
+    ${CHOICES.map((c) => html`<option value=${c.id}>${c.label}</option>`)}
+    ${ref.remindAt === null
+      ? nothing
+      : html`<option value="clear">Clear reminder</option>`}
+  </select>`;
+
   const row = (ref: TaskRef) => html`<li>
     <input
       type="checkbox"
@@ -562,6 +593,7 @@ const tasksView = (model: Model, ctx: ViewCtx) => {
     >
       ${ref.title}
     </button>
+    ${remind(ref)}
   </li>`;
   const groups = tasksInVault(model.notes, tasks);
   const openGroups = groups.filter((g) => g.refs.some((r) => !r.done));
@@ -1048,7 +1080,7 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
     return html`
       <main class="single">
         ${tabs(model, propose)}
-        ${tasksView(model, ctx)}
+        ${tasksView(model, ctx, now)}
         ${modal(model, propose, onCapture)}
         ${status(model)}
         ${updateBanner(model, propose)}

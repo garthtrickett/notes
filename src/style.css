@@ -357,6 +357,23 @@ not about wherever you are. */
   overflow-wrap: anywhere;
 }
 .task-title:active { transform: scale(0.98); }
+/* Quiet until it says something. An unset reminder is the common case and must
+   not compete with the task for attention; a set one is worth reading, and an
+   overdue one is worth noticing. */
+.remind {
+  flex: none;
+  max-width: 8.5em;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+.remind.set { color: var(--text); border-color: var(--accent); }
+.remind:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .taskgroup details summary {
   color: var(--muted);
   font-size: 13px;

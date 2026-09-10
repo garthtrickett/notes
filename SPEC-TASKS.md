@@ -240,3 +240,45 @@ Touched, exhaustively (verified: these are the only sites that switch on
   `No open tasks.`
 - A box ticked in the note editor vanishes from the list on next paint.
 - `bun test`, `tsc --noEmit`, `bun run build`, `git diff --check` green.
+
+## 8. Reminders
+
+A task can carry a time, written into its own line:
+
+```
+- [ ] call the bank @2026-09-11 14:30
+- [ ] ask Simon about dinner @2026-09-12
+```
+
+`@YYYY-MM-DD`, optionally followed by `HH:MM` in 24-hour local time. A bare
+date means 09:00 — midnight would fire while you are asleep, which is the same
+as not firing. The stamp is anchored to whitespace at both ends, so
+`simon@example.com`, `@simon` and `@2026-09-11.md` are not reminders.
+
+- One per task. Setting a second replaces the first rather than leaving both
+  to argue about which is meant.
+- The Tasks tab carries a `select` per row that writes the stamp for you —
+  this evening, tomorrow 9am, next week, or clear. Exact times are typed.
+- Nothing is stored beside the note. The reminder is read out of the text on
+  every paint and written back as an ordinary edit, which is the whole reason
+  one set on the laptop arrives on the phone at all.
+
+### What actually rings
+
+Android only. The web — PWA included — has no scheduled notification without a
+server to push from, and the loop skips the reminder scan there rather than
+building a set nobody can deliver.
+
+The OS holds the alarms; the notes decide what they should be. The set is
+rebuilt from scratch whenever it changes: open tasks, with a time, still in the
+future. A done task is not a reminder, and a past time would be delivered the
+instant it was scheduled — an alarm about yesterday every time the app opens.
+
+Ids are `TASK_ID_FLOOR + hash(path, title)`, above the check-ins' 1..3 so the
+two can be cancelled independently. Renaming a task cancels the old alarm and
+schedules a new one, which is the honest reading of "it is a different task
+now".
+
+The limit worth knowing: rescheduling only happens while the app is running. A
+reminder set on the laptop becomes an alarm on the phone the next time the
+phone opens the app — not before.

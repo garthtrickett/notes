@@ -26,7 +26,8 @@ import { composeDump, dumpEdits, dumpPathOf, dumpSpotAt, isDumpPath } from "./du
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
-import { createTaskCache } from "./tasks.ts";
+import { createTaskCache, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
+import { remindersDeliverable, syncTaskReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
@@ -132,6 +133,15 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // takes capture's route rather than growing a proposal of its own.
   const checkin = (slot: CheckinSlot) => {
     for (const p of actions.checkinProposals(model.notes, slot, now)) propose(p);
+  };
+
+  // Setting a reminder is an edit to the line it is on, so it goes the same way
+  // a tick does. Nothing is stored beside the note.
+  const remind = (ref: TaskRef, at: number | null) => {
+    const body = model.notes.get(ref.path)?.body;
+    if (body === undefined) return;
+    const next = setReminder(body, ref, at);
+    if (next !== body) propose({ kind: "edited", path: ref.path, body: next });
   };
 
   // Where the caret is differs by surface; what to do with a pasted image does
@@ -250,6 +260,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         now,
         onCapture: capture,
         onCheckin: checkin,
+        onRemind: remind,
         previewCache,
         media,
         tasks,
@@ -382,7 +393,34 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
 
   // Every automatic behaviour lives here, and every rule is a function of model
   // state rather than something a scheduler remembers.
+  // The OS holds the alarms; the notes decide what they should be. Rebuilt
+  // whenever the answer changes, which is the only way a reminder set on the
+  // laptop becomes an alarm on the phone — the text arrives by sync, and this
+  // turns it into something the OS will deliver.
+  let lastReminderKey: string | null = null;
+  const napReminders = () => {
+    if (!model.hydrated || !remindersDeliverable()) return;
+    const refs: TaskRef[] = [];
+    for (const group of tasksInVault(model.notes, tasks)) refs.push(...group.refs);
+    const wanted = refs.filter((r) => !r.done && r.remindAt !== null);
+    const key = wanted
+      .map((r) => `${r.path}\u0000${r.title}\u0000${r.remindAt as number}`)
+      .sort()
+      .join("|");
+    if (key === lastReminderKey) return;
+    // Recorded only once the OS has it. Permission is requested on boot and
+    // the answer arrives later, so the first attempts here are refused —
+    // caching the key on one of those would leave every reminder unscheduled
+    // for the rest of the session.
+    track(
+      syncTaskReminders(refs, now()).then((delivered) => {
+        if (delivered) lastReminderKey = key;
+      }),
+    );
+  };
+
   const nap = () => {
+    napReminders();
     // 0. Whatever the history panel is waiting for. Read-only, independent of
     //    the sync rules below, and it must not be gated behind them — a stalled
     //    push should not leave the panel spinning.
