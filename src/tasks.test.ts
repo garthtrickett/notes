@@ -118,14 +118,23 @@ describe("tasksInVault", () => {
     const groups = tasksInVault(notes, createTaskCache());
     expect(groups.map((g) => g.path)).toEqual([
       "a.md",
-      "b.md",
       "dump/2026-09-06.md",
+      "b.md",
     ]);
     expect(groups[0]?.refs.map((r) => r.title)).toEqual(["one", "two"]);
     // Dump days are ordinary files: the flip lands in the stored body.
-    const milk = groups[2]?.refs[0];
+    const milk = groups[1]?.refs[0];
     if (milk === undefined) throw new Error("no task");
     expect(flipTask("- [ ] milk\n", milk)).toBe("- [x] milk\n");
+  });
+
+  test("done-only notes sink below notes with open work", () => {
+    const notes = new Map<string, Note>([
+      ["dev/old.md", note("- [x] ancient\n")],
+      ["a.md", note("- [ ] live\n")],
+    ]);
+    const groups = tasksInVault(notes, createTaskCache());
+    expect(groups.map((g) => g.path)).toEqual(["a.md", "dev/old.md"]);
   });
 });
 

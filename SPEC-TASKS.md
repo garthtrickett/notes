@@ -93,8 +93,10 @@ kind, it has stopped being this spec.
   native `<details>` holding the done rows (`<summary>Done (3)</summary>`):
   no UI state to model, accessible by default, reopening by the same toggle.
   A done-only note contributes a group with only its collapsed section.
-- Groups sort alphabetically by path. Tasks within a group sort by file
-  offset (document order). No undated/dated split — v1 has no dates.
+- Groups sort open-first, done-only notes last — alphabetical history must
+  never bury live work — alphabetical inside each band. Tasks within a group
+  sort by file offset (document order). No undated/dated split — v1 has no
+  dates.
 - Done tasks are not listed. Each group header carries `open/total`
   (`inbox.md — 2/5`), so completed work is counted, not shown. A done-only
   note contributes no group.

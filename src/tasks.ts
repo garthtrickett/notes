@@ -53,11 +53,12 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
   return refs;
 };
 
-// Every note holding at least one box, sorted by path. Dump days are ordinary
-// files here — no composing, no sections: each day's stored body scans and
-// flips on its own, so the toggle never touches the editor's composite
-// document. Trash and archive scan like everything else; deleting the file
-// still deletes its tasks.
+// Every note holding at least one box: open work first, done-only notes
+// last, alphabetical inside each band. Dump days are ordinary files here —
+// no composing, no sections: each day's stored body scans and flips on its
+// own, so the toggle never touches the editor's composite document. Trash
+// and archive scan like everything else; deleting the file still deletes
+// its tasks.
 export const tasksInVault = (
   notes: ReadonlyMap<string, Note>,
   cache: TaskCache,
@@ -67,7 +68,11 @@ export const tasksInVault = (
     const refs = cache.forNote(path, note.body);
     if (refs.length > 0) groups.push({ path, refs });
   }
-  groups.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const open = (g: { refs: TaskRef[] }): number =>
+    g.refs.some((r) => !r.done) ? 0 : 1;
+  groups.sort(
+    (a, b) => open(a) - open(b) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  );
   return groups;
 };
 
