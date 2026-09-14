@@ -351,6 +351,59 @@ describe("the dump view", () => {
     expect(loop.model.modal?.kind).toBe("open");
   });
 
+  it("offers a new note from every mode, because Space needs a keyboard", async () => {
+    // There was no button at all: a note could only be started by pressing
+    // Space, which a phone cannot do. Capture writes to today's dump, a
+    // wikilink needs somewhere to write it, and the palette only finds notes
+    // that already exist — so on a phone there was no route to a new one.
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md")] });
+    await settle(loop);
+    for (const mode of ["notes", "dump", "tasks", "archive", "trash"] as const) {
+      loop.propose({ kind: "modeChanged", mode });
+      await settle(loop);
+      expect(root.querySelector("#new-note")).not.toBeNull();
+    }
+  });
+
+  it("the new-note button opens the same box the shortcut does", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md")] });
+    await settle(loop);
+    root.querySelector<HTMLButtonElement>("#new-note")?.click();
+    await settle(loop);
+    expect(loop.model.modal?.kind).toBe("newNote");
+  });
+
+  it("creates the note the box is given, from the dump", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md")] });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+    root.querySelector<HTMLButtonElement>("#new-note")?.click();
+    await settle(loop);
+    const input = root.querySelector<HTMLInputElement>("#modal-input");
+    if (input) input.value = "inbox/from-a-phone.md";
+    root.querySelector<HTMLFormElement>(".capture.floating")?.dispatchEvent(
+      new Event("submit", { bubbles: true, cancelable: true }),
+    );
+    await settle(loop);
+    expect(loop.model.notes.has("inbox/from-a-phone.md")).toBe(true);
+    // Creating one should take you to it, which is the whole point of starting
+    // a note rather than capturing a line.
+    expect(loop.model.openPath).toBe("inbox/from-a-phone.md");
+    expect(loop.model.mode).toBe("notes");
+  });
+
+  it("keeps the new-note button out of the row that wraps", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md")] });
+    await settle(loop);
+    const button = root.querySelector("#new-note");
+    expect(button?.closest(".modes")).toBeNull();
+    expect(button?.parentElement?.className).toBe("tabs");
+  });
+
   it("keeps the search button out of the row that wraps", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md")] });

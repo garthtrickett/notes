@@ -934,6 +934,28 @@ const tabs = (model: Model, propose: Propose) => html`
     >
       ↷
     </button>
+    <!-- And a new note, for the same reason again: Space is the only way to
+         reach one, and a phone has no Space. Every other route into the app —
+         capture, a wikilink, the open palette — either writes somewhere that
+         already exists or needs the note to exist first, so without this there
+         was no way at all to start one from a phone. -->
+    <button
+      id="new-note"
+      class="icon-button"
+      title="New note (Space)"
+      aria-label="New note"
+      aria-keyshortcuts="Space"
+      @click=${() => propose({ kind: "modalOpened", modal: { kind: "newNote" } })}
+    >
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <path
+          d="M8 3.2 L8 12.8 M3.2 8 L12.8 8"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
     <button
       class="search-button"
       title="Find a note (O)"
