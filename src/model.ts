@@ -88,6 +88,11 @@ export type Encoding = "utf8" | "base64";
 export interface Model {
   notes: Map<string, Note>;
   openPath: string | null;
+  // A note something outside the app asked for — so far, a tapped reminder.
+  // Held rather than acted on because the ask can arrive before the notes do:
+  // tapping a notification is what starts the app, and hydration is still a
+  // round trip away.
+  openRequest: string | null;
   mode: Mode;
   preview: boolean;
   // Whether the tasks tab shows done work. Off by default: triage is open
@@ -172,6 +177,7 @@ export const idleUpdate: UpdateInfo = {
 export const createModel = (): Model => ({
   notes: new Map(),
   openPath: null,
+  openRequest: null,
   mode: "notes",
   preview: false,
   showDone: false,
@@ -250,6 +256,7 @@ export type Proposal =
   | { readonly kind: "linkRefused"; readonly target: string }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
   | { readonly kind: "resumed" }
+  | { readonly kind: "openRequested"; readonly path: string }
   | { readonly kind: "headSeen"; readonly head: string }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
   | { readonly kind: "previewToggled" }
@@ -520,7 +527,28 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       m.notes = new Map(p.notes.map((n) => [n.path, withoutBytes(n)]));
       m.hydrated = true;
       m.openPath = firstVisiblePath(m);
+      // Whatever asked for a note before there were any notes gets its answer
+      // here, in place of the default landing. Cleared either way: an ask that
+      // names nothing openable is spent, not retried forever.
+      const wanted = m.openRequest;
+      m.openRequest = null;
+      if (wanted !== null) present(m, { kind: "openRequested", path: wanted });
       return null;
+    }
+
+    case "openRequested": {
+      // Before hydration there is nothing to open and nothing to reject
+      // against, so the ask is kept rather than refused.
+      if (!m.hydrated) {
+        m.openRequest = p.path;
+        return null;
+      }
+      const target = m.notes.get(p.path);
+      // A reminder can outlive the note it was set on — ticked, renamed,
+      // deleted on another device. Landing on the default note is a better
+      // answer than an error about a file the tap did not mention.
+      if (!target || !isOpenable(target)) return null;
+      return present(m, { kind: "opened", path: p.path });
     }
 
     case "opened": {

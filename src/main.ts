@@ -7,7 +7,7 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
-import { syncCheckinNotifications } from "./notify.ts";
+import { onNotificationTap, syncCheckinNotifications } from "./notify.ts";
 import { checkForUpdate } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 
@@ -97,11 +97,15 @@ if (config === null) {
 
   booted = true;
 
+  // Registered before anything else that can await: a tap on a closed app is
+  // what launched it, and the event is on its way already.
+  void onNotificationTap({
+    note: (path) => loop.propose({ kind: "openRequested", path }),
+    dump: () => loop.propose({ kind: "modeChanged", mode: "dump" }),
+  });
   // No-op on the web. On Android this asks for notification permission once
   // and keeps the three daily check-ins scheduled.
-  void syncCheckinNotifications(() =>
-    loop.propose({ kind: "modeChanged", mode: "dump" }),
-  );
+  void syncCheckinNotifications();
   // No-op on the web (checkForUpdate gates on native inside). One quiet ask
   // per boot; offline or up to date resolves to nothing.
   void checkForUpdate(fetch).then((found) => {

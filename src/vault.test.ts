@@ -5,6 +5,7 @@ import { createModel, dumpDays, present, visible, type Note } from "./model.ts";
 import { dumpEdits, dumpPathOf } from "./dump.ts";
 import { captureProposals, checkinProposals } from "./actions.ts";
 import { doneIn, SLOTS, type CheckinSlot } from "./checkins.ts";
+import { routeTap } from "./notify.ts";
 
 let db: IDBDatabase | undefined;
 let root: HTMLElement;
@@ -446,6 +447,86 @@ describe("resumed", () => {
     present(m, { kind: "resumed" });
     // Otherwise a burst of focus events would stack pulls on top of each other.
     expect(m.lastSyncedAt).toBe(12345);
+  });
+});
+
+describe("tapping a notification", () => {
+  it("routes a task reminder to the note it came from", () => {
+    const seen: string[] = [];
+    routeTap({ task: "hobbies/surfing/surfing-technique.md" }, {
+      note: (p) => seen.push(`note:${p}`),
+      dump: () => seen.push("dump"),
+    });
+    // It used to open the dump whatever it was about, so a 5:30 surf reminder
+    // landed you on today's page with no mention of the note holding the task.
+    expect(seen).toEqual(["note:hobbies/surfing/surfing-technique.md"]);
+  });
+
+  it("still routes a check-in to the dump", () => {
+    const seen: string[] = [];
+    routeTap({ checkin: "morning" }, {
+      note: (p) => seen.push(`note:${p}`),
+      dump: () => seen.push("dump"),
+    });
+    expect(seen).toEqual(["dump"]);
+  });
+
+  it("falls back to the dump when the tap says nothing about itself", () => {
+    for (const extra of [undefined, null, {}, { task: "" }, { task: 7 }]) {
+      const seen: string[] = [];
+      routeTap(extra, {
+        note: (p) => seen.push(`note:${p}`),
+        dump: () => seen.push("dump"),
+      });
+      expect(seen).toEqual(["dump"]);
+    }
+  });
+
+  // Straight at the reducer: boot() hydrates on the way up, so a loop is never
+  // in the state this is about. Asking a booted loop proves nothing about a
+  // tap that arrives first.
+  it("holds a note asked for before the notes have loaded", () => {
+    const m = createModel();
+    expect(m.hydrated).toBe(false);
+    present(m, { kind: "openRequested", path: "b.md" });
+    expect(m.openRequest).toBe("b.md");
+    expect(m.openPath).toBeNull();
+
+    present(m, {
+      kind: "hydrated",
+      notes: [note("a.md", { body: "first" }), note("b.md", { body: "second" })],
+    });
+    // Not firstVisiblePath, which is where every other boot lands.
+    expect(m.openPath).toBe("b.md");
+    expect(m.mode).toBe("notes");
+    expect(m.openRequest).toBeNull();
+  });
+
+  it("lands on the default note when the tap names one that is gone", () => {
+    // A reminder outlives the task it was set on: ticked, renamed, deleted on
+    // another device. An error about a file the tap did not mention is worse
+    // than simply opening the app.
+    const m = createModel();
+    present(m, { kind: "openRequested", path: "vanished.md" });
+    present(m, { kind: "hydrated", notes: [note("a.md", { body: "first" })] });
+    expect(m.openPath).toBe("a.md");
+    expect(m.error).toBeNull();
+    // Spent, not retried against every later pull.
+    expect(m.openRequest).toBeNull();
+  });
+
+  it("opens straight away when the notes are already there", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("a.md", { body: "first" }), note("b.md", { body: "second" })],
+    });
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await settle(loop);
+    loop.propose({ kind: "openRequested", path: "b.md" });
+    await settle(loop);
+    expect(loop.model.openPath).toBe("b.md");
+    expect(loop.model.mode).toBe("notes");
   });
 });
 

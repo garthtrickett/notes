@@ -30,9 +30,7 @@ import { Capacitor } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 import type { TaskRef } from "./tasks.ts";
 
-export const syncCheckinNotifications = async (
-  onTap: () => void,
-): Promise<void> => {
+export const syncCheckinNotifications = async (): Promise<void> => {
   if (!Capacitor.isNativePlatform()) return;
   const { LocalNotifications } = await import("@capacitor/local-notifications");
   const permission = await LocalNotifications.requestPermissions();
@@ -61,10 +59,6 @@ export const syncCheckinNotifications = async (
       extra: { checkin: slot.id },
     })),
   });
-  await LocalNotifications.addListener(
-    "localNotificationActionPerformed",
-    onTap,
-  );
 };
 
 // Task reminders live above the check-ins' id range, so each can be cancelled
@@ -216,4 +210,38 @@ export const syncWebReminders = (
     timers.push(setTimeout(() => void showOne(ref), (ref.remindAt as number) - now));
   }
   return true;
+};
+
+// Where a tap should land.
+//
+// Every notification this app schedules carries what it is about in `extra`, so
+// the one listener can route rather than every notification meaning "open the
+// dump" — which is what a task reminder used to do, dropping you on today's
+// page with no mention of the note the task lives in.
+export interface TapRoutes {
+  readonly note: (path: string) => void;
+  readonly dump: () => void;
+}
+
+export const routeTap = (extra: unknown, routes: TapRoutes): void => {
+  const bag = (extra ?? {}) as { task?: unknown; checkin?: unknown };
+  if (typeof bag.task === "string" && bag.task !== "") {
+    routes.note(bag.task);
+    return;
+  }
+  // A check-in is about the day, and anything with nothing to say about itself
+  // keeps the old behaviour rather than doing nothing at all.
+  routes.dump();
+};
+
+// Registered once, from the composition root, and as early as it can be: a tap
+// on a closed app is what launches it, and the event is delivered to whoever is
+// listening by the time the web layer comes up.
+export const onNotificationTap = async (routes: TapRoutes): Promise<void> => {
+  if (!Capacitor.isNativePlatform()) return;
+  const { LocalNotifications } = await import("@capacitor/local-notifications");
+  await LocalNotifications.addListener(
+    "localNotificationActionPerformed",
+    (action) => routeTap(action.notification?.extra, routes),
+  );
 };
