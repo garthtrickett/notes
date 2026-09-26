@@ -12,6 +12,7 @@ import type { Encoding, Note, NoteRecord, Proposal } from "./model.ts";
 import type { Github, SyncError } from "./github.ts";
 import { appendEntry, dumpPathOf } from "./dump.ts";
 import { toggleCheckin, type CheckinSlot } from "./checkins.ts";
+import { mergeInsertions } from "./merge.ts";
 import {
   attachmentPath,
   base64Of,
@@ -252,6 +253,51 @@ export const conflictPath = (
   return candidateFor(now());
 };
 
+// One attempt at resolving a lost compare-and-swap without a person. Returns
+// null for "could not", never for "failed" — every way this gives up leaves the
+// caller to make the copy it always made.
+//
+// Attachments are excluded outright: their bodies are base64 bytes, and lines
+// mean nothing there.
+const mergeAndRetry = async (
+  github: Github,
+  note: Note,
+  body: string,
+): Promise<Proposal | null> => {
+  if (note.encoding === "base64") return null;
+  // No base means the file was created on both sides independently. There is
+  // no common ancestor, so there is no way to tell an insertion from an edit.
+  if (note.baseSha === null) return null;
+
+  const ancestor = await github.blob(note.baseSha);
+  if (!ancestor.ok) return null;
+  const remote = await github.current(note.path, note.encoding);
+  if (!remote.ok) return null;
+
+  const merged = mergeInsertions(ancestor.value, body, remote.value.body);
+  if (merged === null) return null;
+
+  // Swapped against what the remote is at *now*, not the stale base — that is
+  // the whole reason `current` returns the sha alongside the body.
+  const rewritten = await github.write(
+    note.path,
+    merged,
+    remote.value.sha,
+    note.encoding,
+  );
+  // A second conflict means a third device, or the same one again. Do not loop:
+  // fall back to the copy and let the next push try afresh.
+  if (!rewritten.ok) return null;
+
+  return {
+    kind: "merged",
+    path: note.path,
+    from: body,
+    body: merged,
+    sha: rewritten.value,
+  };
+};
+
 export const push = async (
   github: Github,
   note: Note,
@@ -279,6 +325,12 @@ export const push = async (
 
   if (!written.ok) {
     if (written.error.kind === "conflict") {
+      // Both devices added lines and neither overwrote anything? Then there is
+      // nothing for a person to decide, and a copy is just litter. Anything
+      // else — or any failure gathering the evidence — falls through to the
+      // copy, which is the answer that is always safe.
+      const merged = await mergeAndRetry(github, note, body);
+      if (merged !== null) return merged;
       return {
         kind: "conflicted",
         path: note.path,

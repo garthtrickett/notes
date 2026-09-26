@@ -450,6 +450,37 @@ describe("resumed", () => {
   });
 });
 
+describe("adopting a merge", () => {
+  it("takes the merged text when nothing was typed meanwhile", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [note("a.md", { body: "mine\n" })] });
+    present(m, {
+      kind: "merged", path: "a.md", from: "mine\n",
+      body: "theirs\nmine\n", sha: "sha-9",
+    });
+    expect(m.notes.get("a.md")?.body).toBe("theirs\nmine\n");
+    expect(m.notes.get("a.md")?.baseSha).toBe("sha-9");
+    expect(m.notes.get("a.md")?.pending).toBe(false);
+  });
+
+  it("keeps an edit typed while the merge was in flight", () => {
+    // That edit is newer than anything merged. Overwriting it with the merge
+    // would lose a keystroke to a background sync, which is the one thing the
+    // whole loop is built not to do. Pending sends it round again, where it
+    // merges against what this push just wrote.
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [note("a.md", { body: "typed later\n" })] });
+    present(m, {
+      kind: "merged", path: "a.md", from: "what the push carried\n",
+      body: "merged text\n", sha: "sha-9",
+    });
+    expect(m.notes.get("a.md")?.body).toBe("typed later\n");
+    expect(m.notes.get("a.md")?.pending).toBe(true);
+    // Still advanced, so the retry swaps against the right thing.
+    expect(m.notes.get("a.md")?.baseSha).toBe("sha-9");
+  });
+});
+
 describe("tapping a notification", () => {
   it("routes a task reminder to the note it came from", () => {
     const seen: string[] = [];

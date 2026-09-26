@@ -38,6 +38,16 @@ export interface Github {
   // few hundred bytes, so it can be asked often and the tree stays behind it.
   readonly head: () => Promise<Result<string, SyncError>>;
   readonly manifest: () => Promise<Result<RemoteEntry[], SyncError>>;
+  // The body at a blob sha. A note carries the sha it last agreed with GitHub
+  // about, so this is how the merge gets the common ancestor — `readAt` cannot,
+  // because the Contents API's `ref` is a branch or commit, never a blob.
+  readonly blob: (sha: string) => Promise<Result<string, SyncError>>;
+  // The body *and* the sha it is at, which is what a retry after a conflict
+  // needs: the merge reads one and the re-push has to swap against the other.
+  readonly current: (
+    path: string,
+    encoding: Encoding,
+  ) => Promise<Result<{ body: string; sha: string }, SyncError>>;
   // The encoding decides whether the body is converted or passed through. An
   // attachment is already base64, and the Contents API wants base64, so
   // re-encoding it would be wrong twice.
@@ -164,6 +174,35 @@ export const createGithub = (config: Config): Github => {
         return err({ kind: "github", status: res.value.status });
       }
       return ok(sha);
+    },
+
+    blob: async (sha) => {
+      const res = await send(`${base}/git/blobs/${sha}`);
+      if (!res.ok) return res;
+      if (!res.value.ok) return err(responseToError(res.value));
+      const body = await json<{ content?: string }>(res.value);
+      if (!body.ok) return body;
+      // The Blobs API always answers base64, whatever the file holds.
+      return ok(decode((body.value.content ?? "").replace(/\n/g, "")));
+    },
+
+    current: async (path, encoding) => {
+      const res = await send(
+        `${base}/contents/${encodePath(path)}?ref=${config.branch}`,
+      );
+      if (!res.ok) return res;
+      if (!res.value.ok) return err(responseToError(res.value));
+      const body = await json<{ content?: string; sha?: string }>(res.value);
+      if (!body.ok) return body;
+      const sha = body.value.sha;
+      if (typeof sha !== "string" || sha === "") {
+        return err({ kind: "github", status: res.value.status });
+      }
+      const content = (body.value.content ?? "").replace(/\n/g, "");
+      return ok({
+        body: encoding === "base64" ? content : decode(content),
+        sha,
+      });
     },
 
     manifest: async () => {

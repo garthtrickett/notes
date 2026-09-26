@@ -11,6 +11,10 @@ import type { Note } from "./model.ts";
 // network and no timing.
 const fakeGithub = () => {
   const files = new Map<string, { body: string; sha: string }>();
+  // Git keeps every blob it has ever been given, which is what lets a client
+  // ask what a note said at the sha it last agreed about. Without this the
+  // merge has no common ancestor to work from.
+  const blobs = new Map<string, string>();
   let nextSha = 1;
   let failWith: SyncError | null = null;
   const calls: string[] = [];
@@ -22,6 +26,18 @@ const fakeGithub = () => {
       calls.push("head");
       if (failWith) return err(failWith);
       return ok([...files.values()].map((f) => f.sha).join("-") || "empty");
+    },
+    blob: async (sha) => {
+      calls.push(`blob ${sha}`);
+      if (failWith) return err(failWith);
+      const body = blobs.get(sha);
+      return body === undefined ? err({ kind: "notFound" }) : ok(body);
+    },
+    current: async (path, _encoding) => {
+      calls.push(`current ${path}`);
+      if (failWith) return err(failWith);
+      const f = files.get(path);
+      return f ? ok({ body: f.body, sha: f.sha }) : err({ kind: "notFound" });
     },
     manifest: async () => {
       calls.push("manifest");
@@ -43,6 +59,7 @@ const fakeGithub = () => {
       if (current !== baseSha) return err({ kind: "conflict" });
       const sha = `sha-${nextSha++}`;
       files.set(path, { body, sha });
+      blobs.set(sha, body);
       return ok(sha);
     },
     remove: async (path, baseSha) => {
@@ -85,7 +102,12 @@ const fakeGithub = () => {
     files,
     calls,
     put: (path: string, body: string) => {
-      files.set(path, { body, sha: `sha-${nextSha++}` });
+      const sha = `sha-${nextSha++}`;
+      files.set(path, { body, sha });
+      // Seeded the same way a write would leave it, or a merge started from a
+      // seeded file has no ancestor to read and quietly falls back to a copy —
+      // which would make every merge test pass for the wrong reason.
+      blobs.set(sha, body);
     },
     fail: (e: SyncError | null) => {
       failWith = e;
@@ -379,6 +401,107 @@ describe("conflict", () => {
     // Nothing was merged and nothing was lost.
     expect(remote.files.get(copy)?.body).toBe("my version");
     expect(remote.files.get("a.md")?.body).toBe("their version");
+  });
+
+  it("merges instead of copying when both sides only appended", async () => {
+    // The 2026-09-25 case, twice over in one vault: two devices each add a
+    // line to the day before either pulls. Nothing is overwritten, so there is
+    // nothing for a person to decide.
+    const day = "dump/2026-09-25.md";
+    remote.put(day, "05:36 69.45kg\n");
+    const loop = await boot(deps(), root);
+    await settle(loop);
+
+    loop.propose({ kind: "edited", path: day, body: "05:36 69.45kg\n09:17 write on my board\n" });
+    remote.put(day, "05:36 69.45kg\n10:22 rail tape\n");
+    await quiet(loop);
+
+    const merged = "05:36 69.45kg\n10:22 rail tape\n09:17 write on my board\n";
+    expect(remote.files.get(day)?.body).toBe(merged);
+    // The device has to adopt it too, or it pushes its own half straight back.
+    expect(loop.model.notes.get(day)?.body).toBe(merged);
+    expect(loop.model.notes.get(day)?.pending).toBe(false);
+    expect([...loop.model.notes.keys()].filter((k) => k.includes("conflict"))).toEqual([]);
+  });
+
+  it("still copies when a line was edited rather than added", async () => {
+    // The guard on the whole thing. Merging here would keep both wordings of
+    // one line, which is not a merge — it is ignoring somebody.
+    remote.put("a.md", "one\ntwo\n");
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    loop.propose({ kind: "edited", path: "a.md", body: "one\nTWO\n" });
+    remote.put("a.md", "one\ntwo\nthree\n");
+    await quiet(loop);
+
+    expect(loop.model.notes.get("a (conflict 2023-11-14).md")?.body).toBe("one\nTWO\n");
+    expect(loop.model.notes.get("a.md")?.body).toBe("one\ntwo\nthree\n");
+  });
+
+  it("copies when the file was created on both devices with no ancestor", async () => {
+    // baseSha null means the two files have never agreed about anything, so an
+    // insertion cannot be told from an edit.
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    loop.propose({ kind: "created", path: "new.md" });
+    loop.propose({ kind: "edited", path: "new.md", body: "mine\n" });
+    remote.put("new.md", "theirs\n");
+    await quiet(loop);
+
+    expect(loop.model.notes.get("new (conflict 2023-11-14).md")?.body).toBe("mine\n");
+  });
+
+  it("never merges an attachment, whose lines are base64 and mean nothing", async () => {
+    // Line-merging base64 would write back bytes that are neither side's
+    // picture. The remote must be left exactly as the other device wrote it.
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const other = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    remote.put("attachments/x.webp", png);
+    const loop = await boot(deps(), root);
+    await settle(loop);
+
+    await actions.storeBlobs(db as IDBDatabase, [
+      { path: "attachments/x.webp", body: other, encoding: "base64" },
+    ]);
+    const held = loop.model.notes.get("attachments/x.webp") as Note;
+    loop.propose({ kind: "created", path: "host.md" });
+    await settle(loop);
+    remote.put("attachments/x.webp", other);
+
+    const before = remote.files.get("attachments/x.webp")?.body;
+    const proposal = await actions.push(
+      remote.github,
+      { ...held, pending: true, baseSha: "sha-stale" },
+      () => Date.parse("2023-11-14T00:00:00Z"),
+      loop.model.notes,
+      other,
+    );
+    expect(proposal.kind).toBe("conflicted");
+    expect(remote.files.get("attachments/x.webp")?.body).toBe(before);
+    // And it did not even go looking: no ancestor fetch for bytes.
+    expect(remote.calls.filter((c) => c.startsWith("blob "))).toEqual([]);
+  });
+
+  it("does not fetch an ancestor it knows is not there", async () => {
+    // baseSha null means the two files never agreed about anything. Asking
+    // GitHub for blob `null` is a round trip that can only 404.
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    // Something has to be there, or the swap has nothing to lose against.
+    remote.put("new.md", "theirs\n");
+    remote.calls.length = 0;
+    const proposal = await actions.push(
+      remote.github,
+      {
+        path: "new.md", body: "mine\n", baseSha: null, pending: true,
+        deleted: false, dirty: false, encoding: "utf8",
+      },
+      () => Date.parse("2023-11-14T00:00:00Z"),
+      loop.model.notes,
+    );
+    expect(proposal.kind).toBe("conflicted");
+    expect(remote.calls.filter((c) => c.startsWith("blob "))).toEqual([]);
   });
 
   it("opens the conflict copy so it is not silently filed away", async () => {

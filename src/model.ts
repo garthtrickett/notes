@@ -232,6 +232,15 @@ export type Proposal =
     }
   | { readonly kind: "pushed"; readonly path: string; readonly body: string; readonly sha: string }
   | { readonly kind: "removed"; readonly path: string }
+  | {
+      readonly kind: "merged";
+      readonly path: string;
+      // What the push set out with, so present() can tell whether anything was
+      // typed while it was in flight.
+      readonly from: string;
+      readonly body: string;
+      readonly sha: string;
+    }
   | { readonly kind: "conflicted"; readonly path: string; readonly copyPath: string; readonly body: string }
   | { readonly kind: "syncFailed"; readonly error: SyncError }
   | { readonly kind: "modeChanged"; readonly mode: Mode }
@@ -1195,6 +1204,29 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         ...note,
         baseSha: p.sha,
         pending: !settled,
+        dirty: true,
+      });
+      return null;
+    }
+
+    case "merged": {
+      const note = m.notes.get(p.path);
+      settleSync(m);
+      if (!note) return reject(`Merged ${p.path}, but it is no longer here.`);
+      // Adopting the merged text is the point: the remote now holds both
+      // sides, and a device still showing only its own half would push it
+      // straight back and conflict again.
+      //
+      // Unless something was typed while the merge was in flight, in which
+      // case that edit is newer than anything merged and must not be thrown
+      // away. Leaving it pending sends it back round, where it merges against
+      // the text this push just wrote.
+      const moved = note.body !== p.from;
+      m.notes.set(p.path, {
+        ...note,
+        body: moved ? note.body : p.body,
+        baseSha: p.sha,
+        pending: moved,
         dirty: true,
       });
       return null;
