@@ -880,6 +880,57 @@ describe("attachment bytes stay out of the model", () => {
     expect(remote.files.get("attachments/x.webp")?.body).toBe(png);
   });
 
+  it("saves a clip as a clip, and never puts it through the shrinker", async () => {
+    // M3 of the mutation run: attachmentPath took the extension but attach()
+    // was free to not pass it, and every test still passed with a clip written
+    // as name.webp.
+    const shrink = () => {
+      throw new Error("the shrinker must not see a video");
+    };
+    const host: Note = {
+      path: "a.md", body: "", baseSha: null, pending: false,
+      deleted: false, dirty: false, encoding: "utf8",
+    };
+    const clip = new Blob([new Uint8Array([0, 1, 2, 3])], { type: "video/mp4" });
+    const proposal = await actions.attach(clip, host, 0, () => Date.parse("2023-11-14T00:00:00Z"), shrink);
+    expect(proposal.kind).toBe("attached");
+    expect((proposal as { path: string }).path).toMatch(/\.mp4$/);
+  });
+
+  it("saves a gif as a gif, with its animation intact", async () => {
+    const shrink = () => {
+      throw new Error("the shrinker must not see a gif");
+    };
+    const host: Note = {
+      path: "a.md", body: "", baseSha: null, pending: false,
+      deleted: false, dirty: false, encoding: "utf8",
+    };
+    const gif = new Blob([new Uint8Array([71, 73, 70, 56])], { type: "image/gif" });
+    const proposal = await actions.attach(gif, host, 0, () => Date.parse("2023-11-14T00:00:00Z"), shrink);
+    expect((proposal as { path: string }).path).toMatch(/\.gif$/);
+  });
+
+  it("still shrinks an ordinary screenshot", async () => {
+    // The other side of the rule. Without this, "pass everything through"
+    // passes every test — and every screenshot would go to the vault at full
+    // size, which is what the shrinker exists to stop.
+    let shrank = false;
+    const shrink = async (): Promise<ArrayBuffer> => {
+      shrank = true;
+      return new Uint8Array([9, 9]).buffer;
+    };
+    const host: Note = {
+      path: "a.md", body: "", baseSha: null, pending: false,
+      deleted: false, dirty: false, encoding: "utf8",
+    };
+    const shot = new Blob([new Uint8Array(new Array(500).fill(7))], { type: "image/png" });
+    const proposal = await actions.attach(shot, host, 0, () => Date.parse("2023-11-14T00:00:00Z"), shrink);
+    expect(shrank).toBe(true);
+    expect((proposal as { path: string }).path).toMatch(/\.webp$/);
+    // And the shrunk bytes are what gets stored, not the original 500.
+    expect((proposal as { base64: string }).base64).toBe(btoa("\u0009\u0009"));
+  });
+
   it("puts pulled bytes in the blob store, not on the record", async () => {
     remote.put("attachments/y.webp", png);
     remote.put("note.md", "![](attachments/y.webp)");

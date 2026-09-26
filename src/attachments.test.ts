@@ -4,6 +4,7 @@ import {
   base64Of,
   dataUrlOf,
   insertAt,
+  passesThrough,
   isAttachmentPath,
   isBinaryPath,
   MAX_BYTES,
@@ -525,5 +526,49 @@ describe("video attachments", () => {
     expect(dataUrlOf("AAAA", "a.svg")).toBeNull();
     expect(dataUrlOf("AAAA", "a.html")).toBeNull();
     expect(isBinaryPath("a.svg")).toBe(false);
+  });
+});
+
+describe("what must not be re-encoded", () => {
+  it("passes a gif through, by type or by name", () => {
+    // Shrinking draws one frame onto a canvas, so an animated GIF came out a
+    // still. The vault shows it happening: 0 .gif files, 134 .webp.
+    expect(passesThrough("image/gif", "")).toBe("gif");
+    expect(passesThrough("", "clip.GIF")).toBe("gif");
+  });
+
+  it("passes video through", () => {
+    // createImageBitmap throws on a video, so a clip could not be attached at
+    // all — every mp4 in the vault arrived by import, not through the app.
+    expect(passesThrough("video/mp4", "")).toBe("mp4");
+    expect(passesThrough("video/webm", "")).toBe("webm");
+    expect(passesThrough("", "surf.mp4")).toBe("mp4");
+  });
+
+  it("still shrinks ordinary photos", () => {
+    for (const [type, name] of [
+      ["image/png", "shot.png"],
+      ["image/jpeg", "photo.jpg"],
+      ["image/webp", "already.webp"],
+      ["", "screenshot.png"],
+    ] as const) {
+      expect(passesThrough(type, name)).toBeNull();
+    }
+  });
+
+  it("refuses anything it does not know", () => {
+    // Not a general escape hatch: an svg is a document that can carry script,
+    // and nothing here should smuggle one past the shrinker.
+    expect(passesThrough("image/svg+xml", "x.svg")).toBeNull();
+    expect(passesThrough("text/html", "x.html")).toBeNull();
+    expect(passesThrough("", "")).toBeNull();
+  });
+
+  it("names the file by what it actually is", () => {
+    expect(attachmentPath(Date.parse("2026-09-26T00:00:00Z"), "abcd", "mp4"))
+      .toBe("attachments/2026-09-26-abcd.mp4");
+    // Unchanged for everything that goes through the shrinker.
+    expect(attachmentPath(Date.parse("2026-09-26T00:00:00Z"), "abcd"))
+      .toBe("attachments/2026-09-26-abcd.webp");
   });
 });

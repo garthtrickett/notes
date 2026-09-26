@@ -7,6 +7,11 @@ const QUALITY = 0.85;
 // After resizing, anything still this big is not a screenshot — refuse it rather
 // than commit it.
 export const MAX_BYTES = 1_000_000;
+// Media that is not re-encoded gets a larger allowance, because the 1MB above
+// is a statement about a shrunk screenshot rather than about what the vault can
+// hold. Verified against the real repo: a 2,500,000-byte write through the
+// Contents API is accepted, and reads back whole through the Blobs API.
+export const MAX_PASSTHROUGH_BYTES = 8_000_000;
 
 // The one list of what a media file is: which extensions count as binary, and
 // what mime each becomes. Two lists would be a rule written twice, and the pair
@@ -36,6 +41,32 @@ const BINARY_EXTENSIONS = new Set(
   Object.keys(MEDIA_MIME).map((ext) => `.${ext}`),
 );
 
+// What must not be re-encoded, and why.
+//
+// canvasShrinker draws one frame onto a canvas and asks for webp back. For a
+// photo that is the point. For an animation it is the destruction of the thing
+// — an animated GIF comes out a still, which is what "gifs don't play" was —
+// and for a video createImageBitmap simply throws, so a clip could not be
+// attached at all.
+//
+// So these pass through untouched, at their own extension.
+const PASSTHROUGH: Readonly<Record<string, string>> = {
+  gif: "image/gif",
+  ...VIDEO_MIME,
+};
+
+// By the file's own type where the browser gives one, falling back to the name.
+// A paste often has a type and no name; a dropped file always has a name.
+export const passesThrough = (type: string, name: string): string | null => {
+  for (const [ext, mime] of Object.entries(PASSTHROUGH)) {
+    if (type === mime) return ext;
+  }
+  const dot = name.lastIndexOf(".");
+  if (dot === -1) return null;
+  const ext = name.slice(dot + 1).toLowerCase();
+  return ext in PASSTHROUGH ? ext : null;
+};
+
 export const isVideoPath = (path: string): boolean => {
   const dot = path.lastIndexOf(".");
   return dot !== -1 && `${path.slice(dot + 1).toLowerCase()}` in VIDEO_MIME;
@@ -52,12 +83,16 @@ export const isAttachmentPath = (path: string): boolean =>
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 
-export const attachmentPath = (now: number, hash: string): string => {
+export const attachmentPath = (
+  now: number,
+  hash: string,
+  ext = "webp",
+): string => {
   const d = new Date(now);
   const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   // Dated so it sorts, hashed so identical pastes collapse to one file rather
   // than accumulating copies.
-  return `${ATTACHMENT_DIR}/${day}-${hash}.webp`;
+  return `${ATTACHMENT_DIR}/${day}-${hash}.${ext}`;
 };
 
 export const shortHash = async (bytes: ArrayBuffer): Promise<string> => {

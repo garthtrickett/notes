@@ -19,6 +19,8 @@ import {
   isBinaryPath,
   insertAt,
   MAX_BYTES,
+  MAX_PASSTHROUGH_BYTES,
+  passesThrough,
   shortHash,
   type Shrinker,
 } from "./attachments.ts";
@@ -424,30 +426,41 @@ export const attach = async (
   now: () => number,
   shrink: Shrinker,
 ): Promise<Proposal> => {
-  const shrunk = await attemptAsync(
-    () => shrink(file),
-    (cause): LocalError => ({ kind: "imageUnreadable", cause: String(cause) }),
-  );
-  if (!shrunk.ok) return { kind: "failed", error: shrunk.error };
+  // An animation or a clip is kept as it arrived. Shrinking means drawing one
+  // frame onto a canvas, which turns a GIF into a still and cannot read a video
+  // at all — so the thing that makes a photo cheap is the thing that breaks
+  // these.
+  const through = passesThrough(file.type, "name" in file ? String((file as File).name) : "");
+  const bytes = through === null
+    ? await attemptAsync(
+        () => shrink(file),
+        (cause): LocalError => ({ kind: "imageUnreadable", cause: String(cause) }),
+      )
+    : await attemptAsync(
+        () => file.arrayBuffer(),
+        (cause): LocalError => ({ kind: "imageUnreadable", cause: String(cause) }),
+      );
+  if (!bytes.ok) return { kind: "failed", error: bytes.error };
 
-  if (shrunk.value.byteLength > MAX_BYTES) {
+  const limit = through === null ? MAX_BYTES : MAX_PASSTHROUGH_BYTES;
+  if (bytes.value.byteLength > limit) {
     return {
       kind: "failed",
-      error: { kind: "imageTooBig", bytes: shrunk.value.byteLength },
+      error: { kind: "imageTooBig", bytes: bytes.value.byteLength },
     };
   }
 
   const hash = await attemptAsync(
-    () => shortHash(shrunk.value),
+    () => shortHash(bytes.value),
     (cause): LocalError => ({ kind: "imageUnreadable", cause: String(cause) }),
   );
   if (!hash.ok) return { kind: "failed", error: hash.error };
 
-  const path = attachmentPath(now(), hash.value);
+  const path = attachmentPath(now(), hash.value, through ?? "webp");
   return {
     kind: "attached",
     path,
-    base64: base64Of(shrunk.value),
+    base64: base64Of(bytes.value),
     into: into.path,
     // The model does the insertion, against the note as it is when the image is
     // ready rather than as it was when the paste happened.
