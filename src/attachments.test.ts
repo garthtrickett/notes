@@ -572,3 +572,22 @@ describe("what must not be re-encoded", () => {
       .toBe("attachments/2026-09-26-abcd.webp");
   });
 });
+
+describe("saying which failure it was", () => {
+  it("does not claim a clip was resized", () => {
+    // Introduced by the pass-through change: a gif or a clip reaches the size
+    // check without having been resized at all, so "still X MB after resizing"
+    // described work that never happened and pointed at a fix that does not
+    // exist.
+    const said = describeLocal({ kind: "mediaTooBig", bytes: 13_000_000, limit: 8_000_000 });
+    expect(said).toContain("13.0 MB");
+    expect(said).toContain("8 MB limit");
+    expect(said).not.toContain("resizing");
+    expect(said).toContain("Git keeps binaries forever");
+  });
+
+  it("still says resizing for a photo, because that is what happened", () => {
+    const said = describeLocal({ kind: "imageTooBig", bytes: 2_000_000 });
+    expect(said).toContain("after resizing");
+  });
+});

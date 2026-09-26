@@ -2,8 +2,17 @@
 // one raw screenshot is permanent and only removable by rewriting history.
 
 export const ATTACHMENT_DIR = "attachments";
-const MAX_EDGE = 2000;
-const QUALITY = 0.85;
+// Tried in order, and the first one that fits wins. One pass at 2000px/0.85
+// was a guess that a photo would come out small, and a big enough source — a
+// long screenshot, a phone panorama — came out over the limit and was simply
+// refused. Refusing is the wrong answer when the thing to do next is obvious:
+// compress it harder.
+const ATTEMPTS: readonly { edge: number; quality: number }[] = [
+  { edge: 2000, quality: 0.85 },
+  { edge: 2000, quality: 0.6 },
+  { edge: 1400, quality: 0.6 },
+  { edge: 1000, quality: 0.5 },
+];
 // After resizing, anything still this big is not a screenshot — refuse it rather
 // than commit it.
 export const MAX_BYTES = 1_000_000;
@@ -150,21 +159,34 @@ export interface Shrinker {
 // testable without one.
 export const canvasShrinker: Shrinker = async (file) => {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-  const width = Math.round(bitmap.width * scale);
-  const height = Math.round(bitmap.height * scale);
-
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("This browser cannot resize images.");
-  context.drawImage(bitmap, 0, 0, width, height);
+  if (!context) {
+    bitmap.close();
+    throw new Error("This browser cannot resize images.");
+  }
+
+  let smallest: ArrayBuffer | null = null;
+  for (const { edge, quality } of ATTEMPTS) {
+    const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/webp", quality),
+    );
+    if (!blob) continue;
+    const bytes = await blob.arrayBuffer();
+    // Kept even when it does not fit, so the caller reports the best that
+    // could be done rather than the first attempt.
+    if (smallest === null || bytes.byteLength < smallest.byteLength) {
+      smallest = bytes;
+    }
+    if (bytes.byteLength <= MAX_BYTES) break;
+  }
   bitmap.close();
 
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/webp", QUALITY),
-  );
-  if (!blob) throw new Error("Could not re-encode the image.");
-  return blob.arrayBuffer();
+  if (smallest === null) throw new Error("Could not re-encode the image.");
+  return smallest;
 };

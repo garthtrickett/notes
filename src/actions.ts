@@ -446,7 +446,10 @@ export const attach = async (
   if (bytes.value.byteLength > limit) {
     return {
       kind: "failed",
-      error: { kind: "imageTooBig", bytes: bytes.value.byteLength },
+      error:
+        through === null
+          ? { kind: "imageTooBig", bytes: bytes.value.byteLength }
+          : { kind: "mediaTooBig", bytes: bytes.value.byteLength, limit },
     };
   }
 

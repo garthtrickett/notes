@@ -9,9 +9,14 @@ export type LocalError =
   | { readonly kind: "writeFailed"; readonly cause: string }
   | { readonly kind: "forgetFailed"; readonly cause: string }
   | { readonly kind: "imageUnreadable"; readonly cause: string }
-  | { readonly kind: "imageTooBig"; readonly bytes: number };
+  | { readonly kind: "imageTooBig"; readonly bytes: number }
+  // Not the same failure. A clip or an animation is never resized — resizing
+  // one means re-encoding it, which the browser will not do on a canvas — so
+  // telling someone it is "still" too big "after resizing" describes work that
+  // did not happen and suggests a fix that does not exist.
+  | { readonly kind: "mediaTooBig"; readonly bytes: number; readonly limit: number };
 
-// Exhaustive by construction: a sixth kind stops this compiling, which is the
+// Exhaustive by construction: a new kind stops this compiling, which is the
 // whole reason for the union.
 export const describeLocal = (error: LocalError): string => {
   switch (error.kind) {
@@ -26,6 +31,13 @@ export const describeLocal = (error: LocalError): string => {
     case "imageTooBig": {
       const mb = (error.bytes / 1_000_000).toFixed(1);
       return `That image is still ${mb} MB after resizing, so it was not added. Git keeps binaries forever.`;
+    }
+    case "mediaTooBig": {
+      const mb = (error.bytes / 1_000_000).toFixed(1);
+      const cap = (error.limit / 1_000_000).toFixed(0);
+      // Says what it is rather than what was attempted, and says what would
+      // work, because the answer here is outside the app.
+      return `That clip is ${mb} MB, over the ${cap} MB limit, so it was not added. It is kept as-is — animations and video cannot be re-encoded here — so shorten or compress it first. Git keeps binaries forever.`;
     }
   }
 };
