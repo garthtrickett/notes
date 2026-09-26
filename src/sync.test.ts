@@ -15,6 +15,8 @@ const fakeGithub = () => {
   // ask what a note said at the sha it last agreed about. Without this the
   // merge has no common ancestor to work from.
   const blobs = new Map<string, string>();
+  // Paths the Contents API will refuse to carry, because they are over 1MB.
+  const tooBig = new Set<string>();
   let nextSha = 1;
   let failWith: SyncError | null = null;
   const calls: string[] = [];
@@ -27,7 +29,7 @@ const fakeGithub = () => {
       if (failWith) return err(failWith);
       return ok([...files.values()].map((f) => f.sha).join("-") || "empty");
     },
-    blob: async (sha) => {
+    blob: async (sha, _encoding) => {
       calls.push(`blob ${sha}`);
       if (failWith) return err(failWith);
       const body = blobs.get(sha);
@@ -48,7 +50,12 @@ const fakeGithub = () => {
       calls.push(`read ${path}`);
       if (failWith) return err(failWith);
       const f = files.get(path);
-      return f ? ok(f.body) : err({ kind: "notFound" });
+      if (!f) return err({ kind: "notFound" });
+      // Over 1MB the Contents API answers 200 with `content: ""` and
+      // `encoding: "none"`. Not an error — nothing. Measured against a
+      // 1,106,662-byte file in a public repo.
+      if (tooBig.has(path)) return ok("");
+      return ok(f.body);
     },
     write: async (path, body, baseSha, _encoding) => {
       calls.push(`write ${path}`);
@@ -109,6 +116,7 @@ const fakeGithub = () => {
       // which would make every merge test pass for the wrong reason.
       blobs.set(sha, body);
     },
+    tooBigForContents: (path: string) => void tooBig.add(path),
     fail: (e: SyncError | null) => {
       failWith = e;
     },
@@ -254,6 +262,39 @@ describe("pull", () => {
     await settle(second);
 
     expect(second.model.notes.get("a.md")?.body).toBe("still want this");
+  });
+});
+
+describe("files the Contents API will not carry", () => {
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  it("falls back to the blob for a clip over 1MB", async () => {
+    // Seven of sixteen clips in the real vault are over the limit, and every
+    // one of them silently was not there: no broken player, no message, just
+    // the markdown left showing.
+    remote.put("attachments/clip.mp4", png);
+    remote.tooBigForContents("attachments/clip.mp4");
+    remote.put("note.md", "![](attachments/clip.mp4)");
+
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    await settle(loop);
+
+    const bytes = await getBlob(db as IDBDatabase, "attachments/clip.mp4");
+    expect(bytes).toBe(png);
+    expect(remote.calls).toContain("read attachments/clip.mp4");
+    expect(remote.calls.some((c) => c.startsWith("blob "))).toBe(true);
+  });
+
+  it("does not spend a blob request on files that fit", async () => {
+    remote.put("attachments/small.webp", png);
+    remote.put("note.md", "![](attachments/small.webp)");
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    await settle(loop);
+
+    expect(remote.calls.filter((c) => c.startsWith("blob "))).toEqual([]);
   });
 });
 

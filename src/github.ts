@@ -41,7 +41,10 @@ export interface Github {
   // The body at a blob sha. A note carries the sha it last agreed with GitHub
   // about, so this is how the merge gets the common ancestor — `readAt` cannot,
   // because the Contents API's `ref` is a branch or commit, never a blob.
-  readonly blob: (sha: string) => Promise<Result<string, SyncError>>;
+  readonly blob: (
+    sha: string,
+    encoding: Encoding,
+  ) => Promise<Result<string, SyncError>>;
   // The body *and* the sha it is at, which is what a retry after a conflict
   // needs: the merge reads one and the re-push has to swap against the other.
   readonly current: (
@@ -176,14 +179,16 @@ export const createGithub = (config: Config): Github => {
       return ok(sha);
     },
 
-    blob: async (sha) => {
+    blob: async (sha, encoding) => {
       const res = await send(`${base}/git/blobs/${sha}`);
       if (!res.ok) return res;
       if (!res.value.ok) return err(responseToError(res.value));
       const body = await json<{ content?: string }>(res.value);
       if (!body.ok) return body;
-      // The Blobs API always answers base64, whatever the file holds.
-      return ok(decode((body.value.content ?? "").replace(/\n/g, "")));
+      // The Blobs API always answers base64, whatever the file holds, and it
+      // serves up to 100MB where the Contents API stops at 1.
+      const content = (body.value.content ?? "").replace(/\n/g, "");
+      return ok(encoding === "base64" ? content : decode(content));
     },
 
     current: async (path, encoding) => {

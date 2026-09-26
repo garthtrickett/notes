@@ -5,7 +5,7 @@
 // and it makes every action testable as a plain function from inputs to a
 // proposal, with no model and no renderer in sight.
 
-import { attemptAsync } from "./result.ts";
+import { attemptAsync, type Result } from "./result.ts";
 import type { LocalError } from "./local-error.ts";
 import * as idb from "./idb.ts";
 import type { Encoding, Note, NoteRecord, Proposal } from "./model.ts";
@@ -142,6 +142,32 @@ export const bodyToPush = async (db: IDBDatabase, note: Note): Promise<string> =
     ? ((await idb.getBlob(db, note.path)) ?? "")
     : note.body;
 
+// The Contents API stops carrying content at 1MB. Over that it answers 200 with
+// `content: ""` and `encoding: "none"` — not an error, just nothing — so the
+// read looked like it worked and the file arrived empty. media.ts then filed
+// the path as absent and never asked again, which is why a clip would simply
+// not be there: no broken player, no message, the markdown left showing.
+//
+// Measured against a 1,106,662-byte file in a public repo, unauthenticated:
+// size 1106662, content "" of length 0, encoding "none", download_url present.
+//
+// The Blobs API carries the same bytes up to 100MB, and a pull already knows
+// every file's sha from the manifest, so the fallback costs one extra request
+// and only for the files that need it.
+const readWhateverTheSize = async (
+  github: Github,
+  path: string,
+  sha: string,
+  encoding: Encoding,
+): Promise<Result<string, SyncError>> => {
+  const first = await github.read(path, encoding);
+  // An empty file is a real thing and reads the same way, but fetching its
+  // blob costs one request and returns empty again, so this does not need to
+  // tell them apart.
+  if (!first.ok || first.value !== "") return first;
+  return github.blob(sha, encoding);
+};
+
 export const pull = async (
   github: Github,
   local: ReadonlyMap<string, Note>,
@@ -162,7 +188,7 @@ export const pull = async (
 
   const fetched = await inPool(wanted, async ([path, sha]) => {
     const encoding: Encoding = isBinaryPath(path) ? "base64" : "utf8";
-    const body = await github.read(path, encoding);
+    const body = await readWhateverTheSize(github, path, sha, encoding);
     return { path, sha, encoding, body };
   });
 
@@ -269,7 +295,7 @@ const mergeAndRetry = async (
   // no common ancestor, so there is no way to tell an insertion from an edit.
   if (note.baseSha === null) return null;
 
-  const ancestor = await github.blob(note.baseSha);
+  const ancestor = await github.blob(note.baseSha, note.encoding);
   if (!ancestor.ok) return null;
   const remote = await github.current(note.path, note.encoding);
   if (!remote.ok) return null;
