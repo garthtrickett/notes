@@ -39,4 +39,17 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Beeper's ContentProvider is another app's, so both halves are needed.
+         The permissions get the resolver past SecurityException; the <queries>
+         block gets past Android 11+ package visibility, without which the
+         provider is invisible and a query returns null — indistinguishable
+         from Beeper not being installed. -->
+    <uses-permission android:name="com.beeper.android.permission.READ_PERMISSION" />
+    <uses-permission android:name="com.beeper.android.permission.SEND_PERMISSION" />
+
+    <queries>
+        <package android:name="com.beeper.chat" />
+        <provider android:authorities="com.beeper.api" />
+    </queries>
 </manifest>
