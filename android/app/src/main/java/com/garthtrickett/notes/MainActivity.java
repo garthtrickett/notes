@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(UpdatePlugin.class);
         registerPlugin(BeeperPlugin.class);
+        registerPlugin(AlarmPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

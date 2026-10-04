@@ -27,7 +27,7 @@ import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createTaskCache, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
-import { askToRemind, remindersDeliverable, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { askToRemind, remindersDeliverable, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
@@ -137,10 +137,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
 
   // Setting a reminder is an edit to the line it is on, so it goes the same way
   // a tick does. Nothing is stored beside the note.
-  const remind = (ref: TaskRef, at: number | null) => {
+  const remind = (ref: TaskRef, at: number | null, alarm = ref.alarm) => {
     const body = model.notes.get(ref.path)?.body;
     if (body === undefined) return;
-    const next = setReminder(body, ref, at);
+    const next = setReminder(body, ref, at, alarm);
     if (next === body) return;
     propose({ kind: "edited", path: ref.path, body: next });
     // Setting one is the gesture that earns the right to ask. The answer moves
@@ -419,6 +419,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // the answer arrives later, so the first attempts here are refused —
     // caching the key on one of those would leave every reminder unscheduled
     // for the rest of the session.
+    // Clock alarms are separate from notifications and only possible inside
+    // 24 hours, so this runs every time the set changes rather than once.
+    track(syncClockAlarms(refs, now()));
+
     // Android hands the set to the OS; the web arms timers in this page. Both
     // report whether they took it, and only then is the set recorded.
     if (syncWebReminders(refs, now())) {

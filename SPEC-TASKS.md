@@ -263,6 +263,39 @@ as not firing. The stamp is anchored to whitespace at both ends, so
   every paint and written back as an ordinary edit, which is the whole reason
   one set on the laptop arrives on the phone at all.
 
+### Alarms
+
+A trailing `!` asks for a clock alarm as well as a notification:
+
+```
+- [ ] Surf, bring the 6'0 @2026-09-24 05:30!
+```
+
+A notification is easy to sleep through; an alarm is the point when the
+reminder is a dawn patrol. The flag rides in the text with the time, so the
+intent travels with the task and the web simply ignores it.
+
+**It can only be set inside 24 hours, and that is Android's limit rather than
+a choice.** `ACTION_SET_ALARM` takes an hour and a minute and has no date
+extra — `EXTRA_DAYS` is weekdays for a repeating alarm — so an alarm always
+lands on the next occurrence of that time. Asking three days early would ring
+tomorrow. Checked against AOSP's `AlarmClock.java`, not assumed;
+`ACTION_SET_TIMER` is no escape either, its `EXTRA_LENGTH` is capped at 86400
+seconds.
+
+So the alarm is created when the reminder comes *into* range, not when it is
+set — which means the app has to have run inside that last day, the same
+condition the notifications already have.
+
+One alarm per reminder per device, tracked in localStorage. That is the right
+place for it here, unlike the check-ins: a check-in being done is a fact about
+the day, but whether *this* phone has already told *its* clock is a fact about
+the phone.
+
+`EXTRA_SKIP_UI` is a request, not a guarantee — the docs say a clock app "may
+display intermediate UI like a confirmation dialog", so a tap may still be
+needed and that is the clock app's call.
+
 ### What actually rings
 
 **Android:** the set is handed to the OS, which delivers it with the app

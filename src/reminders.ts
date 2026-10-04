@@ -11,7 +11,14 @@
 
 // `@` then a date, optionally a 24-hour time. Anchored to whitespace at both
 // ends so an email address or a `@mention` mid-sentence is not a reminder.
-const PATTERN = /(?:^|\s)@(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?(?=\s|$)/;
+const PATTERN = /(?:^|\s)@(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?(!?)(?=\s|$)/;
+
+// A trailing `!` asks for a clock alarm as well as a notification — "10:00!"
+// reading as the shout it is. It rides in the text with the time rather than
+// being kept beside the note, so the intent travels with the task; whether a
+// given device can act on it is that device's business.
+export const alarmWanted = (title: string): boolean =>
+  (PATTERN.exec(title)?.[6] ?? "") === "!";
 
 // A bare date means the morning, not midnight — nobody means 00:00 by "the
 // 11th", and a reminder that fires while you are asleep is one you will not see.
@@ -45,22 +52,29 @@ export const titleWithout = (title: string): string =>
 
 const two = (n: number): string => String(n).padStart(2, "0");
 
-export const stampOf = (at: number): string => {
+export const stampOf = (at: number, alarm = false): string => {
   const d = new Date(at);
   const date = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
   // A 09:00 reminder round-trips to a bare date, so the common case stays the
   // short form rather than growing a `09:00` nobody typed.
-  return d.getHours() === DEFAULT_HOUR && d.getMinutes() === 0
-    ? `@${date}`
-    : `@${date} ${two(d.getHours())}:${two(d.getMinutes())}`;
+  const stamp =
+    d.getHours() === DEFAULT_HOUR && d.getMinutes() === 0
+      ? `@${date}`
+      : `@${date} ${two(d.getHours())}:${two(d.getMinutes())}`;
+  return alarm ? `${stamp}!` : stamp;
 };
 
 // Set, move or clear the reminder on one title. Always one reminder per task:
 // setting a second replaces the first rather than leaving both to argue.
-export const withReminder = (title: string, at: number | null): string => {
+export const withReminder = (
+  title: string,
+  at: number | null,
+  alarm = false,
+): string => {
   const bare = titleWithout(title);
   if (at === null) return bare;
-  return bare === "" ? stampOf(at) : `${bare} ${stampOf(at)}`;
+  const stamp = stampOf(at, alarm);
+  return bare === "" ? stamp : `${bare} ${stamp}`;
 };
 
 // The quick choices the Tasks tab offers, resolved against an injected now.

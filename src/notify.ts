@@ -26,7 +26,7 @@
 // hang itself; this no-op 20 is what it finally downloads.
 // Dummy-commit anchor 9: 21 is the first clean build after the tracing came
 // out; this no-op 22 is what the sideloaded phone proves itself against.
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 import type { TaskRef } from "./tasks.ts";
 
@@ -244,4 +244,97 @@ export const onNotificationTap = async (routes: TapRoutes): Promise<void> => {
     "localNotificationActionPerformed",
     (action) => routeTap(action.notification?.extra, routes),
   );
+};
+
+// Clock alarms, which are a different thing from the notifications above.
+//
+// A notification is easy to sleep through; an alarm is the point when the
+// reminder is a 5:30 surf. The cost is that ACTION_SET_ALARM only takes an
+// hour and a minute — no date — so an alarm can only be asked for once the
+// reminder is inside the next 24 hours, or it rings at the next occurrence of
+// that time, which is the wrong day.
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+interface AlarmNative {
+  set(options: { hour: number; minute: number; message: string }): Promise<{ set: boolean }>;
+}
+
+const alarmPlugin = registerPlugin<AlarmNative>("Alarm");
+
+// Which flagged reminders are close enough to hand to the clock. Exported
+// because this rule is the whole feature and deserves testing without a phone.
+export const alarmable = (
+  refs: readonly TaskRef[],
+  now: number,
+): TaskRef[] =>
+  refs.filter(
+    (r) =>
+      r.alarm &&
+      !r.done &&
+      r.remindAt !== null &&
+      r.remindAt > now &&
+      r.remindAt - now <= DAY_MS,
+  );
+
+// One alarm per reminder per device. The app sees the same task every time it
+// opens, and without this it would stack a fresh alarm on each visit.
+//
+// Device-local on purpose, and localStorage is right for it here in a way it
+// was not for the check-ins: a check-in being done is a fact about the day,
+// but whether *this* phone has already told *its* clock is a fact about the
+// phone.
+const SET_KEY = "notes.alarmsSet";
+
+const keyOf = (ref: TaskRef): string => `${ref.path}\u0000${ref.title}\u0000${ref.remindAt as number}`;
+
+const alreadySet = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(SET_KEY);
+    const ids: unknown = raw === null ? [] : JSON.parse(raw);
+    return new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    // A corrupt value means a duplicate alarm at worst, not a crash.
+    return new Set();
+  }
+};
+
+// Entries are dropped once their time has passed, so this cannot grow forever.
+const remember = (keys: Set<string>, now: number): void => {
+  const live = [...keys].filter((k) => {
+    const at = Number(k.split("\u0000")[2]);
+    return Number.isFinite(at) && at > now - DAY_MS;
+  });
+  try {
+    localStorage.setItem(SET_KEY, JSON.stringify(live));
+  } catch {
+    // Out of quota: the alarm was still set, it just may be set twice.
+  }
+};
+
+export const syncClockAlarms = async (
+  refs: readonly TaskRef[],
+  now: number,
+): Promise<number> => {
+  if (!Capacitor.isNativePlatform()) return 0;
+  const done = alreadySet();
+  let set = 0;
+  for (const ref of alarmable(refs, now)) {
+    const key = keyOf(ref);
+    if (done.has(key)) continue;
+    const at = new Date(ref.remindAt as number);
+    try {
+      await alarmPlugin.set({
+        hour: at.getHours(),
+        minute: at.getMinutes(),
+        message: ref.title,
+      });
+      // Recorded only on success, so a refusal is retried next time.
+      done.add(key);
+      set += 1;
+    } catch {
+      // The clock app declined or there is none. The notification still fires.
+    }
+  }
+  remember(done, now);
+  return set;
 };

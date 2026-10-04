@@ -45,6 +45,10 @@
          block gets past Android 11+ package visibility, without which the
          provider is invisible and a query returns null — indistinguishable
          from Beeper not being installed. -->
+    <!-- Lets the clock app honour EXTRA_SKIP_UI instead of making every
+         reminder a dialog to dismiss. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
     <uses-permission android:name="com.beeper.android.permission.READ_PERMISSION" />
     <uses-permission android:name="com.beeper.android.permission.SEND_PERMISSION" />
 

@@ -5,7 +5,7 @@
 import { describe, expect, it, test } from "bun:test";
 import { spansFor } from "./decorate.ts";
 import { createTaskCache, flipTask, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
-import { armableReminders, dueReminders, reminderId, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { alarmable, armableReminders, dueReminders, reminderId, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import { SLOTS } from "./checkins.ts";
 import type { Note } from "./model.ts";
 
@@ -214,7 +214,7 @@ describe("which reminders the OS should hold", () => {
   const now = new Date("2026-09-10T12:00:00").getTime();
   const ref = (over: Partial<TaskRef>): TaskRef => ({
     path: "a.md", from: 0, marker: 3, done: false, title: "t",
-    remindAt: null, titleFrom: 5, titleTo: 6, ...over,
+    remindAt: null, alarm: false, titleFrom: 5, titleTo: 6, ...over,
   });
 
   it("keeps open tasks with a future time", () => {
@@ -279,7 +279,7 @@ describe("arming a timer in the page", () => {
   const now = new Date("2026-09-10T12:00:00").getTime();
   const ref = (over: Partial<TaskRef>): TaskRef => ({
     path: "a.md", from: 0, marker: 3, done: false, title: "t",
-    remindAt: null, titleFrom: 5, titleTo: 6, ...over,
+    remindAt: null, alarm: false, titleFrom: 5, titleTo: 6, ...over,
   });
 
   it("arms one inside setTimeout's range", () => {
@@ -313,5 +313,43 @@ describe("arming a timer in the page", () => {
     // No Notification in this environment, which is the same answer as
     // permission not granted yet: say undelivered so the caller asks again.
     expect(syncWebReminders([ref({ remindAt: now + 1000 })], now)).toBe(false);
+  });
+});
+
+describe("which alarms the clock can be given", () => {
+  const now = new Date("2026-09-23T12:00:00").getTime();
+  const hour = 60 * 60 * 1000;
+  const ref = (over: Partial<TaskRef>): TaskRef => ({
+    path: "a.md", from: 0, marker: 3, done: false, title: "t",
+    remindAt: null, alarm: true, titleFrom: 5, titleTo: 6, ...over,
+  });
+
+  it("takes one inside the next 24 hours", () => {
+    expect(alarmable([ref({ remindAt: now + 17 * hour })], now).length).toBe(1);
+  });
+
+  it("refuses one further out than 24 hours", () => {
+    // ACTION_SET_ALARM has no date extra — it fires at the next occurrence of
+    // the time. Asking now for something 3 days away rings tomorrow instead,
+    // which is worse than not ringing. Verified against AOSP's AlarmClock.java:
+    // HOUR, MINUTES, MESSAGE, DAYS (weekdays), SKIP_UI — no date.
+    expect(alarmable([ref({ remindAt: now + 25 * hour })], now).length).toBe(0);
+    expect(alarmable([ref({ remindAt: now + 3 * 24 * hour })], now).length).toBe(0);
+  });
+
+  it("refuses one whose time has passed", () => {
+    expect(alarmable([ref({ remindAt: now - hour })], now).length).toBe(0);
+  });
+
+  it("refuses a reminder that did not ask for an alarm", () => {
+    expect(alarmable([ref({ alarm: false, remindAt: now + hour })], now).length).toBe(0);
+  });
+
+  it("refuses a task already ticked off", () => {
+    expect(alarmable([ref({ done: true, remindAt: now + hour })], now).length).toBe(0);
+  });
+
+  it("sets nothing where there is no clock to set it on", async () => {
+    expect(await syncClockAlarms([ref({ remindAt: now + hour })], now)).toBe(0);
   });
 });

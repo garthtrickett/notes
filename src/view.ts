@@ -49,7 +49,11 @@ export interface ViewCtx {
   readonly onCheckin: (slot: CheckinSlot) => void;
   // Setting a reminder rewrites the task's own line, so it takes the same route
   // as ticking one. Null clears it.
-  readonly onRemind: (ref: TaskRef, at: number | null) => void;
+  readonly onRemind: (
+    ref: TaskRef,
+    at: number | null,
+    alarm?: boolean,
+  ) => void;
   readonly previewCache: PreviewCache;
   readonly media: Media;
   // Saving the vault config is ambient state, so it belongs to main rather than
@@ -566,17 +570,25 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
       el.value = "";
       if (picked === "") return;
       if (picked === "clear") return ctx.onRemind(ref, null);
+      // Toggles the alarm on whatever time is already set, rather than
+      // doubling every entry on the list into with- and without-alarm.
+      if (picked === "alarm") return ctx.onRemind(ref, ref.remindAt, !ref.alarm);
       const choice = CHOICES.find((c) => c.id === picked);
-      if (choice) ctx.onRemind(ref, choice.at(at));
+      if (choice) ctx.onRemind(ref, choice.at(at), ref.alarm);
     }}
   >
     <option value="">
-      ${ref.remindAt === null ? "remind" : describeDue(ref.remindAt, at)}
+      ${ref.remindAt === null
+        ? "remind"
+        : `${ref.alarm ? "⏰ " : ""}${describeDue(ref.remindAt, at)}`}
     </option>
     ${CHOICES.map((c) => html`<option value=${c.id}>${c.label}</option>`)}
     ${ref.remindAt === null
       ? nothing
-      : html`<option value="clear">Clear reminder</option>`}
+      : html`<option value="alarm">
+            ${ref.alarm ? "Notification only" : "Ring an alarm"}
+          </option>
+          <option value="clear">Clear reminder</option>`}
   </select>`;
 
   const row = (ref: TaskRef) => html`<li>

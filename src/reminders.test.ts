@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  alarmWanted,
   CHOICES,
   describe as describeAt,
   reminderIn,
@@ -121,5 +122,46 @@ describe("how a due time reads", () => {
 
   it("calls out one that has been missed", () => {
     expect(describeAt(at("2026-09-09T09:00:00"), noon)).toBe("overdue 09:00");
+  });
+});
+
+describe("asking for an alarm as well", () => {
+  it("reads a trailing bang as wanting one", () => {
+    expect(alarmWanted("surf @2026-09-24 05:30!")).toBe(true);
+    expect(alarmWanted("surf @2026-09-24!")).toBe(true);
+    expect(alarmWanted("surf @2026-09-24 05:30")).toBe(false);
+    expect(alarmWanted("surf")).toBe(false);
+  });
+
+  it("still reads the time, bang or no bang", () => {
+    // The bang must not break the parse it is attached to.
+    expect(reminderIn("surf @2026-09-24 05:30!")).toBe(at("2026-09-24T05:30:00"));
+    expect(reminderIn("surf @2026-09-24!")).toBe(at("2026-09-24T09:00:00"));
+  });
+
+  it("strips the whole stamp from the title, bang included", () => {
+    expect(titleWithout("surf @2026-09-24 05:30!")).toBe("surf");
+  });
+
+  it("round-trips through the text", () => {
+    const when = at("2026-09-24T05:30:00");
+    const line = withReminder("surf", when, true);
+    expect(line).toBe("surf @2026-09-24 05:30!");
+    expect(alarmWanted(line)).toBe(true);
+    expect(reminderIn(line)).toBe(when);
+  });
+
+  it("keeps the short form for nine o'clock with an alarm", () => {
+    expect(withReminder("surf", at("2026-09-24T09:00:00"), true)).toBe("surf @2026-09-24!");
+  });
+
+  it("drops the alarm when the reminder is cleared", () => {
+    // An alarm on no reminder is nothing.
+    const line = withReminder("surf", at("2026-09-24T05:30:00"), true);
+    expect(withReminder(line, null)).toBe("surf");
+  });
+
+  it("does not mistake a bang in ordinary text for one", () => {
+    expect(alarmWanted("surf! @2026-09-24 05:30")).toBe(false);
   });
 });

@@ -10,7 +10,7 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import type { Note } from "./model.ts";
 import { isArchivePath, isTrashPath } from "./paths.ts";
-import { reminderIn, titleWithout, withReminder } from "./reminders.ts";
+import { alarmWanted, reminderIn, titleWithout, withReminder } from "./reminders.ts";
 
 export interface TaskRef {
   // Vault path of the file holding the box.
@@ -25,6 +25,8 @@ export interface TaskRef {
   // When it wants bringing up again, read out of the same line. Null is the
   // ordinary case; nothing is stored anywhere else.
   readonly remindAt: number | null;
+  // Whether the reminder asked for a clock alarm as well as a notification.
+  readonly alarm: boolean;
   // Where the title starts in the file, so a reminder can be written back
   // without rescanning. Same bargain as `marker`: good for one paint.
   readonly titleFrom: number;
@@ -58,6 +60,7 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
         done: body[at] !== " ",
         title: titleWithout(raw),
         remindAt: reminderIn(raw),
+        alarm: alarmWanted(raw),
         titleFrom: marker.to,
         titleTo: end,
       });
@@ -107,6 +110,7 @@ export const setReminder = (
   body: string,
   ref: TaskRef,
   at: number | null,
+  alarm = false,
 ): string => {
   const raw = body.slice(ref.titleFrom, ref.titleTo);
   // The same bargain as flipTask: a ref scanned before an unpainted edit no
@@ -116,7 +120,9 @@ export const setReminder = (
   // not.
   if (titleWithout(raw) !== ref.title || reminderIn(raw) !== ref.remindAt) return body;
   const lead = /^\s*/.exec(raw)?.[0] ?? "";
-  const next = withReminder(raw.trim(), at);
+  // No guard needed on clearing: withReminder returns the bare title before it
+  // looks at the alarm, so an alarm cannot outlive the reminder it was on.
+  const next = withReminder(raw.trim(), at, alarm);
   return body.slice(0, ref.titleFrom) + lead + next + body.slice(ref.titleTo);
 };
 
