@@ -243,6 +243,45 @@ Touched, exhaustively (verified: these are the only sites that switch on
 
 ## 8. Reminders
 
+### How to use it
+
+**Type it**, anywhere on the task line:
+
+```
+- [ ] call the bank @2026-09-11 14:30      notification at 14:30
+- [ ] ask Simon about dinner @2026-09-12   bare date means 09:00
+- [ ] surf, bring the 6'0 @2026-09-24 05:30!   the ! also rings a clock alarm
+```
+
+**Or use the Tasks tab.** Every row has a dropdown on the right:
+
+| It says | It does |
+| --- | --- |
+| `remind` | nothing set yet |
+| This evening | today 18:00 |
+| Tomorrow 9am | tomorrow 09:00 |
+| Next week | +7 days, 09:00 |
+| Ring an alarm | adds the `!` to the time already set |
+| Notification only | takes the `!` off again |
+| Clear reminder | removes the stamp |
+
+Once set, the dropdown shows the time instead of `remind` — `14:30`,
+`tomorrow 09:00`, `Sun 09:00`, or `overdue 09:00` if it has been missed. A
+clock icon in front of it means the alarm is on.
+
+**Four things that will catch you out:**
+
+1. **The app has to have run.** Reminders are handed to the phone while the
+   app is open; nothing schedules itself. Open it once before you rely on one.
+2. **An alarm is only created inside 24 hours of the time** — Android has no
+   way to set a dated alarm. A `!` on something next week does nothing until
+   the day before, and the app still has to run in that window.
+3. **Alarms are Android only.** The web ignores the `!` entirely.
+4. **On the web, notifications only fire while a tab is open.** See *What
+   actually rings* below.
+
+### The format
+
 A task can carry a time, written into its own line:
 
 ```
