@@ -27,7 +27,7 @@ import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createTaskCache, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
-import { askToRemind, reminderSetKey, remindersDeliverable, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { askToRemind, reminderSetKey, remindersDeliverable, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
@@ -405,23 +405,37 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // laptop becomes an alarm on the phone — the text arrives by sync, and this
   // turns it into something the OS will deliver.
   let lastReminderKey: string | null = null;
+  let lastAlarmKey: string | null = null;
   const napReminders = () => {
     if (!model.hydrated || !remindersDeliverable()) return;
     const refs: TaskRef[] = [];
     for (const group of tasksInVault(model.notes, tasks)) refs.push(...group.refs);
     const key = reminderSetKey(refs);
+    // Alarms are separate from notifications. The phone takes the whole set
+    // and diffs it itself, so this runs every time the set changes — that is
+    // what moves an alarm when its task is retimed, and cancels it when the
+    // task is ticked or loses its `!`.
+    //
+    // Recorded before it is sent, unlike the notifications below, and on its
+    // own key. Its warning is a proposal, a proposal runs nap, and nap is
+    // here again: keyed on the notifications' "delivered" this re-sent the
+    // set and re-raised the warning for as long as notification permission
+    // was still being asked. A setting the warning names is picked up without
+    // a re-send — the phone reschedules what it holds when exact alarms are
+    // allowed — so there is nothing a retry would add.
+    if (key !== lastAlarmKey) {
+      lastAlarmKey = key;
+      track(
+        syncAlarms(refs, now()).then((result) => {
+          if (result.error !== null) propose({ kind: "alarmFailed", reason: result.error });
+        }),
+      );
+    }
     if (key === lastReminderKey) return;
     // Recorded only once the OS has it. Permission is requested on boot and
     // the answer arrives later, so the first attempts here are refused —
     // caching the key on one of those would leave every reminder unscheduled
     // for the rest of the session.
-    // Clock alarms are separate from notifications and only possible inside
-    // 24 hours, so this runs every time the set changes rather than once.
-    track(
-      syncClockAlarms(refs, now()).then((result) => {
-        if (result.error !== null) propose({ kind: "alarmFailed", reason: result.error });
-      }),
-    );
 
     // Android hands the set to the OS; the web arms timers in this page. Both
     // report whether they took it, and only then is the set recorded.

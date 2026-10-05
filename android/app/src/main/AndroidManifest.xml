@@ -24,6 +24,31 @@
 
         </activity>
 
+        <!-- The ringing screen. Its own task with no affinity, so finishing it
+             drops back to the lock screen or whatever was open, not into the
+             app. -->
+        <activity
+            android:name=".AlarmActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <!-- Not exported: nothing outside the app may tick a task by intent.
+             The system's own broadcasts are delivered regardless. -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -45,9 +70,16 @@
          block gets past Android 11+ package visibility, without which the
          provider is invisible and a query returns null — indistinguishable
          from Beeper not being installed. -->
-    <!-- Lets the clock app honour EXTRA_SKIP_UI instead of making every
-         reminder a dialog to dismiss. -->
-    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- The app's own alarms (Alarms.java). USE_EXACT_ALARM is granted at
+         install from Android 13 for an app that rings alarms; the
+         local-notifications plugin already brings SCHEDULE_EXACT_ALARM for 12.
+         Full-screen intent is what raises the ringing screen over the lock
+         screen; boot is what puts the alarms back after a restart. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <uses-permission android:name="com.beeper.android.permission.READ_PERMISSION" />
     <uses-permission android:name="com.beeper.android.permission.SEND_PERMISSION" />
@@ -55,12 +87,5 @@
     <queries>
         <package android:name="com.beeper.chat" />
         <provider android:authorities="com.beeper.api" />
-        <!-- The same package-visibility rule the Beeper entries exist for, and
-             missed here the first time. Without it resolveActivity() returns
-             null at targetSdk 30+, so the alarm plugin concluded there was no
-             clock app and never sent the alarm. -->
-        <intent>
-            <action android:name="android.intent.action.SET_ALARM" />
-        </intent>
     </queries>
 </manifest>

@@ -109,6 +109,15 @@ export const dueReminders = (
 ): TaskRef[] =>
   refs.filter((r) => !r.done && r.remindAt !== null && r.remindAt > now);
 
+// Which of those Android delivers as a plain notification. A task flagged for
+// an alarm is left to the alarm, which posts its own ringing notification at
+// the same minute: both would be two buzzes for one reminder, and the plain
+// one has no Done or Snooze. The web has no alarms, so it keeps them all.
+export const notifiedReminders = (
+  refs: readonly TaskRef[],
+  now: number,
+): TaskRef[] => dueReminders(refs, now).filter((r) => !r.alarm);
+
 // Rebuilt from scratch, like the check-ins: cancel every task reminder the OS
 // is holding, then schedule the current set. Idempotent, and a task that was
 // ticked off or retimed on another device cannot strand an alarm.
@@ -133,7 +142,7 @@ export const syncTaskReminders = async (
     });
   }
 
-  const due = dueReminders(refs, now);
+  const due = notifiedReminders(refs, now);
   if (due.length === 0) return true;
   await LocalNotifications.schedule({
     notifications: due.map((ref) => ({
@@ -262,108 +271,120 @@ export const reminderSetKey = (refs: readonly TaskRef[]): string =>
     .sort()
     .join("|");
 
-// Clock alarms, which are a different thing from the notifications above.
+// Alarms, which are a different thing from the notifications above.
 //
 // A notification is easy to sleep through; an alarm is the point when the
-// reminder is a 5:30 surf. The cost is that ACTION_SET_ALARM only takes an
-// hour and a minute — no date — so an alarm can only be asked for once the
-// reminder is inside the next 24 hours, or it rings at the next occurrence of
-// that time, which is the wrong day.
-const DAY_MS = 24 * 60 * 60 * 1000;
+// reminder is a 5:30 surf. The app owns these outright: AlarmManager's
+// setAlarmClock wakes the phone at the exact minute and the app's own screen
+// rings, with Done and Snooze 10 that write back to the task. The Clock app is
+// not involved. It offers no way to read an alarm back, so an alarm handed to
+// it could never follow the task, and its intent has no date, which limited
+// the old version to the next 24 hours. Neither limit applies now.
+export interface AlarmEntry {
+  readonly id: number;
+  readonly at: number;
+  readonly title: string;
+  readonly path: string;
+}
+
+// The whole rule: an open task, flagged with `!`, at a time still to come.
+// Exported because it is the feature, and deserves testing without a phone.
+export const alarmsWanted = (
+  refs: readonly TaskRef[],
+  now: number,
+): AlarmEntry[] =>
+  refs
+    .filter((r) => r.alarm && !r.done && r.remindAt !== null && r.remindAt > now)
+    .map((r) => ({ id: reminderId(r), at: r.remindAt as number, title: r.title, path: r.path }));
+
+// What the phone said about the settings that decide whether an alarm rings
+// properly.
+export interface AlarmStatus {
+  // Exact timing. Without it the alarm is still set, but Android may hold it
+  // back by minutes to batch it with other work.
+  readonly exact: boolean;
+  // Over the lock screen. Without it the alarm still rings, as a heads-up
+  // notification with the same two buttons.
+  readonly fullScreen: boolean;
+  // Notifications at all. Without these nothing rings.
+  readonly notifications: boolean;
+}
+
+// Worst first, and only one: the banner is one line, and fixing the worst
+// setting is the next thing to do whichever others are also off.
+export const alarmWarning = (status: AlarmStatus): string | null => {
+  if (!status.notifications) {
+    return "notifications are off for Notes, so alarms cannot ring. Turn them on in Android settings → Apps → Notes → Notifications.";
+  }
+  if (!status.exact) {
+    return "Notes may not set exact alarms, so they can ring late. Allow it in Android settings → Apps → Notes → Alarms & reminders.";
+  }
+  if (!status.fullScreen) {
+    return "alarms will ring as a notification, not over the lock screen. Allow full-screen notifications for Notes in Android settings.";
+  }
+  return null;
+};
 
 interface AlarmNative {
-  set(options: { hour: number; minute: number; message: string }): Promise<{ set: boolean }>;
+  sync(options: { alarms: AlarmEntry[] }): Promise<AlarmStatus & { scheduled: number }>;
+  take(): Promise<{ answers: unknown }>;
+  addListener(event: "answered", listener: () => void): Promise<unknown>;
 }
 
 const alarmPlugin = registerPlugin<AlarmNative>("Alarm");
 
-// Which flagged reminders are close enough to hand to the clock. Exported
-// because this rule is the whole feature and deserves testing without a phone.
-export const alarmable = (
-  refs: readonly TaskRef[],
-  now: number,
-): TaskRef[] =>
-  refs.filter(
-    (r) =>
-      r.alarm &&
-      !r.done &&
-      r.remindAt !== null &&
-      r.remindAt > now &&
-      r.remindAt - now <= DAY_MS,
-  );
-
-// One alarm per reminder per device. The app sees the same task every time it
-// opens, and without this it would stack a fresh alarm on each visit.
-//
-// Device-local on purpose, and localStorage is right for it here in a way it
-// was not for the check-ins: a check-in being done is a fact about the day,
-// but whether *this* phone has already told *its* clock is a fact about the
-// phone.
-const SET_KEY = "notes.alarmsSet";
-
-const keyOf = (ref: TaskRef): string => `${ref.path}\u0000${ref.title}\u0000${ref.remindAt as number}`;
-
-const alreadySet = (): Set<string> => {
-  try {
-    const raw = localStorage.getItem(SET_KEY);
-    const ids: unknown = raw === null ? [] : JSON.parse(raw);
-    return new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : []);
-  } catch {
-    // A corrupt value means a duplicate alarm at worst, not a crash.
-    return new Set();
-  }
-};
-
-// Entries are dropped once their time has passed, so this cannot grow forever.
-const remember = (keys: Set<string>, now: number): void => {
-  const live = [...keys].filter((k) => {
-    const at = Number(k.split("\u0000")[2]);
-    return Number.isFinite(at) && at > now - DAY_MS;
-  });
-  try {
-    localStorage.setItem(SET_KEY, JSON.stringify(live));
-  } catch {
-    // Out of quota: the alarm was still set, it just may be set twice.
-  }
-};
-
-// Says what went wrong as well as how many were set. The first version caught
-// the plugin's rejection and said nothing, so an alarm that never reached the
-// clock looked exactly like one that worked until it failed to ring.
-export interface ClockAlarmResult {
-  readonly set: number;
+// Says what went wrong as well as how many were set. The first clock version
+// caught the plugin's rejection and said nothing, so an alarm that never
+// reached the clock looked exactly like one that worked until it failed to
+// ring.
+export interface AlarmSyncResult {
+  readonly scheduled: number;
   readonly error: string | null;
 }
 
-export const syncClockAlarms = async (
+// The phone gets the whole wanted set every time and works out the difference
+// itself — cancelling what is gone, moving what was retimed. Idempotent, so it
+// is safe to repeat, and an alarm whose task was ticked off or un-flagged on
+// another device is cancelled the next time this phone opens the app.
+//
+// Unlike the clock version it needs no record of what it already set: an
+// alarm is keyed by the task's id, so setting it again replaces it rather than
+// adding a second one.
+export const syncAlarms = async (
   refs: readonly TaskRef[],
   now: number,
-): Promise<ClockAlarmResult> => {
-  if (!Capacitor.isNativePlatform()) return { set: 0, error: null };
-  const done = alreadySet();
-  let set = 0;
-  let error: string | null = null;
-  for (const ref of alarmable(refs, now)) {
-    const key = keyOf(ref);
-    if (done.has(key)) continue;
-    const at = new Date(ref.remindAt as number);
-    try {
-      await alarmPlugin.set({
-        hour: at.getHours(),
-        minute: at.getMinutes(),
-        message: ref.title,
-      });
-      // Recorded only on success, so a refusal is retried next time.
-      done.add(key);
-      set += 1;
-    } catch (cause) {
-      // Not recorded as set, so it is retried next time. The notification
-      // still fires either way.
-      error ??= cause instanceof Error && cause.message !== ""
+): Promise<AlarmSyncResult> => {
+  if (!Capacitor.isNativePlatform()) return { scheduled: 0, error: null };
+  try {
+    const status = await alarmPlugin.sync({ alarms: alarmsWanted(refs, now) });
+    return { scheduled: status.scheduled, error: alarmWarning(status) };
+  } catch (cause) {
+    return {
+      scheduled: 0,
+      error: cause instanceof Error && cause.message !== ""
         ? cause.message
-        : "The clock app did not take the alarm.";
-    }
+        : "the phone refused to schedule the alarms.",
+    };
   }
-  remember(done, now);
-  return { set, error };
+};
+
+// Done and Snooze presses waiting since the app last ran. Taking them clears
+// them on the phone, so each answer is applied exactly once.
+export const takeAlarmAnswers = async (): Promise<unknown> => {
+  if (!Capacitor.isNativePlatform()) return [];
+  try {
+    return (await alarmPlugin.take()).answers;
+  } catch {
+    // An older build without take(), or a bridge hiccup: the answers stay on
+    // the phone and are taken next time.
+    return [];
+  }
+};
+
+// Raised by the phone when an answer is written while the app is still
+// alive, so a press with the app open behind the alarm lands straight away
+// instead of on the next resume.
+export const onAlarmAnswered = (listener: () => void): void => {
+  if (!Capacitor.isNativePlatform()) return;
+  void alarmPlugin.addListener("answered", listener);
 };

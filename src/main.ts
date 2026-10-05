@@ -7,7 +7,8 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
-import { onNotificationTap, syncCheckinNotifications } from "./notify.ts";
+import { onAlarmAnswered, onNotificationTap, syncCheckinNotifications, takeAlarmAnswers } from "./notify.ts";
+import { parseAnswers } from "./alarms.ts";
 import { checkForUpdate } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 
@@ -103,6 +104,18 @@ if (config === null) {
     note: (path) => loop.propose({ kind: "openRequested", path }),
     dump: () => loop.propose({ kind: "modeChanged", mode: "dump" }),
   });
+  // Done and Snooze pressed on the alarm screen while the app was closed are
+  // waiting on the phone; so is one pressed with the app open behind the
+  // alarm, which the phone announces. The model holds them until the notes
+  // they edit have loaded.
+  const takeAnswers = () => {
+    void takeAlarmAnswers().then((raw) => {
+      const answers = parseAnswers(raw);
+      if (answers.length > 0) loop.propose({ kind: "alarmAnswered", answers });
+    });
+  };
+  takeAnswers();
+  onAlarmAnswered(takeAnswers);
   // No-op on the web. On Android this asks for notification permission once
   // and keeps the three daily check-ins scheduled.
   void syncCheckinNotifications();
@@ -204,7 +217,10 @@ if (config === null) {
     pollHead();
   }, POLL_MS);
 
-  const resumed = () => loop.propose({ kind: "resumed" });
+  const resumed = () => {
+    takeAnswers();
+    loop.propose({ kind: "resumed" });
+  };
   // Without these the app pulls once per session, so a note written on the
   // laptop does not appear on the phone until a reload. Clearing the watermark
   // is the whole mechanism; nap() does the rest.

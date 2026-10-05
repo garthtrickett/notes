@@ -27,6 +27,7 @@ import {
   uniquePath,
 } from "./paths.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
+import { applyAnswers, type AlarmAnswer } from "./alarms.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
@@ -93,6 +94,10 @@ export interface Model {
   // tapping a notification is what starts the app, and hydration is still a
   // round trip away.
   openRequest: string | null;
+  // Done and Snooze presses from the alarm screen, held for the same reason:
+  // the press is often what the next launch finds waiting, before the notes it
+  // edits have loaded.
+  alarmAnswers: AlarmAnswer[];
   mode: Mode;
   preview: boolean;
   // Whether the tasks tab shows done work. Off by default: triage is open
@@ -178,6 +183,7 @@ export const createModel = (): Model => ({
   notes: new Map(),
   openPath: null,
   openRequest: null,
+  alarmAnswers: [],
   mode: "notes",
   preview: false,
   showDone: false,
@@ -266,6 +272,7 @@ export type Proposal =
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
   | { readonly kind: "resumed" }
   | { readonly kind: "alarmFailed"; readonly reason: string }
+  | { readonly kind: "alarmAnswered"; readonly answers: readonly AlarmAnswer[] }
   | { readonly kind: "openRequested"; readonly path: string }
   | { readonly kind: "headSeen"; readonly head: string }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
@@ -543,6 +550,25 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       const wanted = m.openRequest;
       m.openRequest = null;
       if (wanted !== null) present(m, { kind: "openRequested", path: wanted });
+      const answers = m.alarmAnswers;
+      m.alarmAnswers = [];
+      if (answers.length > 0) present(m, { kind: "alarmAnswered", answers });
+      return null;
+    }
+
+    case "alarmAnswered": {
+      if (!m.hydrated) {
+        m.alarmAnswers = [...m.alarmAnswers, ...p.answers];
+        return null;
+      }
+      // Each answer becomes the edit a tap would have made — a tick, or a new
+      // stamp — so it persists and syncs by the ordinary road. A line that has
+      // changed since the alarm was set is left alone; see applyAnswers.
+      const edits = applyAnswers((path) => {
+        const note = m.notes.get(path);
+        return note === undefined || note.deleted ? undefined : note.body;
+      }, p.answers);
+      for (const [path, body] of edits) present(m, { kind: "edited", path, body });
       return null;
     }
 
@@ -699,9 +725,9 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
 
     case "alarmFailed": {
       // A message and nothing else. Not routed through "failed", which sets
-      // persistBlocked because it exists for save failures — a clock app
-      // refusing an alarm must not stop the app saving notes.
-      m.error = `Could not set a clock alarm: ${p.reason}`;
+      // persistBlocked because it exists for save failures — an alarm the
+      // phone will not ring properly must not stop the app saving notes.
+      m.error = `Alarms: ${p.reason}`;
       return null;
     }
 

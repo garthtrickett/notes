@@ -450,16 +450,16 @@ describe("resumed", () => {
   });
 });
 
-describe("a clock alarm that could not be set", () => {
+describe("an alarm the phone will not ring properly", () => {
   it("says so, instead of failing silently", () => {
-    // The first version swallowed the plugin's rejection, so an alarm that
-    // never reached the clock was indistinguishable from one that worked —
-    // right up until 09:50 came and nothing rang.
+    // The first clock version swallowed the plugin's rejection, so an alarm
+    // that never reached the clock was indistinguishable from one that worked
+    // — right up until 09:50 came and nothing rang.
     const m = createModel();
     present(m, { kind: "hydrated", notes: [] });
-    present(m, { kind: "alarmFailed", reason: "No clock app on this phone will take an alarm." });
-    expect(m.error).toContain("Could not set a clock alarm");
-    expect(m.error).toContain("No clock app");
+    present(m, { kind: "alarmFailed", reason: "notifications are off for Notes" });
+    expect(m.error).toContain("Alarms");
+    expect(m.error).toContain("notifications are off");
   });
 
   it("does not stop the app saving notes", () => {
@@ -470,6 +470,42 @@ describe("a clock alarm that could not be set", () => {
     present(m, { kind: "hydrated", notes: [] });
     present(m, { kind: "alarmFailed", reason: "refused" });
     expect(m.persistBlocked).toBe(false);
+  });
+});
+
+describe("Done and Snooze from the alarm screen", () => {
+  const surf = new Date("2026-09-24T05:30").getTime();
+  const body = "- [ ] surf @2026-09-24 05:30!\n";
+  const done = { kind: "done" as const, path: "d.md", title: "surf", at: surf, snoozeTo: null };
+
+  it("ticks the task as an ordinary edit, so it saves and syncs", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [note("d.md", { body })] });
+    present(m, { kind: "alarmAnswered", answers: [done] });
+    const after = m.notes.get("d.md");
+    expect(after?.body).toBe("- [x] surf @2026-09-24 05:30!\n");
+    // dirty is what persists it; pending is what pushes it.
+    expect(after?.dirty).toBe(true);
+    expect(after?.pending).toBe(true);
+  });
+
+  it("holds an answer that arrives before the notes, then applies it", () => {
+    // Pressing Done with the app closed and then opening it delivers the
+    // answer during boot, a round trip before hydration has any notes.
+    const m = createModel();
+    present(m, { kind: "alarmAnswered", answers: [done] });
+    expect(m.alarmAnswers.length).toBe(1);
+    present(m, { kind: "hydrated", notes: [note("d.md", { body })] });
+    expect(m.notes.get("d.md")?.body).toBe("- [x] surf @2026-09-24 05:30!\n");
+    expect(m.alarmAnswers.length).toBe(0);
+  });
+
+  it("does not edit a deleted note", () => {
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [note("d.md", { body, deleted: true })] });
+    present(m, { kind: "alarmAnswered", answers: [done] });
+    expect(m.notes.get("d.md")?.body).toBe(body);
+    expect(m.notes.get("d.md")?.dirty).toBe(false);
   });
 });
 

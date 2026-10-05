@@ -250,7 +250,7 @@ Touched, exhaustively (verified: these are the only sites that switch on
 ```
 - [ ] call the bank @2026-09-11 14:30      notification at 14:30
 - [ ] ask Simon about dinner @2026-09-12   bare date means 09:00
-- [ ] surf, bring the 6'0 @2026-09-24 05:30!   the ! also rings a clock alarm
+- [ ] surf, bring the 6'0 @2026-09-24 05:30!   the ! rings an alarm instead
 ```
 
 **Or use the Tasks tab.** Every row has a dropdown on the right:
@@ -269,14 +269,29 @@ Once set, the dropdown shows the time instead of `remind` — `14:30`,
 `tomorrow 09:00`, `Sun 09:00`, or `overdue 09:00` if it has been missed. A
 clock icon in front of it means the alarm is on.
 
+**When the alarm rings** the phone shows the app's own alarm screen — over the
+lock screen if it is locked, as a heads-up notification if you are using it.
+Both have the same two buttons:
+
+| Button | What happens to the task |
+| --- | --- |
+| Done | ticked off |
+| Snooze 10 | the stamp moves to ten minutes from now, and it rings again then |
+
+Unanswered, it stops by itself after ten minutes and the task is left as it
+was. The Clock app is not involved and the alarm does not appear there.
+
 **Four things that will catch you out:**
 
 1. **The app has to have run.** Reminders are handed to the phone while the
-   app is open; nothing schedules itself. Open it once before you rely on one.
-2. **An alarm is only created inside 24 hours of the time** — Android has no
-   way to set a dated alarm. A `!` on something next week does nothing until
-   the day before, and the app still has to run in that window.
-3. **Alarms are Android only.** The web ignores the `!` entirely.
+   app is open; nothing schedules itself. Open it once after setting one on
+   another device before you rely on it.
+2. **Done and Snooze reach the note the next time the app opens.** The alarm
+   is answered with the app closed, so the tick or new time is written down on
+   the phone and applied — and synced — on the next launch. Snooze still
+   rings again on time without that.
+3. **Alarms are Android only.** The web treats a `!` reminder as an ordinary
+   one.
 4. **On the web, notifications only fire while a tab is open.** See *What
    actually rings* below.
 
@@ -304,7 +319,7 @@ as not firing. The stamp is anchored to whitespace at both ends, so
 
 ### Alarms
 
-A trailing `!` asks for a clock alarm as well as a notification:
+A trailing `!` asks for an alarm instead of a plain notification:
 
 ```
 - [ ] Surf, bring the 6'0 @2026-09-24 05:30!
@@ -312,28 +327,48 @@ A trailing `!` asks for a clock alarm as well as a notification:
 
 A notification is easy to sleep through; an alarm is the point when the
 reminder is a dawn patrol. The flag rides in the text with the time, so the
-intent travels with the task and the web simply ignores it.
+intent travels with the task, and the web reads it as an ordinary reminder.
 
-**It can only be set inside 24 hours, and that is Android's limit rather than
-a choice.** `ACTION_SET_ALARM` takes an hour and a minute and has no date
-extra — `EXTRA_DAYS` is weekdays for a repeating alarm — so an alarm always
-lands on the next occurrence of that time. Asking three days early would ring
-tomorrow. Checked against AOSP's `AlarmClock.java`, not assumed;
-`ACTION_SET_TIMER` is no escape either, its `EXTRA_LENGTH` is capped at 86400
-seconds.
+**The app owns the alarm.** `AlarmManager.setAlarmClock` (`Alarms.java`) wakes
+the phone at the exact minute, on any date, and shows in the status bar as the
+next alarm. When it fires, one notification on an alarm-usage channel does the
+ringing — alarm volume, through silent mode, treated as an alarm by Do Not
+Disturb — and its full-screen intent raises `AlarmActivity` over the lock
+screen. The sound belongs to the notification rather than the screen, so it
+rings the same when Android shows a heads-up instead.
 
-So the alarm is created when the reminder comes *into* range, not when it is
-set — which means the app has to have run inside that last day, the same
-condition the notifications already have.
+It used to hand the alarm to the Clock app with `ACTION_SET_ALARM`. That had
+two limits that could not be worked around: the intent has an hour and a
+minute but no date, so it could only be used inside 24 hours, and the Clock
+app offers no way to read, move or cancel an alarm once set (checked against
+AOSP's `AlarmClock.java`), so the alarm could never follow the task.
 
-One alarm per reminder per device, tracked in localStorage. That is the right
-place for it here, unlike the check-ins: a check-in being done is a fact about
-the day, but whether *this* phone has already told *its* clock is a fact about
-the phone.
+**It follows the task both ways.**
 
-`EXTRA_SKIP_UI` is a request, not a guarantee — the docs say a clock app "may
-display intermediate UI like a confirmation dialog", so a tap may still be
-needed and that is the clock app's call.
+- *Task → alarm.* The app hands the phone the whole wanted set — open, flagged,
+  still to come — every time it changes, and `Alarms.sync` works out the
+  difference: retimed tasks move, ticked or un-flagged ones are cancelled.
+  Keyed by the task's id, so setting one again replaces it.
+- *Alarm → task.* Done and Snooze are written down natively
+  (SharedPreferences) because the app is usually not running. The next launch
+  or resume takes them and applies them as ordinary edits through the
+  `alarmAnswered` proposal (`src/alarms.ts`), so they persist and sync like a
+  tap. Each answer finds its line by title and the stamp it rang at, and is
+  applied in the order pressed — two snoozes with the app closed only work
+  because the second finds the stamp the first wrote. A line that changed in
+  the meantime is left alone.
+- *Snooze* schedules the next alarm natively, there and then, for a whole
+  minute (the stamp's resolution), and the app writes that exact minute back.
+  Until the app has taken the press, the snooze overrides whatever stale time
+  the app sends for that task.
+
+Reboots, app updates and exact alarms being re-allowed put the held set back
+(`AlarmReceiver`). Missing settings are reported in the banner, worst first:
+notifications off (nothing can ring), exact alarms off (may ring late),
+full-screen off (rings as a heads-up only).
+
+A flagged task gets no separate plain notification on Android — the alarm's
+own notification replaces it.
 
 ### What actually rings
 

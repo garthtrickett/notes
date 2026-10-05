@@ -5,7 +5,7 @@
 import { describe, expect, it, test } from "bun:test";
 import { spansFor } from "./decorate.ts";
 import { createTaskCache, flipTask, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
-import { alarmable, armableReminders, reminderSetKey, dueReminders, reminderId, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { alarmsWanted, alarmWarning, armableReminders, reminderSetKey, dueReminders, notifiedReminders, reminderId, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import { SLOTS } from "./checkins.ts";
 import type { Note } from "./model.ts";
 
@@ -316,7 +316,7 @@ describe("arming a timer in the page", () => {
   });
 });
 
-describe("which alarms the clock can be given", () => {
+describe("which alarms the phone is given", () => {
   const now = new Date("2026-09-23T12:00:00").getTime();
   const hour = 60 * 60 * 1000;
   const ref = (over: Partial<TaskRef>): TaskRef => ({
@@ -324,35 +324,91 @@ describe("which alarms the clock can be given", () => {
     remindAt: null, alarm: true, titleFrom: 5, titleTo: 6, ...over,
   });
 
-  it("takes one inside the next 24 hours", () => {
-    expect(alarmable([ref({ remindAt: now + 17 * hour })], now).length).toBe(1);
+  it("takes a flagged reminder in the next 24 hours", () => {
+    expect(alarmsWanted([ref({ remindAt: now + 17 * hour })], now).length).toBe(1);
   });
 
-  it("refuses one further out than 24 hours", () => {
-    // ACTION_SET_ALARM has no date extra — it fires at the next occurrence of
-    // the time. Asking now for something 3 days away rings tomorrow instead,
-    // which is worse than not ringing. Verified against AOSP's AlarmClock.java:
-    // HOUR, MINUTES, MESSAGE, DAYS (weekdays), SKIP_UI — no date.
-    expect(alarmable([ref({ remindAt: now + 25 * hour })], now).length).toBe(0);
-    expect(alarmable([ref({ remindAt: now + 3 * 24 * hour })], now).length).toBe(0);
+  it("takes one days away, which the clock version could not", () => {
+    // ACTION_SET_ALARM had no date extra, so the old rule refused anything past
+    // 24 hours. setAlarmClock takes an instant, and the limit went with it.
+    expect(alarmsWanted([ref({ remindAt: now + 25 * hour })], now).length).toBe(1);
+    expect(alarmsWanted([ref({ remindAt: now + 30 * 24 * hour })], now).length).toBe(1);
   });
 
   it("refuses one whose time has passed", () => {
-    expect(alarmable([ref({ remindAt: now - hour })], now).length).toBe(0);
+    expect(alarmsWanted([ref({ remindAt: now - hour })], now).length).toBe(0);
+    expect(alarmsWanted([ref({ remindAt: now })], now).length).toBe(0);
   });
 
   it("refuses a reminder that did not ask for an alarm", () => {
-    expect(alarmable([ref({ alarm: false, remindAt: now + hour })], now).length).toBe(0);
+    expect(alarmsWanted([ref({ alarm: false, remindAt: now + hour })], now).length).toBe(0);
   });
 
   it("refuses a task already ticked off", () => {
-    expect(alarmable([ref({ done: true, remindAt: now + hour })], now).length).toBe(0);
+    expect(alarmsWanted([ref({ done: true, remindAt: now + hour })], now).length).toBe(0);
   });
 
-  it("sets nothing where there is no clock to set it on, and says so cleanly", async () => {
-    // No clock here is not a failure to report — there is simply nothing to do.
-    expect(await syncClockAlarms([ref({ remindAt: now + hour })], now))
-      .toEqual({ set: 0, error: null });
+  it("refuses a flag with no time", () => {
+    expect(alarmsWanted([ref({ remindAt: null })], now).length).toBe(0);
+  });
+
+  it("hands over what the alarm screen and its answer need", () => {
+    // The title and stamp are how the answer finds the line again; the id is
+    // what makes setting it twice replace rather than duplicate.
+    const r = ref({ path: "dump/2026-09-24.md", title: "surf", remindAt: now + hour });
+    expect(alarmsWanted([r], now)).toEqual([
+      { id: reminderId(r), at: now + hour, title: "surf", path: "dump/2026-09-24.md" },
+    ]);
+  });
+
+  it("schedules nothing where there is no phone, and says so cleanly", async () => {
+    expect(await syncAlarms([ref({ remindAt: now + hour })], now))
+      .toEqual({ scheduled: 0, error: null });
+  });
+});
+
+describe("leaving alarms to the alarm", () => {
+  const now = new Date("2026-09-23T12:00:00").getTime();
+  const ref = (over: Partial<TaskRef>): TaskRef => ({
+    path: "a.md", from: 0, marker: 3, done: false, title: "t",
+    remindAt: now + 60_000, alarm: false, titleFrom: 5, titleTo: 6, ...over,
+  });
+
+  it("does not also send a plain notification for a flagged task", () => {
+    // The alarm posts its own ringing notification at that minute; a second,
+    // plain one is a double buzz without the Done and Snooze buttons.
+    expect(notifiedReminders([ref({ alarm: true })], now).length).toBe(0);
+  });
+
+  it("still notifies an unflagged one", () => {
+    expect(notifiedReminders([ref({})], now).length).toBe(1);
+  });
+
+  it("is still a due reminder, which is what the web arms", () => {
+    expect(dueReminders([ref({ alarm: true })], now).length).toBe(1);
+  });
+});
+
+describe("saying what stops an alarm ringing properly", () => {
+  const all = { exact: true, fullScreen: true, notifications: true };
+
+  it("says nothing when every setting is on", () => {
+    expect(alarmWarning(all)).toBeNull();
+  });
+
+  it("names each setting that is off", () => {
+    expect(alarmWarning({ ...all, notifications: false })).toContain("Notifications");
+    expect(alarmWarning({ ...all, exact: false })).toContain("Alarms & reminders");
+    expect(alarmWarning({ ...all, fullScreen: false })).toContain("full-screen");
+  });
+
+  it("names the worst first, since only one fits", () => {
+    // Without notifications nothing rings at all, which makes the other two
+    // moot until it is fixed.
+    expect(alarmWarning({ exact: false, fullScreen: false, notifications: false }))
+      .toContain("cannot ring");
+    expect(alarmWarning({ ...all, exact: false, fullScreen: false }))
+      .toContain("ring late");
   });
 });
 
