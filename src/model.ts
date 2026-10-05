@@ -769,6 +769,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "updateFound": {
+      // Checks repeat while the app is open now, so one can land mid-update.
+      // Resetting to "available" there would strand a download in flight, or
+      // a trip to the install-permission screen; finishing that one wins.
+      if (m.update.status === "fetching" || m.update.status === "permission") return null;
       // A newer build than the dismissed one re-opens the question; the same
       // one stays dismissed.
       if (p.version === m.update.version && m.update.dismissed) return null;

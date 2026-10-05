@@ -905,6 +905,37 @@ describe("self-update state", () => {
     expect(m.update.status).toBe("idle");
   });
 
+  it("a check landing mid-download does not interrupt it", () => {
+    // Checks repeat while the app is open, so the same build is found again
+    // while it is downloading. Going back to "available" would strand it.
+    const m = createModel();
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    present(m, { kind: "updateStarted" });
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    expect(m.update.status).toBe("fetching");
+    present(m, { kind: "updateFound", version: 8, url: "u2" });
+    expect(m.update.status).toBe("fetching");
+    expect(m.update.url).toBe("u");
+  });
+
+  it("a check landing at the permission screen does not undo it", () => {
+    const m = createModel();
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    present(m, { kind: "updateStarted" });
+    present(m, { kind: "updatePermissionNeeded" });
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    expect(m.update.status).toBe("permission");
+  });
+
+  it("a check after a failure offers it again", () => {
+    const m = createModel();
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    present(m, { kind: "updateStarted" });
+    present(m, { kind: "updateFailed", error: "Download failed: offline" });
+    present(m, { kind: "updateFound", version: 7, url: "u" });
+    expect(m.update.status).toBe("available");
+  });
+
   it("a failure carries its reason", () => {
     const m = createModel();
     present(m, { kind: "updateFound", version: 7, url: "u" });

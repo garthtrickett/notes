@@ -51,6 +51,16 @@ export const currentVersion = (): number => {
 // A failed check is silence, not an error proposal. It runs on boot, often
 // offline, and an error toast for "could not ask GitHub about updates" on
 // every tunnel would be the app crying wolf.
+// How often the app may ask GitHub whether there is a newer build. It asks on
+// launch, on coming back to the foreground, and while it sits open — and
+// "coming back" fires on every focus, which on a phone is constantly. An
+// unauthenticated client gets 60 requests an hour, and the head poll needs
+// its share of those, so the update check takes at most six.
+export const UPDATE_CHECK_MS = 10 * 60 * 1000;
+
+export const updateCheckDue = (last: number | null, now: number): boolean =>
+  last === null || now - last >= UPDATE_CHECK_MS;
+
 export const checkForUpdate = async (
   fetchImpl: typeof fetch,
   current: number = currentVersion(),

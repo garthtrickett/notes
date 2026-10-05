@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
-import { canInstall, checkForUpdate, downloadUpdate, installUpdate, parseRelease } from "./update.ts";
+import { canInstall, checkForUpdate, downloadUpdate, installUpdate, parseRelease, UPDATE_CHECK_MS, updateCheckDue } from "./update.ts";
 
 const release = (version: number) => ({
   body: `Sideload build of abc.\n\nversionCode: ${version}`,
@@ -87,5 +87,22 @@ describe("the native gate", () => {
       kind: "updateFailed",
       error: "Download failed: needs the Android shell",
     });
+  });
+});
+
+describe("how often to ask for a newer build", () => {
+  it("asks the first time", () => {
+    expect(updateCheckDue(null, 0)).toBe(true);
+  });
+
+  it("does not ask again within ten minutes, however often the app resumes", () => {
+    // Resuming fires on every focus; GitHub allows 60 unauthenticated calls an
+    // hour, shared with the head poll.
+    expect(updateCheckDue(1_000, 1_000 + UPDATE_CHECK_MS - 1)).toBe(false);
+  });
+
+  it("asks again once ten minutes have passed", () => {
+    expect(updateCheckDue(1_000, 1_000 + UPDATE_CHECK_MS)).toBe(true);
+    expect(UPDATE_CHECK_MS).toBe(10 * 60 * 1000);
   });
 });

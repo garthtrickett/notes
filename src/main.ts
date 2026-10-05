@@ -9,7 +9,7 @@ import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
 import { onAlarmAnswered, onNotificationTap, syncCheckinNotifications, takeAlarmAnswers } from "./notify.ts";
 import { parseAnswers } from "./alarms.ts";
-import { checkForUpdate } from "./update.ts";
+import { checkForUpdate, updateCheckDue } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 
 // Half a minute: fast enough that the other screen feels live, slow enough that
@@ -119,11 +119,21 @@ if (config === null) {
   // No-op on the web. On Android this asks for notification permission once
   // and keeps the three daily check-ins scheduled.
   void syncCheckinNotifications();
-  // No-op on the web (checkForUpdate gates on native inside). One quiet ask
-  // per boot; offline or up to date resolves to nothing.
-  void checkForUpdate(fetch).then((found) => {
-    if (found !== null) loop.propose(found);
-  });
+  // No-op on the web (checkForUpdate gates on native inside). Asked on boot,
+  // again on every return to the foreground, and on the poll while open, so a
+  // new build is offered without closing the app. Throttled, because GitHub's
+  // unauthenticated limit is shared with the head poll. Offline or up to date
+  // resolves to nothing.
+  let lastUpdateCheck: number | null = null;
+  const askForUpdate = () => {
+    const at = Date.now();
+    if (!updateCheckDue(lastUpdateCheck, at)) return;
+    lastUpdateCheck = at;
+    void checkForUpdate(fetch).then((found) => {
+      if (found !== null) loop.propose(found);
+    });
+  };
+  askForUpdate();
 
   // Back and forward. The model decides whether the path names something
   // openable — it is the only thing that knows — and a path that names nothing
@@ -215,10 +225,12 @@ if (config === null) {
     if (document.visibilityState !== "visible") return;
     if (!loop.model.online || loop.model.syncing) return;
     pollHead();
+    askForUpdate();
   }, POLL_MS);
 
   const resumed = () => {
     takeAnswers();
+    askForUpdate();
     loop.propose({ kind: "resumed" });
   };
   // Without these the app pulls once per session, so a note written on the
