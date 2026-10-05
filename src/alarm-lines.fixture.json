@@ -1,0 +1,162 @@
+{
+  "now": "2026-10-05T17:00",
+  "cases": [
+    {
+      "name": "a timed alarm",
+      "path": "dump/2026-10-05.md",
+      "body": "- [ ] Tell Vins I've deployed to prod @2026-10-06 09:00!\n",
+      "expected": [
+        {
+          "id": 206883301,
+          "at": "2026-10-06T09:00",
+          "title": "Tell Vins I've deployed to prod",
+          "repeat": false
+        }
+      ]
+    },
+    {
+      "name": "a bare date means 09:00",
+      "path": "a.md",
+      "body": "- [ ] bins @2026-10-07!\n",
+      "expected": [
+        {
+          "id": 1099270361,
+          "at": "2026-10-07T09:00",
+          "title": "bins",
+          "repeat": false
+        }
+      ]
+    },
+    {
+      "name": "no ! is not an alarm",
+      "path": "a.md",
+      "body": "- [ ] call the bank @2026-10-06 14:30\n",
+      "expected": []
+    },
+    {
+      "name": "a ticked task is not an alarm",
+      "path": "a.md",
+      "body": "- [x] done already @2026-10-06 09:00!\n- [X] also done @2026-10-06 09:00!\n",
+      "expected": []
+    },
+    {
+      "name": "a past time is not an alarm",
+      "path": "a.md",
+      "body": "- [ ] yesterday @2026-10-04 09:00!\n- [ ] earlier today @2026-10-05 16:59!\n",
+      "expected": []
+    },
+    {
+      "name": "a repeat is flagged",
+      "path": "a.md",
+      "body": "- [ ] surf @2026-10-06 05:30! every day\n- [ ] gym @2026-10-07 07:00! every mon,wed,fri\n",
+      "expected": [
+        {
+          "id": 1812633527,
+          "at": "2026-10-06T05:30",
+          "title": "surf",
+          "repeat": true
+        },
+        {
+          "id": 217509984,
+          "at": "2026-10-07T07:00",
+          "title": "gym",
+          "repeat": true
+        }
+      ]
+    },
+    {
+      "name": "an impossible date is nothing",
+      "path": "a.md",
+      "body": "- [ ] never @2026-02-31 09:00!\n- [ ] also never @2026-11-31!\n",
+      "expected": []
+    },
+    {
+      "name": "a task in a code fence is not a task",
+      "path": "a.md",
+      "body": "```\n- [ ] in a fence @2026-10-06 09:00!\n```\n~~~\n- [ ] tilde fence @2026-10-06 09:00!\n~~~\n- [ ] after the fence @2026-10-06 10:00!\n",
+      "expected": [
+        {
+          "id": 1952998101,
+          "at": "2026-10-06T10:00",
+          "title": "after the fence",
+          "repeat": false
+        }
+      ]
+    },
+    {
+      "name": "text after the stamp stays in the title",
+      "path": "a.md",
+      "body": "- [ ] surf @2026-10-06 05:30! bring   wax\n",
+      "expected": [
+        {
+          "id": 62261527,
+          "at": "2026-10-06T05:30",
+          "title": "surf bring wax",
+          "repeat": false
+        }
+      ]
+    },
+    {
+      "name": "other list markers and nesting",
+      "path": "notes/x.md",
+      "body": "* [ ] star @2026-10-06 09:00!\n+ [ ] plus @2026-10-06 09:05!\n1. [ ] numbered @2026-10-06 09:10!\n2) [ ] paren @2026-10-06 09:15!\n- parent\n  - [ ] nested @2026-10-06 09:20!\n",
+      "expected": [
+        {
+          "id": 385148920,
+          "at": "2026-10-06T09:00",
+          "title": "star",
+          "repeat": false
+        },
+        {
+          "id": 731205336,
+          "at": "2026-10-06T09:05",
+          "title": "plus",
+          "repeat": false
+        },
+        {
+          "id": 1358245520,
+          "at": "2026-10-06T09:10",
+          "title": "numbered",
+          "repeat": false
+        },
+        {
+          "id": 1324915492,
+          "at": "2026-10-06T09:15",
+          "title": "paren",
+          "repeat": false
+        },
+        {
+          "id": 1706167715,
+          "at": "2026-10-06T09:20",
+          "title": "nested",
+          "repeat": false
+        }
+      ]
+    },
+    {
+      "name": "unicode in the title",
+      "path": "hobbies/surfing/🏄.md",
+      "body": "- [ ] 🏄 dawn patrol — Kedungu @2026-10-06 05:30!\n",
+      "expected": [
+        {
+          "id": 1095337131,
+          "at": "2026-10-06T05:30",
+          "title": "🏄 dawn patrol — Kedungu",
+          "repeat": false
+        }
+      ]
+    },
+    {
+      "name": "an email or a mention is not a stamp",
+      "path": "a.md",
+      "body": "- [ ] mail simon@2026-10-06 09:00! now\n- [ ] ok @2026-10-06 09:00!x\n",
+      "expected": []
+    },
+    {
+      "name": "not a task at all",
+      "path": "a.md",
+      "body": "just a line @2026-10-06 09:00!\n- a bullet @2026-10-06 09:00!\n",
+      "expected": []
+    }
+  ]
+}

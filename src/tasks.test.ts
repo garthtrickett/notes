@@ -5,7 +5,7 @@
 import { describe, expect, it, test } from "bun:test";
 import { spansFor } from "./decorate.ts";
 import { createTaskCache, flipTask, rollRepeats, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
-import { alarmsLive, alarmsWanted, alarmWarning, armableReminders, reminderSetKey, dueReminders, notifiedReminders, reminderId, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { alarmsLive, alarmsWanted, alarmWarning, knownShas, armableReminders, reminderSetKey, dueReminders, notifiedReminders, reminderId, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import { SLOTS } from "./checkins.ts";
 import type { Note } from "./model.ts";
 
@@ -529,5 +529,25 @@ describe("what the phone needs to keep a repeating snooze", () => {
 
   it("notices a repeat being added", () => {
     expect(reminderSetKey([ref({ repeat: "day" })])).not.toBe(reminderSetKey([ref({})]));
+  });
+});
+
+describe("what the background job may treat as already read", () => {
+  const rec = (path: string, over: Partial<{ baseSha: string | null; deleted: boolean; encoding: "utf8" | "base64" }> = {}) =>
+    ({ path, baseSha: "s-" + path, deleted: false, encoding: "utf8" as const, ...over });
+
+  it("maps each synced text note to the blob it was synced with", () => {
+    // If this came back empty the job's first run would fetch all ~400 notes.
+    expect(knownShas([rec("a.md"), rec("dump/2026-10-05.md")]))
+      .toEqual({ "a.md": "s-a.md", "dump/2026-10-05.md": "s-dump/2026-10-05.md" });
+  });
+
+  it("leaves out what the job should still read or never read", () => {
+    expect(knownShas([
+      rec("never-pushed.md", { baseSha: null }),
+      rec("gone.md", { deleted: true }),
+      rec("attachments/a.webp", { encoding: "base64" }),
+      rec("notes.txt"),
+    ])).toEqual({});
   });
 });

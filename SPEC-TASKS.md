@@ -304,9 +304,12 @@ was. The Clock app is not involved and the alarm does not appear there.
 
 **Four things that will catch you out:**
 
-1. **The app has to have run.** Reminders are handed to the phone while the
-   app is open; nothing schedules itself. Open it once after setting one on
-   another device before you rely on it.
+1. **Alarms follow the vault with the app closed — eventually.** A
+   background job checks the vault about every half hour when Android
+   allows (less often overnight while the phone is idle), so a `!` reminder
+   written on the laptop or straight into the vault becomes an alarm without
+   opening the phone's app. For one due within the hour, open the app to be
+   sure. Plain notifications still need the app to have run.
 2. **Done and Snooze reach the note the next time the app opens.** The alarm
    is answered with the app closed, so the tick or new time is written down on
    the phone and applied — and synced — on the next launch. Snooze still
@@ -390,6 +393,28 @@ full-screen off (rings as a heads-up only).
 
 A flagged task gets no separate plain notification on Android — the alarm's
 own notification replaces it.
+
+### Background check (Android)
+
+`VaultWatch.java` is a periodic JobScheduler job (30 min, network required,
+persisted across reboots) that keeps alarms current while the app is closed.
+It asks for the branch head and stops if nothing moved; otherwise it lists the
+tree, fetches only the notes whose blob changed, reads their alarm lines, and
+replaces those notes' alarms (`Alarms.replacePaths`). Notes it did not re-read
+keep theirs; notes gone from the tree lose theirs.
+
+- It cannot run this app's JavaScript, so `AlarmLines.java` is a second copy
+  of the alarm-line rule. `src/alarm-lines.fixture.json` holds both to the
+  same answers: `alarm-lines.test.ts` pins the app's, `AlarmLinesTest.java`
+  asserts the phone's match — ids included — and CI runs it before every APK.
+- The app is still the last word: its sync replaces the whole set whenever it
+  runs, so a line the job reads differently is corrected then.
+- Every sync also hands the job what the app already has (`knownShas`: path to
+  blob sha), so its first run does not fetch the whole vault (~400 notes).
+- The token is stored in the app's private SharedPreferences, the same sandbox
+  the WebView already keeps it in.
+- Snoozes the job cannot judge (a repeating task's) are kept until the app's
+  next sync decides.
 
 ### What actually rings
 

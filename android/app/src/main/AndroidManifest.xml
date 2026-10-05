@@ -37,6 +37,13 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
+        <!-- Keeps alarms current while the app is closed (VaultWatch.java). Only
+             the system's job scheduler may start it. -->
+        <service
+            android:name=".VaultWatch"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+
         <!-- Not exported: nothing outside the app may tick a task by intent.
              The system's own broadcasts are delivered regardless. -->
         <receiver

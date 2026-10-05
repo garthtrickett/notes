@@ -7,7 +7,7 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
-import { onAlarmAnswered, onNotificationTap, syncCheckinNotifications, takeAlarmAnswers } from "./notify.ts";
+import { onAlarmAnswered, onNotificationTap, syncCheckinNotifications, takeAlarmAnswers, watchVault } from "./notify.ts";
 import { parseAnswers } from "./alarms.ts";
 import { checkForUpdate, updateCheckDue } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
@@ -116,6 +116,8 @@ if (config === null) {
   };
   takeAnswers();
   onAlarmAnswered(takeAnswers);
+  // Lets the phone keep alarms current with the app closed. No-op on the web.
+  void watchVault(config);
   // No-op on the web. On Android this asks for notification permission once
   // and keeps the three daily check-ins scheduled.
   void syncCheckinNotifications();

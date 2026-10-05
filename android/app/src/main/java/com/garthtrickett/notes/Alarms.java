@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -124,33 +125,64 @@ final class Alarms {
                 JSONObject o = live.getJSONObject(i);
                 stamps.put(o.getInt("id"), o.getLong("stamp"));
             }
-            // A snooze wins over whatever the app sent for that task. Until the
-            // app has read the press and moved the stamp, the note still says
-            // the old time, and obeying that would silently drop the snooze.
-            //
-            // A repeating task's snooze never moves the stamp, so it is kept
-            // for exactly as long as the task still carries the stamp it rang
-            // for. Ticked, retimed or rolled on, and it is dropped. It cannot
-            // collide with the task's own next alarm, which is always later
-            // than a stamp that has already rung.
-            List<Entry> snoozes = new ArrayList<>();
-            for (Entry s : read(context, SNOOZES)) {
-                Long stamp = stamps.get(s.id);
-                boolean held = !s.repeat || (stamp != null && stamp == s.stamp);
-                if (s.at > now && held) {
-                    wanted.put(s.id, s);
-                    snoozes.add(s);
-                }
-            }
-            write(context, SNOOZES, snoozes);
-            for (Entry old : read(context, ALARMS)) {
-                if (!wanted.containsKey(old.id)) cancel(context, old.id);
-            }
-            List<Entry> kept = new ArrayList<>(wanted.values());
-            for (Entry e : kept) schedule(context, e);
-            write(context, ALARMS, kept);
-            return kept.size();
+            return apply(context, wanted, stamps, now);
         }
+    }
+
+    // From the background job (VaultWatch): the notes it re-read have their
+    // alarms replaced by what it found, notes that are gone lose theirs, and
+    // every other alarm is left exactly as it was.
+    static int replacePaths(Context context, Map<String, List<Entry>> read, Set<String> gone, long now) {
+        synchronized (LOCK) {
+            Map<Integer, Entry> wanted = new LinkedHashMap<>();
+            for (Entry e : read(context, ALARMS)) {
+                if (read.containsKey(e.path) || gone.contains(e.path)) continue;
+                if (e.at > now) wanted.put(e.id, e);
+            }
+            for (List<Entry> entries : read.values()) {
+                for (Entry e : entries) if (e.at > now) wanted.put(e.id, e);
+            }
+            return apply(context, wanted, null, now);
+        }
+    }
+
+    // Schedules exactly `wanted`, plus any snooze still owed, and cancels
+    // everything else held. Caller holds LOCK.
+    //
+    // A snooze wins over whatever was asked for that task. Until the app has
+    // read the press and moved the stamp, the note still says the old time,
+    // and obeying that would silently drop the snooze.
+    //
+    // A repeating task's snooze never moves the stamp, so it is kept for
+    // exactly as long as the task still carries the stamp it rang for —
+    // ticked, retimed or rolled on, and it is dropped. It cannot collide with
+    // the task's own next alarm, which is always later than a stamp that has
+    // already rung. `stamps` is null when the caller cannot know (the
+    // background job reads notes, not the app's state), and then every snooze
+    // still to ring is kept until the app's next sync decides.
+    private static int apply(Context context, Map<Integer, Entry> wanted, Map<Integer, Long> stamps, long now) {
+        List<Entry> snoozes = new ArrayList<>();
+        for (Entry s : read(context, SNOOZES)) {
+            boolean held;
+            if (!s.repeat || stamps == null) {
+                held = true;
+            } else {
+                Long stamp = stamps.get(s.id);
+                held = stamp != null && stamp == s.stamp;
+            }
+            if (s.at > now && held) {
+                wanted.put(s.id, s);
+                snoozes.add(s);
+            }
+        }
+        write(context, SNOOZES, snoozes);
+        for (Entry old : read(context, ALARMS)) {
+            if (!wanted.containsKey(old.id)) cancel(context, old.id);
+        }
+        List<Entry> kept = new ArrayList<>(wanted.values());
+        for (Entry e : kept) schedule(context, e);
+        write(context, ALARMS, kept);
+        return kept.size();
     }
 
     // Done and Snooze presses since the app last asked. Taking them is the

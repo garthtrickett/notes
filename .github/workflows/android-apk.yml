@@ -42,7 +42,11 @@ jobs:
           KEYSTORE_FILE: /tmp/notes-release.p12
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon
+        # The unit tests include AlarmLinesTest, which holds the phone's
+        # background alarm reader to the app's answers in
+        # src/alarm-lines.fixture.json. A mismatch fails the build rather than
+        # shipping two readers that disagree.
+        run: ./gradlew testReleaseUnitTest assembleRelease --no-daemon
 
       # The Gradle signing block silently skips when the secrets are missing,
       # which would publish an uninstallable APK. Fail here instead.

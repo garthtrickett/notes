@@ -27,7 +27,7 @@ import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createTaskCache, rollRepeats, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
-import { askToRemind, reminderSetKey, remindersDeliverable, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { askToRemind, reminderSetKey, remindersDeliverable, knownShas, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
@@ -426,7 +426,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (key !== lastAlarmKey) {
       lastAlarmKey = key;
       track(
-        syncAlarms(refs, now()).then((result) => {
+        syncAlarms(refs, now(), knownShas(model.notes.values())).then((result) => {
           if (result.error !== null) propose({ kind: "alarmFailed", reason: result.error });
         }),
       );

@@ -29,6 +29,7 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 import type { TaskRef } from "./tasks.ts";
+import type { NoteRecord } from "./model.ts";
 
 export const syncCheckinNotifications = async (): Promise<void> => {
   if (!Capacitor.isNativePlatform()) return;
@@ -349,7 +350,12 @@ export const alarmWarning = (status: AlarmStatus): string | null => {
 };
 
 interface AlarmNative {
-  sync(options: { alarms: AlarmEntry[]; live: AlarmLive[] }): Promise<AlarmStatus & { scheduled: number }>;
+  sync(options: {
+    alarms: AlarmEntry[];
+    live: AlarmLive[];
+    shas: Record<string, string>;
+  }): Promise<AlarmStatus & { scheduled: number }>;
+  watch(options: { owner: string; repo: string; branch: string; token: string }): Promise<void>;
   take(): Promise<{ answers: unknown }>;
   addListener(event: "answered", listener: () => void): Promise<unknown>;
 }
@@ -373,13 +379,18 @@ export interface AlarmSyncResult {
 // Unlike the clock version it needs no record of what it already set: an
 // alarm is keyed by the task's id, so setting it again replaces it rather than
 // adding a second one.
+//
+// `shas` is what this device already has of the vault — note path to the blob
+// it last saw. The phone's background job (VaultWatch) diffs the tree against
+// it, so while the app is closed it fetches only notes that changed since.
 export const syncAlarms = async (
   refs: readonly TaskRef[],
   now: number,
+  shas: Record<string, string> = {},
 ): Promise<AlarmSyncResult> => {
   if (!Capacitor.isNativePlatform()) return { scheduled: 0, error: null };
   try {
-    const status = await alarmPlugin.sync({ alarms: alarmsWanted(refs, now), live: alarmsLive(refs) });
+    const status = await alarmPlugin.sync({ alarms: alarmsWanted(refs, now), live: alarmsLive(refs), shas });
     return { scheduled: status.scheduled, error: alarmWarning(status) };
   } catch (cause) {
     return {
@@ -389,6 +400,38 @@ export const syncAlarms = async (
         : "the phone refused to schedule the alarms.",
     };
   }
+};
+
+// Hands the phone the vault settings so its background job can keep alarms
+// current while the app is closed — a reminder written on the laptop becomes
+// an alarm without the phone's app being opened. A failure costs only that.
+export const watchVault = async (vault: {
+  owner: string;
+  repo: string;
+  branch: string;
+  token: string;
+}): Promise<void> => {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await alarmPlugin.watch(vault);
+  } catch {
+    // An older shell without watch(): alarms still follow the app's own sync.
+  }
+};
+
+// The notes the background job should treat as already read: text notes this
+// device holds, keyed to the remote blob each was last synced with. A note
+// never pushed has no blob yet and is left out, so the job reads it if it
+// appears remotely.
+export const knownShas = (
+  notes: Iterable<Pick<NoteRecord, "path" | "baseSha" | "deleted" | "encoding">>,
+): Record<string, string> => {
+  const shas: Record<string, string> = {};
+  for (const n of notes) {
+    if (n.deleted || n.baseSha === null || n.encoding !== "utf8" || !n.path.endsWith(".md")) continue;
+    shas[n.path] = n.baseSha;
+  }
+  return shas;
 };
 
 // Done and Snooze presses waiting since the app last ran. Taking them clears
