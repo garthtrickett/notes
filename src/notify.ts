@@ -311,13 +311,22 @@ const remember = (keys: Set<string>, now: number): void => {
   }
 };
 
+// Says what went wrong as well as how many were set. The first version caught
+// the plugin's rejection and said nothing, so an alarm that never reached the
+// clock looked exactly like one that worked until it failed to ring.
+export interface ClockAlarmResult {
+  readonly set: number;
+  readonly error: string | null;
+}
+
 export const syncClockAlarms = async (
   refs: readonly TaskRef[],
   now: number,
-): Promise<number> => {
-  if (!Capacitor.isNativePlatform()) return 0;
+): Promise<ClockAlarmResult> => {
+  if (!Capacitor.isNativePlatform()) return { set: 0, error: null };
   const done = alreadySet();
   let set = 0;
+  let error: string | null = null;
   for (const ref of alarmable(refs, now)) {
     const key = keyOf(ref);
     if (done.has(key)) continue;
@@ -331,10 +340,14 @@ export const syncClockAlarms = async (
       // Recorded only on success, so a refusal is retried next time.
       done.add(key);
       set += 1;
-    } catch {
-      // The clock app declined or there is none. The notification still fires.
+    } catch (cause) {
+      // Not recorded as set, so it is retried next time. The notification
+      // still fires either way.
+      error ??= cause instanceof Error && cause.message !== ""
+        ? cause.message
+        : "The clock app did not take the alarm.";
     }
   }
   remember(done, now);
-  return set;
+  return { set, error };
 };

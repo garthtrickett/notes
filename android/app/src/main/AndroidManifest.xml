@@ -55,5 +55,12 @@
     <queries>
         <package android:name="com.beeper.chat" />
         <provider android:authorities="com.beeper.api" />
+        <!-- The same package-visibility rule the Beeper entries exist for, and
+             missed here the first time. Without it resolveActivity() returns
+             null at targetSdk 30+, so the alarm plugin concluded there was no
+             clock app and never sent the alarm. -->
+        <intent>
+            <action android:name="android.intent.action.SET_ALARM" />
+        </intent>
     </queries>
 </manifest>

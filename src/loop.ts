@@ -421,7 +421,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // for the rest of the session.
     // Clock alarms are separate from notifications and only possible inside
     // 24 hours, so this runs every time the set changes rather than once.
-    track(syncClockAlarms(refs, now()));
+    track(
+      syncClockAlarms(refs, now()).then((result) => {
+        if (result.error !== null) propose({ kind: "alarmFailed", reason: result.error });
+      }),
+    );
 
     // Android hands the set to the OS; the web arms timers in this page. Both
     // report whether they took it, and only then is the set recorded.

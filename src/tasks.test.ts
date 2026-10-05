@@ -349,7 +349,9 @@ describe("which alarms the clock can be given", () => {
     expect(alarmable([ref({ done: true, remindAt: now + hour })], now).length).toBe(0);
   });
 
-  it("sets nothing where there is no clock to set it on", async () => {
-    expect(await syncClockAlarms([ref({ remindAt: now + hour })], now)).toBe(0);
+  it("sets nothing where there is no clock to set it on, and says so cleanly", async () => {
+    // No clock here is not a failure to report — there is simply nothing to do.
+    expect(await syncClockAlarms([ref({ remindAt: now + hour })], now))
+      .toEqual({ set: 0, error: null });
   });
 });

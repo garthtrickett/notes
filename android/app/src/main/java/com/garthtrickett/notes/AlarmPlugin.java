@@ -1,5 +1,6 @@
 package com.garthtrickett.notes;
 
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.provider.AlarmClock;
 import com.getcapacitor.JSObject;
@@ -44,13 +45,18 @@ public class AlarmPlugin extends Plugin {
                 // Starting an activity from outside one needs its own task.
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-            // A phone with no clock app that answers this intent would crash on
-            // startActivity, so ask first.
-            if (intent.resolveActivity(getContext().getPackageManager()) == null) {
+            // Try it and catch the miss, rather than asking resolveActivity()
+            // first. That pre-check is what broke this: under Android 11+
+            // package visibility it returns null for any handler not declared
+            // in <queries>, so it reported "no clock app" on a phone that had
+            // one. Catching ActivityNotFoundException is Google's recommended
+            // pattern for implicit intents and does not depend on visibility.
+            try {
+                getContext().startActivity(intent);
+            } catch (ActivityNotFoundException e) {
                 call.reject("No clock app on this phone will take an alarm.");
                 return;
             }
-            getContext().startActivity(intent);
 
             JSObject result = new JSObject();
             result.put("set", true);

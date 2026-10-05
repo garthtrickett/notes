@@ -265,6 +265,7 @@ export type Proposal =
   | { readonly kind: "linkRefused"; readonly target: string }
   | { readonly kind: "moved"; readonly from: string; readonly to: string }
   | { readonly kind: "resumed" }
+  | { readonly kind: "alarmFailed"; readonly reason: string }
   | { readonly kind: "openRequested"; readonly path: string }
   | { readonly kind: "headSeen"; readonly head: string }
   | { readonly kind: "renamed"; readonly from: string; readonly to: string }
@@ -693,6 +694,14 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "forgot": {
       for (const path of p.paths) m.forgotten.delete(path);
       m.persisting = false;
+      return null;
+    }
+
+    case "alarmFailed": {
+      // A message and nothing else. Not routed through "failed", which sets
+      // persistBlocked because it exists for save failures — a clock app
+      // refusing an alarm must not stop the app saving notes.
+      m.error = `Could not set a clock alarm: ${p.reason}`;
       return null;
     }
 

@@ -450,6 +450,29 @@ describe("resumed", () => {
   });
 });
 
+describe("a clock alarm that could not be set", () => {
+  it("says so, instead of failing silently", () => {
+    // The first version swallowed the plugin's rejection, so an alarm that
+    // never reached the clock was indistinguishable from one that worked —
+    // right up until 09:50 came and nothing rang.
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [] });
+    present(m, { kind: "alarmFailed", reason: "No clock app on this phone will take an alarm." });
+    expect(m.error).toContain("Could not set a clock alarm");
+    expect(m.error).toContain("No clock app");
+  });
+
+  it("does not stop the app saving notes", () => {
+    // The tempting route was the existing "failed" proposal, which sets
+    // persistBlocked because it is for save failures. A refused alarm going
+    // that way would have stopped every note being written to the device.
+    const m = createModel();
+    present(m, { kind: "hydrated", notes: [] });
+    present(m, { kind: "alarmFailed", reason: "refused" });
+    expect(m.persistBlocked).toBe(false);
+  });
+});
+
 describe("adopting a merge", () => {
   it("takes the merged text when nothing was typed meanwhile", () => {
     const m = createModel();
