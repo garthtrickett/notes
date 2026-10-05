@@ -5,7 +5,7 @@
 import { describe, expect, it, test } from "bun:test";
 import { spansFor } from "./decorate.ts";
 import { createTaskCache, flipTask, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
-import { alarmable, armableReminders, dueReminders, reminderId, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { alarmable, armableReminders, reminderSetKey, dueReminders, reminderId, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import { SLOTS } from "./checkins.ts";
 import type { Note } from "./model.ts";
 
@@ -353,5 +353,44 @@ describe("which alarms the clock can be given", () => {
     // No clock here is not a failure to report — there is simply nothing to do.
     expect(await syncClockAlarms([ref({ remindAt: now + hour })], now))
       .toEqual({ set: 0, error: null });
+  });
+});
+
+describe("noticing that the reminder set changed", () => {
+  const ref = (over: Partial<TaskRef>): TaskRef => ({
+    path: "a.md", from: 0, marker: 3, done: false, title: "surf",
+    remindAt: 1_000_000, alarm: false, titleFrom: 5, titleTo: 6, ...over,
+  });
+
+  it("changes when a ! is added to a reminder that already exists", () => {
+    // The bug: typing sets the time first and the ! last. The set was recorded
+    // as soon as the time parsed, and adding the ! gave the same key, so it
+    // was skipped. Alarms only appeared after reopening the app.
+    expect(reminderSetKey([ref({ alarm: true })]))
+      .not.toBe(reminderSetKey([ref({ alarm: false })]));
+  });
+
+  it("changes when a ! is taken off again", () => {
+    expect(reminderSetKey([ref({ alarm: false })]))
+      .not.toBe(reminderSetKey([ref({ alarm: true })]));
+  });
+
+  it("still changes when the time moves", () => {
+    expect(reminderSetKey([ref({ remindAt: 2_000_000 })]))
+      .not.toBe(reminderSetKey([ref({ remindAt: 1_000_000 })]));
+  });
+
+  it("does not change for things that schedule nothing", () => {
+    // Ticked and unreminded tasks are out of the set entirely, so toggling
+    // their alarm flag must not trigger a resync.
+    const base = reminderSetKey([ref({})]);
+    expect(reminderSetKey([ref({}), ref({ path: "b.md", done: true, alarm: true })])).toBe(base);
+    expect(reminderSetKey([ref({}), ref({ path: "c.md", remindAt: null, alarm: true })])).toBe(base);
+  });
+
+  it("does not depend on the order the vault happens to list them in", () => {
+    const a = ref({ path: "a.md" });
+    const b = ref({ path: "b.md" });
+    expect(reminderSetKey([a, b])).toBe(reminderSetKey([b, a]));
   });
 });

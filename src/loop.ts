@@ -27,7 +27,7 @@ import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createTaskCache, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
-import { askToRemind, remindersDeliverable, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { askToRemind, reminderSetKey, remindersDeliverable, syncClockAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
 import type { VaultConfig } from "./view-settings.ts";
@@ -409,11 +409,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (!model.hydrated || !remindersDeliverable()) return;
     const refs: TaskRef[] = [];
     for (const group of tasksInVault(model.notes, tasks)) refs.push(...group.refs);
-    const wanted = refs.filter((r) => !r.done && r.remindAt !== null);
-    const key = wanted
-      .map((r) => `${r.path}\u0000${r.title}\u0000${r.remindAt as number}`)
-      .sort()
-      .join("|");
+    const key = reminderSetKey(refs);
     if (key === lastReminderKey) return;
     // Recorded only once the OS has it. Permission is requested on boot and
     // the answer arrives later, so the first attempts here are refused —

@@ -246,6 +246,22 @@ export const onNotificationTap = async (routes: TapRoutes): Promise<void> => {
   );
 };
 
+// What decides whether the reminder set has changed enough to hand to the OS
+// again. Every property that changes what gets scheduled has to be in here,
+// or a change to it is silently ignored until the app restarts.
+//
+// The alarm flag was missing. Typing a reminder sets the time first and the `!`
+// last, so the set was recorded the moment the time parsed — with no alarm —
+// and adding the `!` produced the same key and was skipped. Alarms only
+// appeared after closing and reopening the app, and the dropdown's "Ring an
+// alarm" never took effect at all without a restart.
+export const reminderSetKey = (refs: readonly TaskRef[]): string =>
+  refs
+    .filter((r) => !r.done && r.remindAt !== null)
+    .map((r) => `${r.path}\u0000${r.title}\u0000${r.remindAt as number}\u0000${r.alarm ? "alarm" : ""}`)
+    .sort()
+    .join("|");
+
 // Clock alarms, which are a different thing from the notifications above.
 //
 // A notification is easy to sleep through; an alarm is the point when the
