@@ -11,6 +11,12 @@ import org.json.JSONException;
 // The bridge to Alarms. The app hands over the set it wants and collects the
 // Done and Snooze presses made while it was away; everything else happens
 // natively, because an alarm has to ring with the app closed.
+//
+// Every method catches its own failures and rejects. Capacitor's bridge
+// rethrows any exception from a plugin method as a RuntimeException on the
+// main thread (Bridge.java, "Serious error executing plugin"), so one refused
+// system call is a crash on every launch — which is what happened when
+// JobScheduler refused the background job for want of ACCESS_NETWORK_STATE.
 @CapacitorPlugin(name = "Alarm")
 public class AlarmPlugin extends Plugin {
     private static volatile AlarmPlugin live;
@@ -46,6 +52,9 @@ public class AlarmPlugin extends Plugin {
         } catch (JSONException e) {
             call.reject("An alarm could not be read: " + e.getMessage());
             return;
+        } catch (RuntimeException refused) {
+            call.reject("The phone refused to schedule the alarms: " + refused.getMessage());
+            return;
         }
         JSObject result = new JSObject();
         result.put("scheduled", scheduled);
@@ -68,14 +77,25 @@ public class AlarmPlugin extends Plugin {
             call.reject("The vault settings are incomplete.");
             return;
         }
-        VaultWatch.configure(getContext(), owner, repo, branch, token);
+        try {
+            VaultWatch.configure(getContext(), owner, repo, branch, token);
+        } catch (RuntimeException refused) {
+            // See the note at the top of the class: never let this throw.
+            call.reject("The background vault check could not be scheduled: " + refused.getMessage());
+            return;
+        }
         call.resolve();
     }
 
     @PluginMethod
     public void take(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("answers", Alarms.take(getContext()));
+        try {
+            result.put("answers", Alarms.take(getContext()));
+        } catch (RuntimeException failed) {
+            call.reject("The alarm answers could not be read: " + failed.getMessage());
+            return;
+        }
         call.resolve(result);
     }
 
