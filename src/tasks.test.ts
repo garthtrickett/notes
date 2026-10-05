@@ -4,8 +4,8 @@
 
 import { describe, expect, it, test } from "bun:test";
 import { spansFor } from "./decorate.ts";
-import { createTaskCache, flipTask, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
-import { alarmsWanted, alarmWarning, armableReminders, reminderSetKey, dueReminders, notifiedReminders, reminderId, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
+import { createTaskCache, flipTask, rollRepeats, tasksIn, tasksInVault, setReminder, type TaskRef } from "./tasks.ts";
+import { alarmsLive, alarmsWanted, alarmWarning, armableReminders, reminderSetKey, dueReminders, notifiedReminders, reminderId, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import { SLOTS } from "./checkins.ts";
 import type { Note } from "./model.ts";
 
@@ -214,7 +214,7 @@ describe("which reminders the OS should hold", () => {
   const now = new Date("2026-09-10T12:00:00").getTime();
   const ref = (over: Partial<TaskRef>): TaskRef => ({
     path: "a.md", from: 0, marker: 3, done: false, title: "t",
-    remindAt: null, alarm: false, titleFrom: 5, titleTo: 6, ...over,
+    remindAt: null, alarm: false, repeat: null, titleFrom: 5, titleTo: 6, ...over,
   });
 
   it("keeps open tasks with a future time", () => {
@@ -279,7 +279,7 @@ describe("arming a timer in the page", () => {
   const now = new Date("2026-09-10T12:00:00").getTime();
   const ref = (over: Partial<TaskRef>): TaskRef => ({
     path: "a.md", from: 0, marker: 3, done: false, title: "t",
-    remindAt: null, alarm: false, titleFrom: 5, titleTo: 6, ...over,
+    remindAt: null, alarm: false, repeat: null, titleFrom: 5, titleTo: 6, ...over,
   });
 
   it("arms one inside setTimeout's range", () => {
@@ -321,7 +321,7 @@ describe("which alarms the phone is given", () => {
   const hour = 60 * 60 * 1000;
   const ref = (over: Partial<TaskRef>): TaskRef => ({
     path: "a.md", from: 0, marker: 3, done: false, title: "t",
-    remindAt: null, alarm: true, titleFrom: 5, titleTo: 6, ...over,
+    remindAt: null, alarm: true, repeat: null, titleFrom: 5, titleTo: 6, ...over,
   });
 
   it("takes a flagged reminder in the next 24 hours", () => {
@@ -357,7 +357,7 @@ describe("which alarms the phone is given", () => {
     // what makes setting it twice replace rather than duplicate.
     const r = ref({ path: "dump/2026-09-24.md", title: "surf", remindAt: now + hour });
     expect(alarmsWanted([r], now)).toEqual([
-      { id: reminderId(r), at: now + hour, title: "surf", path: "dump/2026-09-24.md" },
+      { id: reminderId(r), at: now + hour, title: "surf", path: "dump/2026-09-24.md", repeat: false },
     ]);
   });
 
@@ -371,7 +371,7 @@ describe("leaving alarms to the alarm", () => {
   const now = new Date("2026-09-23T12:00:00").getTime();
   const ref = (over: Partial<TaskRef>): TaskRef => ({
     path: "a.md", from: 0, marker: 3, done: false, title: "t",
-    remindAt: now + 60_000, alarm: false, titleFrom: 5, titleTo: 6, ...over,
+    remindAt: now + 60_000, alarm: false, repeat: null, titleFrom: 5, titleTo: 6, ...over,
   });
 
   it("does not also send a plain notification for a flagged task", () => {
@@ -415,7 +415,7 @@ describe("saying what stops an alarm ringing properly", () => {
 describe("noticing that the reminder set changed", () => {
   const ref = (over: Partial<TaskRef>): TaskRef => ({
     path: "a.md", from: 0, marker: 3, done: false, title: "surf",
-    remindAt: 1_000_000, alarm: false, titleFrom: 5, titleTo: 6, ...over,
+    remindAt: 1_000_000, alarm: false, repeat: null, titleFrom: 5, titleTo: 6, ...over,
   });
 
   it("changes when a ! is added to a reminder that already exists", () => {
@@ -448,5 +448,86 @@ describe("noticing that the reminder set changed", () => {
     const a = ref({ path: "a.md" });
     const b = ref({ path: "b.md" });
     expect(reminderSetKey([a, b])).toBe(reminderSetKey([b, a]));
+  });
+});
+
+describe("a repeating task, once ticked", () => {
+  const now = new Date("2026-10-06T06:00").getTime();
+
+  it("reopens at its next time, keeping the alarm and the repeat", () => {
+    const body = "- [x] surf @2026-10-06 05:30! every day\n";
+    expect(rollRepeats(body, "d.md", now)).toBe("- [ ] surf @2026-10-07 05:30! every day\n");
+  });
+
+  it("leaves an open one alone", () => {
+    const body = "- [ ] surf @2026-10-06 05:30! every day\n";
+    expect(rollRepeats(body, "d.md", now)).toBe(body);
+  });
+
+  it("leaves a ticked one-off ticked", () => {
+    const body = "- [x] surf @2026-10-06 05:30!\n";
+    expect(rollRepeats(body, "d.md", now)).toBe(body);
+  });
+
+  it("rolls several in one file without disturbing each other", () => {
+    // Last first, so the earlier line's rewrite cannot shift the later one.
+    const body = "- [x] surf @2026-10-06 05:30! every day\n- [ ] read\n- [x] bins @2026-10-06 every week\n";
+    expect(rollRepeats(body, "d.md", now)).toBe(
+      "- [ ] surf @2026-10-07 05:30! every day\n- [ ] read\n- [ ] bins @2026-10-13 every week\n",
+    );
+  });
+
+  it("rolls a later task correctly when an earlier rewrite changes length", () => {
+    // 09:00 is written back as a bare date, so the first line gets shorter.
+    // Rolled first-to-last, the second line's offsets would be stale and its
+    // rewrite refused; last-to-first never moves an offset still to be used.
+    const body = "- [x] a @2026-10-06 09:00 every day\n- [x] b @2026-10-06 10:00 every week\n";
+    expect(rollRepeats(body, "d.md", now)).toBe(
+      "- [ ] a @2026-10-07 every day\n- [ ] b @2026-10-13 10:00 every week\n",
+    );
+  });
+
+  it("leaves one ticked whose repeat cannot step", () => {
+    // "0 days" reads as a repeat but has no next time. Reopening it would
+    // leave an open task stuck on a past stamp; ticked is the honest state.
+    const body = "- [x] t @2026-10-06 every 0 days\n";
+    expect(rollRepeats(body, "d.md", now)).toBe(body);
+  });
+
+  it("keeps whatever surrounds the task", () => {
+    const body = "# day\n\n  - [x] gym @2026-10-05 07:00 every mon,wed,fri\nmore\n";
+    expect(rollRepeats(body, "d.md", now)).toBe("# day\n\n  - [ ] gym @2026-10-07 07:00 every mon,wed,fri\nmore\n");
+  });
+
+  it("carries the repeat on the ref", () => {
+    const [ref] = tasksIn("- [ ] gym @2026-10-05 07:00 every mon,wed,fri\n", "d.md");
+    expect(ref?.repeat).toBe("mon,wed,fri");
+  });
+});
+
+describe("what the phone needs to keep a repeating snooze", () => {
+  const ref = (over: Partial<TaskRef>): TaskRef => ({
+    path: "a.md", from: 0, marker: 3, done: false, title: "t",
+    remindAt: 1_000, alarm: true, repeat: null, titleFrom: 5, titleTo: 6, ...over,
+  });
+
+  it("lists every open flagged task's stamp, past ones too", () => {
+    // The stamp a snooze rang for is always past; it is exactly the one needed.
+    const r = ref({ remindAt: 1_000 });
+    expect(alarmsLive([r])).toEqual([{ id: reminderId(r), stamp: 1_000 }]);
+  });
+
+  it("leaves out ticked, unflagged and untimed ones", () => {
+    expect(alarmsLive([ref({ done: true }), ref({ alarm: false }), ref({ remindAt: null })])).toEqual([]);
+  });
+
+  it("marks a repeating task's alarm as repeating", () => {
+    const now = 0;
+    expect(alarmsWanted([ref({ repeat: "day" })], now)[0]?.repeat).toBe(true);
+    expect(alarmsWanted([ref({})], now)[0]?.repeat).toBe(false);
+  });
+
+  it("notices a repeat being added", () => {
+    expect(reminderSetKey([ref({ repeat: "day" })])).not.toBe(reminderSetKey([ref({})]));
   });
 });

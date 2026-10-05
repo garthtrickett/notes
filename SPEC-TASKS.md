@@ -251,7 +251,24 @@ Touched, exhaustively (verified: these are the only sites that switch on
 - [ ] call the bank @2026-09-11 14:30      notification at 14:30
 - [ ] ask Simon about dinner @2026-09-12   bare date means 09:00
 - [ ] surf, bring the 6'0 @2026-09-24 05:30!   the ! rings an alarm instead
+- [ ] surf @2026-10-06 05:30! every day        comes back every morning
 ```
+
+**Repeats** go straight after the stamp (and after the `!` if there is one):
+
+| Write | Comes back |
+| --- | --- |
+| `every day` / `every week` / `every month` / `every year` | one step on, same time |
+| `every 3 days` / `every 2 weeks` / `every 6 months` | that many steps on |
+| `every weekday` | the next Monday–Friday |
+| `every mon,wed,fri` (or `every tuesday`) | the next named day; commas, no spaces |
+
+Ticking a repeating task — in the Tasks tab, in the editor, or with the
+alarm's Done — reopens it at its next time instead of leaving it ticked. A
+task left for days comes back once, at the next time still to come, not as a
+pile of overdue copies. To stop it repeating, delete the `every …`. A repeat
+the app cannot read stays in the line as plain text. The Tasks tab marks
+repeating tasks with ↻.
 
 **Or use the Tasks tab.** Every row has a dropdown on the right:
 
@@ -277,6 +294,10 @@ Both have the same two buttons:
 | --- | --- |
 | Done | ticked off |
 | Snooze 10 | the stamp moves to ten minutes from now, and it rings again then |
+
+On a repeating task Snooze leaves the stamp alone and the phone just rings
+again in ten minutes. Moving the stamp would move every later occurrence too:
+snooze the 05:30 surf once and it would be 05:40 every day after.
 
 Unanswered, it stops by itself after ten minutes and the task is left as it
 was. The Clock app is not involved and the alarm does not appear there.
@@ -409,3 +430,27 @@ now".
 The limit worth knowing: rescheduling only happens while the app is running. A
 reminder set on the laptop becomes an alarm on the phone the next time the
 phone opens the app — not before.
+
+### Repeats
+
+`every <rule>` after the stamp (`repeatIn`, `src/reminders.ts`). A repeating
+task is never left ticked: `rollRepeats` (`src/tasks.ts`) rewrites a ticked
+one to open, at `nextOccurrence`, and the loop runs it first in every nap
+(`napRepeats`) — so the same thing happens however the box was ticked,
+including an `x` typed on another device. The rewrite is an ordinary edit, so
+it saves, syncs and moves the alarm like a tap.
+
+- The next time is always at least one step past the stamp (ticking early
+  means this one is done), then stepped on until it is past now (missed ones
+  are skipped, not piled up).
+- Calendar arithmetic, not milliseconds, so 05:30 stays 05:30 across a
+  daylight saving change.
+- A month from the 31st lands on the last day of a shorter month, and later
+  months then follow from that day.
+- Moving the time keeps the repeat; clearing the reminder removes it.
+
+Snooze on a repeating task is held by the phone, not written into the
+stamp. The phone keeps it for as long as the task still carries the stamp
+that rang (the app sends every open flagged task's stamp as `live`), so
+ticking, retiming or rolling the task drops it. The snooze keeps the
+original stamp, so Done on the snoozed ring still finds the line.

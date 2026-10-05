@@ -267,7 +267,7 @@ export const onNotificationTap = async (routes: TapRoutes): Promise<void> => {
 export const reminderSetKey = (refs: readonly TaskRef[]): string =>
   refs
     .filter((r) => !r.done && r.remindAt !== null)
-    .map((r) => `${r.path}\u0000${r.title}\u0000${r.remindAt as number}\u0000${r.alarm ? "alarm" : ""}`)
+    .map((r) => `${r.path}\u0000${r.title}\u0000${r.remindAt as number}\u0000${r.alarm ? "alarm" : ""}\u0000${r.repeat ?? ""}`)
     .sort()
     .join("|");
 
@@ -285,6 +285,9 @@ export interface AlarmEntry {
   readonly at: number;
   readonly title: string;
   readonly path: string;
+  // A repeating task's snooze is held by the phone rather than written into
+  // the stamp, which would drag every later occurrence along with it.
+  readonly repeat: boolean;
 }
 
 // The whole rule: an open task, flagged with `!`, at a time still to come.
@@ -295,7 +298,27 @@ export const alarmsWanted = (
 ): AlarmEntry[] =>
   refs
     .filter((r) => r.alarm && !r.done && r.remindAt !== null && r.remindAt > now)
-    .map((r) => ({ id: reminderId(r), at: r.remindAt as number, title: r.title, path: r.path }));
+    .map((r) => ({
+      id: reminderId(r),
+      at: r.remindAt as number,
+      title: r.title,
+      path: r.path,
+      repeat: r.repeat !== null,
+    }));
+
+// Every open flagged task's current stamp, past ones included. The phone keeps
+// a repeating task's snooze only while the task still reads the way it did
+// when the alarm rang: ticked, retimed or rolled on to its next time, and the
+// snooze has nothing left to snooze.
+export interface AlarmLive {
+  readonly id: number;
+  readonly stamp: number;
+}
+
+export const alarmsLive = (refs: readonly TaskRef[]): AlarmLive[] =>
+  refs
+    .filter((r) => r.alarm && !r.done && r.remindAt !== null)
+    .map((r) => ({ id: reminderId(r), stamp: r.remindAt as number }));
 
 // What the phone said about the settings that decide whether an alarm rings
 // properly.
@@ -326,7 +349,7 @@ export const alarmWarning = (status: AlarmStatus): string | null => {
 };
 
 interface AlarmNative {
-  sync(options: { alarms: AlarmEntry[] }): Promise<AlarmStatus & { scheduled: number }>;
+  sync(options: { alarms: AlarmEntry[]; live: AlarmLive[] }): Promise<AlarmStatus & { scheduled: number }>;
   take(): Promise<{ answers: unknown }>;
   addListener(event: "answered", listener: () => void): Promise<unknown>;
 }
@@ -356,7 +379,7 @@ export const syncAlarms = async (
 ): Promise<AlarmSyncResult> => {
   if (!Capacitor.isNativePlatform()) return { scheduled: 0, error: null };
   try {
-    const status = await alarmPlugin.sync({ alarms: alarmsWanted(refs, now) });
+    const status = await alarmPlugin.sync({ alarms: alarmsWanted(refs, now), live: alarmsLive(refs) });
     return { scheduled: status.scheduled, error: alarmWarning(status) };
   } catch (cause) {
     return {

@@ -9,9 +9,20 @@
 // The clock is injected everywhere, never reached for, so the same body reads
 // the same way in a test as on a phone.
 
-// `@` then a date, optionally a 24-hour time. Anchored to whitespace at both
-// ends so an email address or a `@mention` mid-sentence is not a reminder.
-const PATTERN = /(?:^|\s)@(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?(!?)(?=\s|$)/;
+// How often a repeating task comes back, written after the stamp:
+// `@2026-10-06 05:30! every day`. Days may be named in full or by their first
+// three letters; a list is comma-separated with no spaces.
+const DAY = "(?:mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)";
+const RULE = `day|weekday|week|month|year|\\d+\\s+(?:days?|weeks?|months?)|${DAY}(?:,${DAY})*`;
+
+// `@` then a date, optionally a 24-hour time, an alarm `!` and a repeat.
+// Anchored to whitespace at both ends so an email address or a `@mention`
+// mid-sentence is not a reminder. A repeat that does not parse is left in the
+// title as text rather than taking the stamp down with it.
+const PATTERN = new RegExp(
+  `(?:^|\\s)@(\\d{4})-(\\d{2})-(\\d{2})(?:\\s+(\\d{2}):(\\d{2}))?(!?)(?:\\s+every\\s+(${RULE}))?(?=\\s|$)`,
+  "i",
+);
 
 // A trailing `!` asks for a clock alarm as well as a notification — "10:00!"
 // reading as the shout it is. It rides in the text with the time rather than
@@ -19,6 +30,10 @@ const PATTERN = /(?:^|\s)@(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?(!?)(?=\
 // given device can act on it is that device's business.
 export const alarmWanted = (title: string): boolean =>
   (PATTERN.exec(title)?.[6] ?? "") === "!";
+
+// The repeat as written, lowercased, or null for a one-off.
+export const repeatIn = (title: string): string | null =>
+  PATTERN.exec(title)?.[7]?.toLowerCase().replace(/\s+/g, " ") ?? null;
 
 // A bare date means the morning, not midnight — nobody means 00:00 by "the
 // 11th", and a reminder that fires while you are asleep is one you will not see.
@@ -73,7 +88,10 @@ export const withReminder = (
 ): string => {
   const bare = titleWithout(title);
   if (at === null) return bare;
-  const stamp = stampOf(at, alarm);
+  // Moving the time keeps the repeat; it is part of the task, not of the time.
+  // Clearing the reminder takes it too, since a repeat has nothing to repeat.
+  const repeat = repeatIn(title);
+  const stamp = repeat === null ? stampOf(at, alarm) : `${stampOf(at, alarm)} every ${repeat}`;
   return bare === "" ? stamp : `${bare} ${stamp}`;
 };
 
@@ -109,4 +127,75 @@ export const describe = (at: number, now: number): string => {
   if (days === 1) return `tomorrow ${time}`;
   if (days < 7) return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()] as string} ${time}`;
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+};
+
+// The next time a repeating task is due, once it has been done.
+//
+// Always at least one step past the stamp: ticking early means this one is
+// done, not that the next one is. Then on past now: a daily task left for a
+// week comes back once, tomorrow, rather than as seven overdue copies. The
+// time of day is kept, and so is the local wall-clock time across a daylight
+// saving change, because the arithmetic is on the calendar, not on
+// milliseconds.
+//
+// A month from the 31st lands on the last day of a shorter month, and later
+// months then follow from that day. Null for a rule this cannot read, which
+// leaves the task ticked rather than guessing.
+export const nextOccurrence = (
+  stamp: number,
+  repeat: string,
+  now: number,
+): number | null => {
+  const step = stepOf(repeat);
+  if (step === null) return null;
+  let at = new Date(stamp);
+  // Bounded: a daily task untouched for a decade is ~3650 steps.
+  for (let i = 0; i < 100_000; i += 1) {
+    at = step(at);
+    if (at.getTime() > now) return at.getTime();
+  }
+  return null;
+};
+
+const DAY_INDEX: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+
+const addDays = (d: Date, n: number): Date => {
+  const next = new Date(d);
+  next.setDate(next.getDate() + n);
+  return next;
+};
+
+const addMonths = (d: Date, n: number): Date => {
+  const next = new Date(d);
+  const day = next.getDate();
+  next.setDate(1);
+  next.setMonth(next.getMonth() + n);
+  const last = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(day, last));
+  return next;
+};
+
+const stepOf = (repeat: string): ((d: Date) => Date) | null => {
+  const rule = repeat.toLowerCase().trim();
+  if (rule === "day") return (d) => addDays(d, 1);
+  if (rule === "week") return (d) => addDays(d, 7);
+  if (rule === "month") return (d) => addMonths(d, 1);
+  if (rule === "year") return (d) => addMonths(d, 12);
+  const counted = /^(\d+)\s+(day|week|month)s?$/.exec(rule);
+  if (counted !== null) {
+    const n = Number(counted[1]);
+    if (n < 1) return null;
+    if (counted[2] === "day") return (d) => addDays(d, n);
+    if (counted[2] === "week") return (d) => addDays(d, 7 * n);
+    return (d) => addMonths(d, n);
+  }
+  const days = rule === "weekday"
+    ? new Set([1, 2, 3, 4, 5])
+    : new Set(rule.split(",").map((name) => DAY_INDEX[name.slice(0, 3)]));
+  if (days.has(undefined) || days.size === 0) return null;
+  return (d) => {
+    let next = addDays(d, 1);
+    while (!days.has(next.getDay())) next = addDays(next, 1);
+    return next;
+  };
 };

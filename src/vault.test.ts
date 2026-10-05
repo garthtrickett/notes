@@ -509,6 +509,42 @@ describe("Done and Snooze from the alarm screen", () => {
   });
 });
 
+describe("ticking a repeating task", () => {
+  it("reopens it at its next time instead, as an edit that saves", async () => {
+    clock = new Date("2026-10-06T06:00").getTime();
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("d.md", { body: "- [ ] surf @2026-10-06 05:30! every day\n" })],
+    });
+    await settle(loop);
+    // Ticked the way the editor does it: an x typed into the box.
+    loop.propose({ kind: "edited", path: "d.md", body: "- [x] surf @2026-10-06 05:30! every day\n" });
+    await settle(loop);
+    expect(loop.model.notes.get("d.md")?.body).toBe("- [ ] surf @2026-10-07 05:30! every day\n");
+  });
+
+  it("reopens one that arrives ticked from elsewhere", async () => {
+    clock = new Date("2026-10-06T06:00").getTime();
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("d.md", { body: "- [x] bins @2026-10-06 every week\n" })],
+    });
+    await settle(loop);
+    expect(loop.model.notes.get("d.md")?.body).toBe("- [ ] bins @2026-10-13 every week\n");
+  });
+
+  it("leaves a ticked one in the trash alone", async () => {
+    clock = new Date("2026-10-06T06:00").getTime();
+    const loop = await boot(deps(), root);
+    const body = "- [x] bins @2026-10-06 every week\n";
+    loop.propose({ kind: "hydrated", notes: [note(".trash/d.md", { body })] });
+    await settle(loop);
+    expect(loop.model.notes.get(".trash/d.md")?.body).toBe(body);
+  });
+});
+
 describe("adopting a merge", () => {
   it("takes the merged text when nothing was typed meanwhile", () => {
     const m = createModel();

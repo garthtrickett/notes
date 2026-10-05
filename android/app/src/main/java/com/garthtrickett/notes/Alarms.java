@@ -16,6 +16,7 @@ import android.os.Build;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,38 +55,54 @@ final class Alarms {
 
     static final class Entry {
         final int id;
+        // When it rings.
         final long at;
         final String title;
         final String path;
+        // The stamp on the task's line, which is how the app finds the line
+        // again. The same as `at` except for a repeating task's snooze, which
+        // rings later while the line keeps its time.
+        final long stamp;
+        final boolean repeat;
 
-        Entry(int id, long at, String title, String path) {
+        Entry(int id, long at, String title, String path, long stamp, boolean repeat) {
             this.id = id;
             this.at = at;
             this.title = title;
             this.path = path;
+            this.stamp = stamp;
+            this.repeat = repeat;
         }
 
         static Entry fromJson(JSONObject o) throws JSONException {
-            return new Entry(o.getInt("id"), o.getLong("at"), o.optString("title", ""), o.optString("path", ""));
+            long at = o.getLong("at");
+            return new Entry(
+                o.getInt("id"), at, o.optString("title", ""), o.optString("path", ""),
+                o.optLong("stamp", at), o.optBoolean("repeat", false));
         }
 
         JSONObject toJson() throws JSONException {
-            return new JSONObject().put("id", id).put("at", at).put("title", title).put("path", path);
+            return new JSONObject().put("id", id).put("at", at).put("title", title).put("path", path)
+                .put("stamp", stamp).put("repeat", repeat);
         }
 
         Intent into(Intent intent) {
-            return intent.putExtra("id", id).putExtra("at", at).putExtra("title", title).putExtra("path", path);
+            return intent.putExtra("id", id).putExtra("at", at).putExtra("title", title).putExtra("path", path)
+                .putExtra("stamp", stamp).putExtra("repeat", repeat);
         }
 
         static Entry from(Intent intent) {
             if (intent == null || !intent.hasExtra("id") || !intent.hasExtra("at")) return null;
             String title = intent.getStringExtra("title");
             String path = intent.getStringExtra("path");
+            long at = intent.getLongExtra("at", 0L);
             return new Entry(
                 intent.getIntExtra("id", 0),
-                intent.getLongExtra("at", 0L),
+                at,
                 title == null ? "" : title,
-                path == null ? "" : path
+                path == null ? "" : path,
+                intent.getLongExtra("stamp", at),
+                intent.getBooleanExtra("repeat", false)
             );
         }
     }
@@ -95,19 +112,37 @@ final class Alarms {
     // Replaces the whole set. Anything held that the app no longer wants is
     // cancelled; everything it does want is (re)scheduled, which replaces any
     // earlier alarm with the same id rather than adding a second.
-    static int sync(Context context, JSONArray incoming, long now) throws JSONException {
+    static int sync(Context context, JSONArray incoming, JSONArray live, long now) throws JSONException {
         synchronized (LOCK) {
             Map<Integer, Entry> wanted = new LinkedHashMap<>();
             for (int i = 0; i < incoming.length(); i++) {
                 Entry e = Entry.fromJson(incoming.getJSONObject(i));
                 if (e.at > now) wanted.put(e.id, e);
             }
+            Map<Integer, Long> stamps = new HashMap<>();
+            for (int i = 0; i < live.length(); i++) {
+                JSONObject o = live.getJSONObject(i);
+                stamps.put(o.getInt("id"), o.getLong("stamp"));
+            }
             // A snooze wins over whatever the app sent for that task. Until the
             // app has read the press and moved the stamp, the note still says
             // the old time, and obeying that would silently drop the snooze.
+            //
+            // A repeating task's snooze never moves the stamp, so it is kept
+            // for exactly as long as the task still carries the stamp it rang
+            // for. Ticked, retimed or rolled on, and it is dropped. It cannot
+            // collide with the task's own next alarm, which is always later
+            // than a stamp that has already rung.
+            List<Entry> snoozes = new ArrayList<>();
             for (Entry s : read(context, SNOOZES)) {
-                if (s.at > now) wanted.put(s.id, s);
+                Long stamp = stamps.get(s.id);
+                boolean held = !s.repeat || (stamp != null && stamp == s.stamp);
+                if (s.at > now && held) {
+                    wanted.put(s.id, s);
+                    snoozes.add(s);
+                }
             }
+            write(context, SNOOZES, snoozes);
             for (Entry old : read(context, ALARMS)) {
                 if (!wanted.containsKey(old.id)) cancel(context, old.id);
             }
@@ -121,10 +156,14 @@ final class Alarms {
     // Done and Snooze presses since the app last asked. Taking them is the
     // app's promise to write them into the notes, so the snoozes they protect
     // are released too: the next set the app sends already has the new stamp.
+    // A repeating task's snooze is not written into the note, so it stays.
     static JSONArray take(Context context) {
         synchronized (LOCK) {
             JSONArray answers = readArray(context, ANSWERS);
-            prefs(context).edit().remove(ANSWERS).remove(SNOOZES).apply();
+            List<Entry> held = new ArrayList<>();
+            for (Entry s : read(context, SNOOZES)) if (s.repeat) held.add(s);
+            prefs(context).edit().remove(ANSWERS).apply();
+            write(context, SNOOZES, held);
             return answers;
         }
     }
@@ -300,13 +339,13 @@ final class Alarms {
                     .put("id", e.id)
                     .put("path", e.path)
                     .put("title", e.title)
-                    .put("at", e.at);
+                    .put("at", e.stamp);
                 if ("snooze".equals(kind)) {
                     // Whole minutes, because the note's stamp is whole minutes.
                     // The app writes exactly this instant back, so the alarm
                     // set here and the one the note asks for agree.
                     long to = ((now + SNOOZE_MS) / 60_000L) * 60_000L;
-                    Entry snoozed = new Entry(e.id, to, e.title, e.path);
+                    Entry snoozed = new Entry(e.id, to, e.title, e.path, e.repeat ? e.stamp : to, e.repeat);
                     add(context, SNOOZES, snoozed);
                     add(context, ALARMS, snoozed);
                     schedule(context, snoozed);

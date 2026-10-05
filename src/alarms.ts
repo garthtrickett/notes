@@ -62,6 +62,12 @@ export const applyAnswers = (
       (r) => !r.done && r.title === answer.title && r.remindAt === answer.at,
     );
     if (ref === undefined) continue;
+    // A repeating task keeps its stamp through a snooze. Moving it would move
+    // every later occurrence too — snooze the 05:30 surf once and it is 05:40
+    // every day after. The phone holds that snooze itself instead.
+    if (answer.kind === "snooze" && ref.repeat !== null) continue;
+    // Done on a repeating task is a tick like any other; the loop reopens it
+    // at its next time, the same as a tick from anywhere else.
     const next = answer.kind === "done"
       ? flipTask(body, ref)
       : setReminder(body, ref, answer.snoozeTo, true);

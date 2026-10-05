@@ -36,7 +36,9 @@ public class AlarmPlugin extends Plugin {
         }
         int scheduled;
         try {
-            scheduled = Alarms.sync(getContext(), alarms, System.currentTimeMillis());
+            // Absent from an app older than this plugin, which sent no repeats.
+            JSArray live = call.getArray("live", new JSArray());
+            scheduled = Alarms.sync(getContext(), alarms, live, System.currentTimeMillis());
         } catch (JSONException e) {
             call.reject("An alarm could not be read: " + e.getMessage());
             return;

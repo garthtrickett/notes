@@ -10,7 +10,7 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import type { Note } from "./model.ts";
 import { isArchivePath, isTrashPath } from "./paths.ts";
-import { alarmWanted, reminderIn, titleWithout, withReminder } from "./reminders.ts";
+import { alarmWanted, nextOccurrence, reminderIn, repeatIn, titleWithout, withReminder } from "./reminders.ts";
 
 export interface TaskRef {
   // Vault path of the file holding the box.
@@ -27,6 +27,8 @@ export interface TaskRef {
   readonly remindAt: number | null;
   // Whether the reminder asked for a clock alarm as well as a notification.
   readonly alarm: boolean;
+  // How often it comes back — "day", "mon,wed,fri" — or null for a one-off.
+  readonly repeat: string | null;
   // Where the title starts in the file, so a reminder can be written back
   // without rescanning. Same bargain as `marker`: good for one paint.
   readonly titleFrom: number;
@@ -61,6 +63,7 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
         title: titleWithout(raw),
         remindAt: reminderIn(raw),
         alarm: alarmWanted(raw),
+        repeat: repeatIn(raw),
         titleFrom: marker.to,
         titleTo: end,
       });
@@ -124,6 +127,29 @@ export const setReminder = (
   // looks at the alarm, so an alarm cannot outlive the reminder it was on.
   const next = withReminder(raw.trim(), at, alarm);
   return body.slice(0, ref.titleFrom) + lead + next + body.slice(ref.titleTo);
+};
+
+// A repeating task is never left ticked: ticking it means this time is done,
+// so the box reopens and the stamp moves to the next time. Whatever ticked it
+// — the Tasks tab, the alarm's Done, an `x` typed on the laptop — the result
+// is the same, because this reads the text rather than watching the gesture.
+// The alarm follows on its own: the stamp moving is the reminder set changing.
+//
+// Last task first, so a rewrite never moves the offsets of one still to come.
+// A rule that cannot produce a next time leaves its task ticked.
+export const rollRepeats = (body: string, path: string, now: number): string => {
+  let next = body;
+  const refs = tasksIn(body, path).filter(
+    (r) => r.done && r.repeat !== null && r.remindAt !== null,
+  );
+  for (const ref of refs.reverse()) {
+    const at = nextOccurrence(ref.remindAt as number, ref.repeat as string, now);
+    if (at === null) continue;
+    // The flip is one character for one character, so the title offsets the
+    // reminder write checks are still where the scan found them.
+    next = setReminder(flipTask(next, ref), ref, at, ref.alarm);
+  }
+  return next;
 };
 
 export interface TaskCache {

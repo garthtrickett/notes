@@ -3,7 +3,9 @@ import {
   alarmWanted,
   CHOICES,
   describe as describeAt,
+  nextOccurrence,
   reminderIn,
+  repeatIn,
   stampOf,
   titleWithout,
   withReminder,
@@ -163,5 +165,116 @@ describe("asking for an alarm as well", () => {
 
   it("does not mistake a bang in ordinary text for one", () => {
     expect(alarmWanted("surf! @2026-09-24 05:30")).toBe(false);
+  });
+});
+
+describe("reading a repeat", () => {
+  it("reads each form after the stamp", () => {
+    expect(repeatIn("surf @2026-10-06 05:30! every day")).toBe("day");
+    expect(repeatIn("standup @2026-10-06 09:30 every weekday")).toBe("weekday");
+    expect(repeatIn("bins @2026-10-06 every week")).toBe("week");
+    expect(repeatIn("rent @2026-10-01 every month")).toBe("month");
+    expect(repeatIn("passport @2026-10-01 every year")).toBe("year");
+    expect(repeatIn("water plants @2026-10-06 every 3 days")).toBe("3 days");
+    expect(repeatIn("gym @2026-10-06 07:00 every mon,wed,fri")).toBe("mon,wed,fri");
+    expect(repeatIn("tennis @2026-10-06 every Tuesday")).toBe("tuesday");
+  });
+
+  it("is null for a one-off", () => {
+    expect(repeatIn("surf @2026-10-06 05:30!")).toBeNull();
+  });
+
+  it("only counts directly after the stamp", () => {
+    // "every day" elsewhere in the sentence is just words.
+    expect(repeatIn("stretch every day @2026-10-06")).toBeNull();
+  });
+
+  it("leaves a repeat it cannot read as text, keeping the reminder", () => {
+    const line = "surf @2026-10-06 05:30! every fortnight";
+    expect(repeatIn(line)).toBeNull();
+    expect(reminderIn(line)).toBe(at("2026-10-06T05:30"));
+    expect(alarmWanted(line)).toBe(true);
+    expect(titleWithout(line)).toBe("surf every fortnight");
+  });
+
+  it("takes the repeat out of the title with the stamp", () => {
+    expect(titleWithout("surf @2026-10-06 05:30! every day")).toBe("surf");
+  });
+
+  it("does not stop the alarm flag or time being read", () => {
+    const line = "surf @2026-10-06 05:30! every day";
+    expect(reminderIn(line)).toBe(at("2026-10-06T05:30"));
+    expect(alarmWanted(line)).toBe(true);
+  });
+
+  it("is kept when the time is moved, and goes when it is cleared", () => {
+    const line = "surf @2026-10-06 05:30! every day";
+    expect(withReminder(line, at("2026-10-07T05:30"), true)).toBe("surf @2026-10-07 05:30! every day");
+    expect(withReminder(line, null)).toBe("surf");
+  });
+});
+
+describe("the next time a repeating task is due", () => {
+  const stamp = at("2026-10-06T05:30");
+  const before = at("2026-10-06T05:00");
+
+  it("is the next day, same time, for every day", () => {
+    expect(nextOccurrence(stamp, "day", before)).toBe(at("2026-10-07T05:30"));
+  });
+
+  it("is a full step on even when ticked early", () => {
+    // Ticked at 05:00 for a 05:30 task: this one is done, the next is tomorrow.
+    expect(nextOccurrence(stamp, "day", before)).toBe(at("2026-10-07T05:30"));
+  });
+
+  it("skips what was missed rather than piling it up", () => {
+    // Left for a week and ticked on the 13th at noon: next is the 14th.
+    expect(nextOccurrence(stamp, "day", at("2026-10-13T12:00"))).toBe(at("2026-10-14T05:30"));
+    // Ticked on the 13th before 05:30: today's is still to come.
+    expect(nextOccurrence(stamp, "day", at("2026-10-13T05:00"))).toBe(at("2026-10-13T05:30"));
+  });
+
+  it("counts weeks, months, years and numbered steps", () => {
+    expect(nextOccurrence(stamp, "week", before)).toBe(at("2026-10-13T05:30"));
+    expect(nextOccurrence(stamp, "month", before)).toBe(at("2026-11-06T05:30"));
+    expect(nextOccurrence(stamp, "year", before)).toBe(at("2027-10-06T05:30"));
+    expect(nextOccurrence(stamp, "3 days", before)).toBe(at("2026-10-09T05:30"));
+    expect(nextOccurrence(stamp, "2 weeks", before)).toBe(at("2026-10-20T05:30"));
+    expect(nextOccurrence(stamp, "2 months", before)).toBe(at("2026-12-06T05:30"));
+  });
+
+  it("lands a month from the 31st on the last day of a short month", () => {
+    expect(nextOccurrence(at("2026-01-31T09:00"), "month", at("2026-01-31T10:00")))
+      .toBe(at("2026-02-28T09:00"));
+  });
+
+  it("skips the weekend for weekday", () => {
+    // 2026-10-09 is a Friday.
+    expect(nextOccurrence(at("2026-10-09T09:30"), "weekday", at("2026-10-09T10:00")))
+      .toBe(at("2026-10-12T09:30"));
+  });
+
+  it("goes to the next named day, in full or short", () => {
+    // 2026-10-05 is a Monday.
+    const monday = at("2026-10-05T07:00");
+    const after = at("2026-10-05T08:00");
+    expect(nextOccurrence(monday, "mon,wed,fri", after)).toBe(at("2026-10-07T07:00"));
+    expect(nextOccurrence(at("2026-10-09T07:00"), "mon,wed,fri", at("2026-10-09T08:00")))
+      .toBe(at("2026-10-12T07:00"));
+    expect(nextOccurrence(monday, "tuesday", after)).toBe(at("2026-10-06T07:00"));
+    expect(nextOccurrence(monday, "monday", after)).toBe(at("2026-10-12T07:00"));
+  });
+
+  it("keeps the wall-clock time across a daylight saving change", () => {
+    // Whatever zone the tests run in, the hour must not drift.
+    const next = new Date(nextOccurrence(at("2026-03-07T05:30"), "day", at("2026-03-07T06:00")) as number);
+    expect([next.getHours(), next.getMinutes()]).toEqual([5, 30]);
+    const later = new Date(nextOccurrence(at("2026-10-24T05:30"), "week", at("2026-10-24T06:00")) as number);
+    expect([later.getHours(), later.getMinutes()]).toEqual([5, 30]);
+  });
+
+  it("refuses a rule it cannot step", () => {
+    expect(nextOccurrence(stamp, "0 days", before)).toBeNull();
+    expect(nextOccurrence(stamp, "fortnight", before)).toBeNull();
   });
 });

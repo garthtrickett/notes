@@ -580,7 +580,7 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
     <option value="">
       ${ref.remindAt === null
         ? "remind"
-        : `${ref.alarm ? "⏰ " : ""}${describeDue(ref.remindAt, at)}`}
+        : `${ref.alarm ? "⏰ " : ""}${ref.repeat === null ? "" : "↻ "}${describeDue(ref.remindAt, at)}`}
     </option>
     ${CHOICES.map((c) => html`<option value=${c.id}>${c.label}</option>`)}
     ${ref.remindAt === null

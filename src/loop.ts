@@ -26,7 +26,7 @@ import { composeDump, dumpEdits, dumpPathOf, dumpSpotAt, isDumpPath } from "./du
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
-import { createTaskCache, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
+import { createTaskCache, rollRepeats, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
 import { askToRemind, reminderSetKey, remindersDeliverable, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
@@ -450,7 +450,28 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     );
   };
 
+  // A repeating task that has been ticked — by any route, on any device — is
+  // reopened at its next time. Proposed as an ordinary edit, so it saves,
+  // syncs and reschedules its alarm like a tap; the rewritten line is never
+  // ticked, so the next pass finds nothing and this cannot loop.
+  const napRepeats = (): boolean => {
+    if (!model.hydrated) return false;
+    for (const group of tasksInVault(model.notes, tasks)) {
+      if (!group.refs.some((r) => r.done && r.repeat !== null)) continue;
+      const body = model.notes.get(group.path)?.body;
+      if (body === undefined) continue;
+      const next = rollRepeats(body, group.path, now());
+      if (next === body) continue;
+      propose({ kind: "edited", path: group.path, body: next });
+      return true;
+    }
+    return false;
+  };
+
   const nap = () => {
+    // Before anything is saved or scheduled, so neither sees a repeating task
+    // ticked for the moment before it reopens.
+    if (napRepeats()) return;
     napReminders();
     // 0. Whatever the history panel is waiting for. Read-only, independent of
     //    the sync rules below, and it must not be gated behind them — a stalled

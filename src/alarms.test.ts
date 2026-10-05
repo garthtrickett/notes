@@ -105,3 +105,24 @@ describe("turning an answer into an edit", () => {
     expect(reminderIn(line)).toBe(to);
   });
 });
+
+describe("answering a repeating task's alarm", () => {
+  const surf = at("2026-10-06T05:30");
+  const body = "- [ ] surf @2026-10-06 05:30! every day\n";
+  const notes = (path: string) => (path === "d.md" ? body : undefined);
+
+  it("leaves the stamp alone on snooze, so tomorrow stays at 05:30", () => {
+    expect(applyAnswers(notes, [
+      { kind: "snooze", path: "d.md", title: "surf", at: surf, snoozeTo: at("2026-10-06T05:40") },
+    ]).size).toBe(0);
+  });
+
+  it("ticks it on Done, by the stamp it was set for even after a snooze", () => {
+    // The phone keeps the original stamp on a repeating snooze, so Done on the
+    // snoozed ring still finds the 05:30 line.
+    expect(applyAnswers(notes, [
+      { kind: "snooze", path: "d.md", title: "surf", at: surf, snoozeTo: at("2026-10-06T05:40") },
+      { kind: "done", path: "d.md", title: "surf", at: surf, snoozeTo: null },
+    ]).get("d.md")).toBe("- [x] surf @2026-10-06 05:30! every day\n");
+  });
+});
