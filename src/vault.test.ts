@@ -997,6 +997,31 @@ describe("tasks on screen", () => {
     expect(root.querySelector(".taskgroup details summary")?.textContent).toContain("Done (1)");
   });
 
+  it("ticking one box does not show the next one ticked", async () => {
+    // Reported on the phone: tick task one, and task two shows ticked while
+    // the note says otherwise. The ticked row leaves the list and lit reuses
+    // its <input> for the next task. A ?checked attribute binding cannot
+    // untick it — clicking sets the property, which the attribute no longer
+    // controls — so the box kept the click it had been given.
+    const loop = await boot(deps(), root);
+    loop.propose({
+      kind: "hydrated",
+      notes: [note("hobbies/dj.md", { body: "- [ ] test one\n- [ ]  test two\n" })],
+    });
+    await settle(loop);
+    await toTasks(loop);
+
+    const first = root.querySelector<HTMLInputElement>(".taskgroup > ul input[type=checkbox]");
+    if (first === null) throw new Error("no box");
+    first.click();
+    await settle(loop);
+
+    expect(loop.model.notes.get("hobbies/dj.md")?.body).toBe("- [x] test one\n- [ ]  test two\n");
+    const left = [...root.querySelectorAll<HTMLInputElement>(".taskgroup > ul input[type=checkbox]")];
+    expect(left.length).toBe(1);
+    expect(left[0]?.checked).toBe(false);
+  });
+
   it("tapping a title opens its note", async () => {
     const loop = await boot(deps(), root);
     loop.propose({

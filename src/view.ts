@@ -11,6 +11,7 @@
 // every other piece of state. This file has none of its own.
 
 import { html, nothing, type TemplateResult } from "lit-html";
+import { live } from "lit-html/directives/live.js";
 import { ARCHIVE, TRASH, dropTarget } from "./paths.ts";
 import {
   dragLanding,
@@ -591,10 +592,16 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
           <option value="clear">Clear reminder</option>`}
   </select>`;
 
+  // The box is bound to the live property, not the attribute. A ticked row
+  // leaves the open list and lit hands its <input> to the next task; clicking
+  // set that input's checked property, which a ?checked attribute no longer
+  // controls, and a plain .checked binding skips the write because the value
+  // it last wrote (false) has not changed. Ticking task one showed task two
+  // ticked. live() compares against the element itself, so it always lands.
   const row = (ref: TaskRef) => html`<li>
     <input
       type="checkbox"
-      ?checked=${ref.done}
+      .checked=${live(ref.done)}
       aria-label=${ref.done ? `Reopen ${ref.title}` : `Tick off ${ref.title}`}
       @change=${() => toggle(ref)}
     />
