@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { spansFor, wikilinkAt, type Span } from "./decorate";
+import { altWithWidth, imageWidthOf, resizeImageAt, spansFor, wikilinkAt, type Span } from "./decorate";
 
 const noImages = () => null;
 const anyImage = (src: string) => `data:image/png;base64,${src}`;
@@ -69,6 +69,7 @@ describe("spansFor", () => {
       to: doc.indexOf(") after") + 1,
       src: "data:image/png;base64,vault/img/cat.png",
       alt: "a cat",
+      width: null,
       video: false,
     });
   });
@@ -362,5 +363,48 @@ describe("list indent", () => {
 
   test("counts the quote marks, so a quoted item still hangs correctly", () => {
     expect(indentAt("> - quoted", 0)).toBe(4);
+  });
+});
+
+describe("a picture's display width", () => {
+  const anyImage = (src: string) => `data:image/png;base64,${src}`;
+
+  test("reads Obsidian's |300 out of the alt", () => {
+    expect(imageWidthOf("a cat|300")).toEqual({ alt: "a cat", width: 300 });
+    expect(imageWidthOf("|300")).toEqual({ alt: "", width: 300 });
+  });
+
+  test("is no width at all without one, or with a zero", () => {
+    expect(imageWidthOf("a cat")).toEqual({ alt: "a cat", width: null });
+    expect(imageWidthOf("a|b")).toEqual({ alt: "a|b", width: null });
+    expect(imageWidthOf("a|0")).toEqual({ alt: "a", width: null });
+  });
+
+  test("reaches the span, with the number out of the alt", () => {
+    const doc = "![a cat|320](cat.png)";
+    const image = spansFor(doc, anyImage).find((s) => s.kind === "image");
+    expect(image).toMatchObject({ alt: "a cat", width: 320, from: 0, to: doc.length });
+  });
+
+  test("writes a width, replaces one, and takes one off", () => {
+    expect(altWithWidth("a cat", 300)).toBe("a cat|300");
+    expect(altWithWidth("a cat|300", 412.6)).toBe("a cat|413");
+    expect(altWithWidth("a cat|300", null)).toBe("a cat");
+    expect(altWithWidth("", 300)).toBe("|300");
+  });
+
+  test("edits only the alt of the picture at that position", () => {
+    const doc = "intro\n![cat|300](a b.png) and ![dog](d.png)\n";
+    const at = doc.indexOf("![cat");
+    const change = resizeImageAt(doc, at, 500);
+    expect(change).not.toBeNull();
+    const { from, to, insert } = change as { from: number; to: number; insert: string };
+    expect(doc.slice(0, from) + insert + doc.slice(to))
+      .toBe("intro\n![cat|500](a b.png) and ![dog](d.png)\n");
+  });
+
+  test("refuses a position that is not the start of a picture", () => {
+    expect(resizeImageAt("plain text", 0, 300)).toBeNull();
+    expect(resizeImageAt("x ![a](b.png)", 0, 300)).toBeNull();
   });
 });

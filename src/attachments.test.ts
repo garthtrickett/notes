@@ -228,6 +228,20 @@ describe("rendering an attachment", () => {
     );
   });
 
+  it("draws the width the editor set, and keeps the number out of the alt", () => {
+    const el = document.createElement("div");
+    el.append(renderMarkdown("![a cat|320](attachments/a.webp)", document, resolve));
+    const img = el.querySelector("img");
+    expect(img?.getAttribute("width")).toBe("320");
+    expect(img?.getAttribute("alt")).toBe("a cat");
+  });
+
+  it("sets no width when none was asked for", () => {
+    const el = document.createElement("div");
+    el.append(renderMarkdown("![a cat](attachments/a.webp)", document, resolve));
+    expect(el.querySelector("img")?.hasAttribute("width")).toBe(false);
+  });
+
   it("leaves an unknown source visibly broken rather than dropping it", () => {
     const fragment = renderMarkdown("![](attachments/missing.webp)", document, resolve);
     const el = document.createElement("div");

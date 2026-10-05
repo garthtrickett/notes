@@ -700,6 +700,52 @@ kbd {
   border-radius: 4px;
 }
 
+/* The box exists to hold the resize grip in the picture's corner. Inline-block
+   so the picture still flows with the text around it, and capped like the
+   picture so a grip never hangs outside the column. */
+.cm-md-imagebox {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  line-height: 0;
+}
+
+.cm-md-imagebox > .cm-md-image {
+  height: auto;
+}
+
+/* Hidden until the picture is hovered, so reading is not decorated with
+   handles. A phone has no hover, so there it stays faintly visible, and
+   touch-action keeps the drag from scrolling the page instead. */
+.cm-md-resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  border-right: 3px solid #88c0d0;
+  border-bottom: 3px solid #88c0d0;
+  border-bottom-right-radius: 3px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.cm-md-imagebox:hover > .cm-md-resize,
+.cm-md-resize:active {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .cm-md-resize {
+    opacity: 0.6;
+    width: 22px;
+    height: 22px;
+  }
+}
+
 /* Phase 7: the rest of the prose. Same rule as everything above — a class on a
    range, nothing removed, nothing reflowed. */
 

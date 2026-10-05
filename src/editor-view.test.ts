@@ -217,3 +217,103 @@ describe("list indent reaches the DOM", () => {
     expect(lines[3]?.className).not.toContain("cm-md-list");
   });
 });
+
+describe("resizing a picture by its corner", () => {
+  // happy-dom lays nothing out, so the two measurements the drag reads are
+  // given: the picture is drawn 200px wide on an 800px line.
+  const measured = (handle: EditorHandle) => {
+    const img = handle.dom.querySelector("img.cm-md-image") as HTMLImageElement;
+    const grip = handle.dom.querySelector(".cm-md-resize") as HTMLElement;
+    const line = img.closest(".cm-line") as HTMLElement;
+    img.getBoundingClientRect = () => ({ width: 200 }) as DOMRect;
+    Object.defineProperty(line, "clientWidth", { value: 800 });
+    grip.setPointerCapture = () => {};
+    return { img, grip };
+  };
+  const pointer = (type: string, clientX: number) =>
+    new PointerEvent(type, { clientX, pointerId: 1, bubbles: true, cancelable: true });
+
+  test("draws the width the text asks for", () => {
+    const { handle } = openEditor("![a|300](a.png)");
+    const img = handle.dom.querySelector("img.cm-md-image") as HTMLImageElement;
+    expect(img.style.width).toBe("300px");
+    // The 60vh cap would squash a tall picture drawn at the width asked for.
+    expect(img.style.maxHeight).toBe("none");
+    expect(img.alt).toBe("a");
+    handle.destroy();
+  });
+
+  test("dragging the grip writes the new width into the note", () => {
+    let body = "";
+    const { handle, view } = openEditor("![a](a.png)\nafter", undefined, { onEdit: (b) => { body = b; } });
+    const { img, grip } = measured(handle);
+    grip.dispatchEvent(pointer("pointerdown", 100));
+    grip.dispatchEvent(pointer("pointermove", 150));
+    // Live while dragging, before anything is written.
+    expect(img.style.width).toBe("250px");
+    expect(view.state.doc.toString()).toBe("![a](a.png)\nafter");
+    grip.dispatchEvent(pointer("pointerup", 150));
+    expect(view.state.doc.toString()).toBe("![a|250](a.png)\nafter");
+    // An edit like typing, so it saves and syncs.
+    expect(body).toBe("![a|250](a.png)\nafter");
+    handle.destroy();
+  });
+
+  test("keeps the same picture element, so it does not reload", () => {
+    const { handle } = openEditor("![a](a.png)");
+    const { img, grip } = measured(handle);
+    grip.dispatchEvent(pointer("pointerdown", 100));
+    grip.dispatchEvent(pointer("pointermove", 160));
+    grip.dispatchEvent(pointer("pointerup", 160));
+    expect(handle.dom.querySelector("img.cm-md-image")).toBe(img);
+    expect(img.style.width).toBe("260px");
+    handle.destroy();
+  });
+
+  test("stops at the width of the line and at a usable minimum", () => {
+    const { handle, view } = openEditor("![a](a.png)");
+    const { grip } = measured(handle);
+    grip.dispatchEvent(pointer("pointerdown", 100));
+    grip.dispatchEvent(pointer("pointermove", 5000));
+    grip.dispatchEvent(pointer("pointerup", 5000));
+    expect(view.state.doc.toString()).toBe("![a|800](a.png)");
+    const again = measured(handle);
+    again.grip.dispatchEvent(pointer("pointerdown", 100));
+    again.grip.dispatchEvent(pointer("pointermove", -5000));
+    again.grip.dispatchEvent(pointer("pointerup", -5000));
+    expect(view.state.doc.toString()).toBe("![a|48](a.png)");
+    handle.destroy();
+  });
+
+  test("a click on the grip without a drag writes nothing", () => {
+    const { handle, view } = openEditor("![a](a.png)");
+    const { grip } = measured(handle);
+    grip.dispatchEvent(pointer("pointerdown", 100));
+    grip.dispatchEvent(pointer("pointerup", 100));
+    expect(view.state.doc.toString()).toBe("![a](a.png)");
+    handle.destroy();
+  });
+
+  test("dragging out and back to where it started writes nothing", () => {
+    const { handle, view } = openEditor("![a](a.png)");
+    const { grip } = measured(handle);
+    grip.dispatchEvent(pointer("pointerdown", 100));
+    grip.dispatchEvent(pointer("pointermove", 180));
+    grip.dispatchEvent(pointer("pointermove", 100));
+    grip.dispatchEvent(pointer("pointerup", 100));
+    expect(view.state.doc.toString()).toBe("![a](a.png)");
+    handle.destroy();
+  });
+
+  test("double-clicking the grip puts it back to its own size", () => {
+    const { handle, view } = openEditor("![a|300](a.png)");
+    const grip = handle.dom.querySelector(".cm-md-resize") as HTMLElement;
+    grip.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    expect(view.state.doc.toString()).toBe("![a](a.png)");
+    const reset = handle.dom.querySelector("img.cm-md-image") as HTMLImageElement;
+    expect(reset.style.width).toBe("");
+    // Back to its own size, so back under the cap that keeps it on screen.
+    expect(reset.style.maxHeight).toBe("");
+    handle.destroy();
+  });
+});

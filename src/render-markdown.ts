@@ -8,6 +8,7 @@
 import { marked } from "marked";
 import { basenameOf } from "./links.ts";
 import { isVideoPath } from "./attachments.ts";
+import { imageWidthOf } from "./decorate.ts";
 
 // Turned into ordinary markdown links before parsing, so the renderer needs no
 // plugin: [[japanese-grammar]] becomes [japanese-grammar](#note:japanese-grammar).
@@ -141,6 +142,9 @@ export const renderMarkdown = (
     if (src === null) continue;
     const resolved = resolveImage(src);
     if (resolved === null) continue;
+    // `![alt|300](src)`: the same display width the editor draws, read the
+    // same way (never duplicate rules), as a plain width attribute.
+    const { alt, width } = imageWidthOf(img.getAttribute("alt") ?? "");
     if (isVideoPath(src)) {
       // Markdown has one syntax for embedded media, so a clip arrives as an
       // <img>. Swapped before sanitising, so what the sanitiser checks is what
@@ -149,10 +153,13 @@ export const renderMarkdown = (
       video.setAttribute("src", resolved);
       video.setAttribute("controls", "");
       video.setAttribute("preload", "metadata");
+      if (width !== null) video.setAttribute("width", String(width));
       img.replaceWith(video);
       continue;
     }
     img.setAttribute("src", resolved);
+    img.setAttribute("alt", alt);
+    if (width !== null) img.setAttribute("width", String(width));
   }
 
   sanitize(template.content);

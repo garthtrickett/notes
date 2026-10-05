@@ -29,6 +29,8 @@ import {
   wikilinkAt,
   type ResolveImage,
   type ResolveWikilink,
+  MIN_IMAGE_WIDTH,
+  resizeImageAt,
 } from "./decorate.ts";
 
 export interface EditorHooks {
@@ -76,6 +78,7 @@ class ImageWidget extends WidgetType {
     readonly src: string,
     readonly alt: string,
     readonly video: boolean,
+    readonly width: number | null,
   ) {
     super();
   }
@@ -84,8 +87,23 @@ class ImageWidget extends WidgetType {
   // re-decode the picture, which is visible as a flicker while typing.
   override eq(other: ImageWidget): boolean {
     return (
-      other.src === this.src && other.alt === this.alt && other.video === this.video
+      other.src === this.src &&
+      other.alt === this.alt &&
+      other.video === this.video &&
+      other.width === this.width
     );
+  }
+
+  // A resize changes only the width and alt, so the element is kept and
+  // restyled rather than rebuilt — the picture does not reload or blink
+  // under the pointer the moment the drag lands.
+  override updateDOM(dom: HTMLElement): boolean {
+    const media = dom.firstElementChild as HTMLImageElement | HTMLVideoElement | null;
+    if (media === null || media.getAttribute("src") !== this.src) return false;
+    if ((media.tagName === "VIDEO") !== this.video) return false;
+    if (media instanceof HTMLImageElement) media.alt = this.alt;
+    sizeMedia(media, this.width);
+    return true;
   }
 
   // CodeMirror discards every event that starts inside a widget by default. The
@@ -93,12 +111,21 @@ class ImageWidget extends WidgetType {
   // branch for draggable widgets that selects the range the widget covers, and
   // its drop then deletes and reinserts in a single change. Letting the event
   // reach it is the whole of "dragging a picture moves it" (never duplicate
-  // rules). Everything else still stays the widget's business.
+  // rules). Everything else still stays the widget's business — including the
+  // resize handle, whose listeners are its own.
   override ignoreEvent(event: Event): boolean {
     return event.type !== "dragstart";
   }
 
-  override toDOM(): HTMLElement {
+  override toDOM(view: EditorView): HTMLElement {
+    const box = document.createElement("span");
+    box.className = "cm-md-imagebox";
+    box.appendChild(this.media());
+    box.appendChild(resizeHandle(view, box));
+    return box;
+  }
+
+  private media(): HTMLElement {
     // A video is still one atomic thing in the document, so it is the same
     // widget with a different element inside it.
     if (this.video) {
@@ -109,6 +136,7 @@ class ImageWidget extends WidgetType {
       // The first frame without fetching the whole clip to find it.
       video.preload = "metadata";
       video.draggable = true;
+      sizeMedia(video, this.width);
       return video;
     }
     const img = document.createElement("img");
@@ -121,9 +149,63 @@ class ImageWidget extends WidgetType {
     // contenteditable inserts its `src` — here the whole base64 data URL — as
     // text, which is what this looked like from the outside.
     img.draggable = true;
+    sizeMedia(img, this.width);
     return img;
   }
 }
+
+// A set width is the size the picture is drawn at, so the 60vh height cap
+// that keeps an unsized one on screen comes off — left on, it would squash a
+// tall picture instead of letting it be the size that was asked for.
+const sizeMedia = (media: HTMLElement, width: number | null): void => {
+  media.style.width = width === null ? "" : `${width}px`;
+  media.style.maxHeight = width === null ? "" : "none";
+};
+
+// The corner grip. Drag to resize, live; letting go writes the width into the
+// alt as an ordinary edit, so it saves, syncs and undoes like typing.
+// Double-click puts the picture back to its own size. The width is measured
+// as drawn, and capped at the line it sits on, so a drag past the edge stops
+// at full width instead of writing a size the column will never show.
+const resizeHandle = (view: EditorView, box: HTMLElement): HTMLElement => {
+  const handle = document.createElement("span");
+  handle.className = "cm-md-resize";
+  handle.title = "Drag to resize · double-click for original size";
+  const write = (width: number | null) => {
+    const change = resizeImageAt(view.state.doc.toString(), view.posAtDOM(box), width);
+    if (change !== null) view.dispatch({ changes: change });
+  };
+  handle.addEventListener("pointerdown", (down: PointerEvent) => {
+    down.preventDefault();
+    down.stopPropagation();
+    const media = box.firstElementChild as HTMLElement | null;
+    if (media === null) return;
+    handle.setPointerCapture(down.pointerId);
+    const start = media.getBoundingClientRect().width;
+    const line = box.closest(".cm-line") as HTMLElement | null;
+    const max = Math.max(MIN_IMAGE_WIDTH, line?.clientWidth ?? Number.POSITIVE_INFINITY);
+    let width: number | null = null;
+    const move = (ev: PointerEvent) => {
+      width = Math.round(Math.min(max, Math.max(MIN_IMAGE_WIDTH, start + ev.clientX - down.clientX)));
+      sizeMedia(media, width);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      if (width !== null && width !== Math.round(start)) write(width);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
+  handle.addEventListener("dblclick", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    write(null);
+  });
+  return handle;
+};
 
 // Decorations and, alongside them, the ranges the editor must treat as single
 // units. A picture is one thing to the reader, so it has to be one thing to the
@@ -166,7 +248,7 @@ const buildDecorations = (
       // Replace, not remove: the markdown is still in the document, so a
       // selection dragged across the picture copies the reference with it.
       const replace = Decoration.replace({
-        widget: new ImageWidget(span.src, span.alt, span.video),
+        widget: new ImageWidget(span.src, span.alt, span.video, span.width),
       });
       ranges.push(replace.range(span.from, span.to));
       atomic.push(replace.range(span.from, span.to));

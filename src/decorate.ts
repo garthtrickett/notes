@@ -22,6 +22,9 @@ export type Span =
       readonly to: number;
       readonly src: string;
       readonly alt: string;
+      // Display width in CSS pixels, from Obsidian's `![alt|300](src)`, or
+      // null for the picture's own size (capped to the column).
+      readonly width: number | null;
       // Decided by the path, not by the URL. The URL used to say `data:video/`
       // and now says `blob:`, and a widget that reads the scheme to know what
       // to draw silently became an <img> around a video.
@@ -82,6 +85,40 @@ const WIKILINK = /\[\[([^\]\n]+)\]\]/g;
 // `![alt](src)` as the parser reports it: one `Image` node, so the source and
 // alt are read back out of the text rather than reassembled from children.
 const IMAGE_PARTS = /^!\[([^\]]*)\]\(([^)\s]+)/;
+
+// How big a picture is drawn, kept in the text the way Obsidian keeps it: a
+// number of CSS pixels after the last `|` in the alt. `![|300](a.png)` is a
+// 300px-wide picture with no alt. It is a display size only — the file is
+// untouched — and it lives in the note so it syncs like everything else.
+const WIDTH = /\|(\d{1,5})$/;
+
+export const MIN_IMAGE_WIDTH = 48;
+
+export const imageWidthOf = (alt: string): { alt: string; width: number | null } => {
+  const m = WIDTH.exec(alt);
+  if (m === null) return { alt, width: null };
+  const width = Number(m[1]);
+  return { alt: alt.slice(0, m.index), width: width > 0 ? width : null };
+};
+
+export const altWithWidth = (alt: string, width: number | null): string => {
+  const bare = imageWidthOf(alt).alt;
+  return width === null ? bare : `${bare}|${Math.round(width)}`;
+};
+
+// The edit that sets one picture's width, given where its `![` starts. Only
+// the alt is rewritten, so the path — and an image the parser has not seen
+// yet — is never touched. Null if `from` is not the start of an image.
+export const resizeImageAt = (
+  doc: string,
+  from: number,
+  width: number | null,
+): { from: number; to: number; insert: string } | null => {
+  const m = /^!\[([^\]\n]*)\]\(/.exec(doc.slice(from, from + 4096));
+  if (m === null) return null;
+  const alt = m[1] as string;
+  return { from: from + 2, to: from + 2 + alt.length, insert: altWithWidth(alt, width) };
+};
 
 const lineStartAt = (doc: string, pos: number): number =>
   doc.lastIndexOf("\n", pos - 1) + 1;
@@ -229,12 +266,14 @@ export const spansFor = (
         // An image we cannot resolve stays as its markdown, visibly. Replacing
         // it with a broken picture would hide the path that explains why.
         if (resolved !== null) {
+          const { alt, width } = imageWidthOf(parts?.[1] ?? "");
           spans.push({
             kind: "image",
             from: node.from,
             to: node.to,
             src: resolved,
-            alt: parts?.[1] ?? "",
+            alt,
+            width,
             video: isVideoPath(src),
           });
           // Skip the children. The brackets and URL are about to be covered by
