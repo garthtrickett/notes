@@ -24,6 +24,7 @@ import {
 } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { defaultKeymap, history, historyKeymap, redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
+import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import {
   spansFor,
   wikilinkAt,
@@ -62,6 +63,10 @@ export interface EditorHandle {
   // Ctrl+Z, and the keyboard shortcut already covers the desktop — these are
   // the same history either way, just a second gesture onto it.
   readonly undo: () => boolean;
+  // The editor's own find. The browser's cannot do this job: CodeMirror only
+  // puts the lines on screen into the page, so Ctrl+F in Firefox missed
+  // anything further down the note and reported it as not there.
+  readonly find: () => void;
   readonly redo: () => boolean;
   readonly canUndo: () => boolean;
   readonly canRedo: () => boolean;
@@ -323,7 +328,10 @@ export const createEditor = (hooks: EditorHooks): EditorHandle => {
 
   const extensions = [
     history(),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    // At the top, so it is where the eye already is, and Mod-f / F3 /
+    // Mod-g / Escape work as they do everywhere else.
+    search({ top: true }),
+    keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
     markdown(),
     EditorView.lineWrapping,
     decorator(hooks),
@@ -412,6 +420,7 @@ export const createEditor = (hooks: EditorHooks): EditorHandle => {
     destroy: () => view.destroy(),
     // Undo reports back through the update listener like a keystroke, so the
     // model follows without any special-casing on this side.
+    find: () => void openSearchPanel(view),
     undo: () => undo(view),
     redo: () => redo(view),
     canUndo: () => undoDepth(view.state) > 0,

@@ -184,6 +184,15 @@ if (config === null) {
     }
   });
 
+  // Ctrl+F / Cmd+F opens the editor's find wherever focus is, as long as a
+  // note or the dump is on screen. Inside the editor its own keymap has
+  // already taken the key, which is the defaultPrevented check.
+  addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.altKey || event.shiftKey) return;
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "f") return;
+    if (loop.find()) event.preventDefault();
+  });
+
   addEventListener("keydown", (event: KeyboardEvent) => {
     const action = keyAction(event, loop.model);
     if (action === null) return;

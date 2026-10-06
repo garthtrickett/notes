@@ -1159,3 +1159,65 @@ body {
     border-color: var(--accent);
   }
 }
+
+/* The editor's find (Ctrl+F). CodeMirror's panel defaults to a light theme
+   whose selectors carry a generated class, so these are scoped two deep to
+   outrank it — at one class the panel stayed white (seen in Chromium). */
+.cm-host .cm-editor .cm-panels {
+  background: var(--panel);
+  color: inherit;
+}
+.cm-host .cm-editor .cm-panels-top {
+  border-bottom: 1px solid #2b2e35;
+}
+.cm-host .cm-editor .cm-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.cm-host .cm-editor .cm-search input[type="text"],
+.cm-host .cm-editor .cm-search .cm-textfield {
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid #3a3e47;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  min-width: 10em;
+}
+.cm-host .cm-editor .cm-search .cm-textfield:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.cm-host .cm-editor .cm-search button,
+.cm-host .cm-editor .cm-search .cm-button {
+  background: transparent;
+  color: inherit;
+  border: 1px solid #3a3e47;
+  border-radius: 6px;
+  padding: 5px 9px;
+  font: inherit;
+  background-image: none;
+  cursor: pointer;
+}
+.cm-host .cm-editor .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.8;
+}
+.cm-host .cm-editor .cm-search button[name="close"] {
+  margin-left: auto;
+  border: none;
+  font-size: 18px;
+}
+.cm-host .cm-editor .cm-searchMatch {
+  background: rgba(122, 162, 247, 0.25);
+  outline: 1px solid rgba(122, 162, 247, 0.5);
+}
+.cm-host .cm-editor .cm-searchMatch-selected {
+  background: rgba(122, 162, 247, 0.55);
+}

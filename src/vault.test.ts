@@ -563,6 +563,31 @@ describe("a conflict copy of a dump day", () => {
   });
 });
 
+describe("Ctrl+F", () => {
+  it("opens the editor's find when a note is in the editor", async () => {
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md", { body: "find me" })] });
+    await settle(loop);
+    expect(loop.find()).toBe(true);
+    expect(root.querySelector(".cm-search")).not.toBeNull();
+  });
+
+  it("leaves Ctrl+F to the browser where the page itself is the text", async () => {
+    // Preview is rendered HTML, all of it in the page, so the browser's find
+    // works there and should not be taken away.
+    const loop = await boot(deps(), root);
+    loop.propose({ kind: "hydrated", notes: [note("a.md", { body: "find me" })] });
+    await settle(loop);
+    loop.propose({ kind: "previewToggled" });
+    await settle(loop);
+    expect(loop.find()).toBe(false);
+    loop.propose({ kind: "previewToggled" });
+    loop.propose({ kind: "modeChanged", mode: "tasks" });
+    await settle(loop);
+    expect(loop.find()).toBe(false);
+  });
+});
+
 describe("adopting a merge", () => {
   it("takes the merged text when nothing was typed meanwhile", () => {
     const m = createModel();

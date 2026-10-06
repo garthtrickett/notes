@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
+import { findNext, SearchQuery, setSearchQuery } from "@codemirror/search";
 import { createEditor, type EditorHandle } from "./editor.ts";
 import type { ResolveImage } from "./decorate.ts";
 
@@ -314,6 +315,30 @@ describe("resizing a picture by its corner", () => {
     expect(reset.style.width).toBe("");
     // Back to its own size, so back under the cap that keeps it on screen.
     expect(reset.style.maxHeight).toBe("");
+    handle.destroy();
+  });
+});
+
+describe("finding text in a note", () => {
+  test("opens the editor's own find panel", () => {
+    const { handle } = openEditor("hello");
+    expect(handle.dom.querySelector(".cm-search")).toBeNull();
+    handle.find();
+    expect(handle.dom.querySelector(".cm-search")).not.toBeNull();
+    handle.destroy();
+  });
+
+  test("finds text far below what is on screen", () => {
+    // The reason this exists: CodeMirror renders only the lines in view, so
+    // the browser's find could not see "mindcraft" further down
+    // board-design.md. The editor's find searches the document, not the page.
+    const body = Array.from({ length: 600 }, (_, k) => (k === 540 ? "mindcraft ultra" : `line ${k}`)).join("\n");
+    const { handle, view } = openEditor(body);
+    view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: "mindcraft" })) });
+    expect(findNext(view)).toBe(true);
+    const at = view.state.selection.main;
+    expect(view.state.sliceDoc(at.from, at.to)).toBe("mindcraft");
+    expect(view.state.doc.lineAt(at.from).number).toBe(541);
     handle.destroy();
   });
 });

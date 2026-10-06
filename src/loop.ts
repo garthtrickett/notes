@@ -62,6 +62,10 @@ export interface Loop {
   // Focus is not model state, so it is not a proposal. The loop holds the
   // editor, so it is the only thing that can offer this.
   readonly enterEditor: () => void;
+  // Opens the editor's find when there is an editor on screen, and says
+  // whether it did — so Ctrl+F can fall through to the browser's find where
+  // the page itself is the text (preview, the tasks list).
+  readonly find: () => boolean;
 }
 
 const FIRST_BACKOFF_MS = 1_000;
@@ -100,6 +104,12 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // A push can begin while a persist is still running — the first block is
   // skipped rather than returned from — so assigning would drop the persist's
   // promise on the floor.
+  // The note or the dump is in the editor. Not the bin, the archive,
+  // settings, preview, or no note open.
+  const editorOnScreen = (): boolean =>
+    model.mode === "dump" ||
+    (model.mode === "notes" && model.openPath !== null && !model.preview);
+
   let idle: Promise<void> = Promise.resolve();
   const track = (work: Promise<unknown>): void => {
     idle = Promise.all([idle, work]).then(() => undefined);
@@ -356,9 +366,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // to undo is a lie the thumb discovers. Synced here, after the editor,
     // the way the path field is. No editor on screen means both dark: the
     // bin, the archive, settings, preview, and no note open.
-    const editing =
-      model.mode === "dump" ||
-      (model.mode === "notes" && model.openPath !== null && !model.preview);
+    const editing = editorOnScreen();
     const undoButton = root.querySelector<HTMLButtonElement>("#undo-edit");
     if (undoButton !== null) undoButton.disabled = !editing || !cm.canUndo();
     const redoButton = root.querySelector<HTMLButtonElement>("#redo-edit");
@@ -683,7 +691,13 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // resume wherever the last visit left off.
   const enterEditor = () => cm.focusAt(0);
 
-  return { model, propose, flush, enterEditor };
+  const find = (): boolean => {
+    if (!editorOnScreen()) return false;
+    cm.find();
+    return true;
+  };
+
+  return { model, propose, flush, enterEditor, find };
 };
 
 export const boot = async (
