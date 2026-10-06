@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { openDb } from "./idb.ts";
 import { boot, type Deps, type Loop } from "./loop.ts";
-import { createModel, dumpDays, present, visible, type Note } from "./model.ts";
+import { createModel, dumpDays, openable, present, visible, type Note } from "./model.ts";
 import { dumpEdits, dumpPathOf } from "./dump.ts";
 import { captureProposals, checkinProposals } from "./actions.ts";
 import { doneIn, SLOTS, type CheckinSlot } from "./checkins.ts";
@@ -542,6 +542,24 @@ describe("ticking a repeating task", () => {
     loop.propose({ kind: "hydrated", notes: [note(".trash/d.md", { body })] });
     await settle(loop);
     expect(loop.model.notes.get(".trash/d.md")?.body).toBe(body);
+  });
+});
+
+describe("a conflict copy of a dump day", () => {
+  it("is a note of its own, never folded into the day", () => {
+    const m = createModel();
+    present(m, {
+      kind: "hydrated",
+      notes: [
+        note("dump/2026-10-06.md", { body: "06:19 69.2kg\n- [ ] CGM @2026-10-06 13:00!\n" }),
+        note("dump/2026-10-06 (conflict 2026-10-06).md", { body: "06:19 69.2kg\n- [ ] CGM @2026-10-06 12:00!\n" }),
+      ],
+    });
+    // Not a dump day, so the dump view cannot compose it, split it into the
+    // day above, or collect it as empty.
+    expect(dumpDays(m).map((n) => n.path)).toEqual(["dump/2026-10-06.md"]);
+    // Shown with the notes instead, where a conflict copy belongs.
+    expect(openable(m).some((n) => n.path === "dump/2026-10-06 (conflict 2026-10-06).md")).toBe(true);
   });
 });
 

@@ -50,6 +50,17 @@ describe("paths", () => {
     expect(isDumpPath("dump/notes.txt")).toBe(false);
   });
 
+  it("does not count a conflict copy of a day as a day", () => {
+    // It used to, so the copy was composed into the dump under a heading
+    // splitDump does not recognise. The next edit folded the whole copy into
+    // the day above it and left the copy empty, and the empty-day collector
+    // deleted it — on 2026-10-06 that happened twice in thirty seconds.
+    expect(isDumpPath("dump/2026-10-06 (conflict 2026-10-06).md")).toBe(false);
+    expect(isDumpPath("dump/2026-10-06 (conflict 2026-10-06 2).md")).toBe(false);
+    expect(isDumpPath("dump/notes.md")).toBe(false);
+    expect(isDumpPath("dump/sub/2026-10-06.md")).toBe(false);
+  });
+
   it("reads the day back out of the name", () => {
     expect(dayOfPath("dump/2026-09-06.md")).toBe("2026-09-06");
   });

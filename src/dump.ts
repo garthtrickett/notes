@@ -18,8 +18,14 @@ export const dumpDayOf = (now: number): string => {
 export const dumpPathOf = (now: number): string =>
   `${DUMP_DIR}/${dumpDayOf(now)}.md`;
 
-export const isDumpPath = (path: string): boolean =>
-  path.startsWith(`${DUMP_DIR}/`) && path.endsWith(".md");
+// Exactly `dump/YYYY-MM-DD.md`. Anything else under dump/ — a conflict copy
+// above all — is an ordinary note. Counting a conflict copy as a day composed
+// it into the dump under a heading splitDump does not treat as structure, so
+// the next keystroke folded the whole copy into the day above it, left the
+// copy empty, and the empty-day collector deleted it.
+const DAY_FILE = new RegExp(`^${DUMP_DIR}/\\d{4}-\\d{2}-\\d{2}\\.md$`);
+
+export const isDumpPath = (path: string): boolean => DAY_FILE.test(path);
 
 // The date a dump file is for, taken from its name. Never stored inside the
 // file — that would be a file repeating its own name (never duplicate rules).
