@@ -465,9 +465,12 @@ describe("conflict", () => {
     expect([...loop.model.notes.keys()].filter((k) => k.includes("conflict"))).toEqual([]);
   });
 
-  it("still copies when a line was edited rather than added", async () => {
-    // The guard on the whole thing. Merging here would keep both wordings of
-    // one line, which is not a merge — it is ignoring somebody.
+  it("merges a line edited here with a line added there, without a copy", async () => {
+    // This used to be the guard case — copied, because the insertion-only
+    // merge would have kept both wordings of the edited line. The three-way
+    // merge applies the edit instead, and it is the shape of the 2026-10-06
+    // dump that made two conflict copies: a reminder's time changed on the
+    // phone, a line appended below it on the laptop.
     remote.put("a.md", "one\ntwo\n");
     const loop = await boot(deps(), root);
     await settle(loop);
@@ -475,8 +478,23 @@ describe("conflict", () => {
     remote.put("a.md", "one\ntwo\nthree\n");
     await quiet(loop);
 
-    expect(loop.model.notes.get("a (conflict 2023-11-14).md")?.body).toBe("one\nTWO\n");
-    expect(loop.model.notes.get("a.md")?.body).toBe("one\ntwo\nthree\n");
+    expect(loop.model.notes.get("a.md")?.body).toBe("one\nTWO\nthree\n");
+    expect(remote.files.get("a.md")?.body).toBe("one\nTWO\nthree\n");
+    expect(loop.model.notes.has("a (conflict 2023-11-14).md")).toBe(false);
+  });
+
+  it("still copies when both devices changed the same line differently", async () => {
+    // The guard on the whole thing now: which wording is right is a person's
+    // call, so neither may silently win.
+    remote.put("a.md", "one\ntwo\n");
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    loop.propose({ kind: "edited", path: "a.md", body: "one\nTWO here\n" });
+    remote.put("a.md", "one\nTWO there\n");
+    await quiet(loop);
+
+    expect(loop.model.notes.get("a (conflict 2023-11-14).md")?.body).toBe("one\nTWO here\n");
+    expect(loop.model.notes.get("a.md")?.body).toBe("one\nTWO there\n");
   });
 
   it("copies when the file was created on both devices with no ancestor", async () => {

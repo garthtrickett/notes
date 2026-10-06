@@ -12,7 +12,7 @@ import type { Encoding, Note, NoteRecord, Proposal } from "./model.ts";
 import type { Github, SyncError } from "./github.ts";
 import { appendEntry, dumpPathOf } from "./dump.ts";
 import { toggleCheckin, type CheckinSlot } from "./checkins.ts";
-import { mergeInsertions } from "./merge.ts";
+import { mergeLines } from "./merge.ts";
 import {
   attachmentPath,
   base64Of,
@@ -302,7 +302,7 @@ const mergeAndRetry = async (
   const remote = await github.current(note.path, note.encoding);
   if (!remote.ok) return null;
 
-  const merged = mergeInsertions(ancestor.value, body, remote.value.body);
+  const merged = mergeLines(ancestor.value, body, remote.value.body);
   if (merged === null) return null;
 
   // Swapped against what the remote is at *now*, not the stale base — that is
