@@ -28,6 +28,8 @@ import {
 } from "./paths.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
 import { applyAnswers, type AlarmAnswer } from "./alarms.ts";
+import { taskMarkdown, type TaskDraft } from "./task-draft.ts";
+import { tasksIn } from "./tasks.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
@@ -79,6 +81,7 @@ export interface History {
 // A discriminated union rather than a string, because a dialog that asks about
 // something has to carry what it is asking about.
 export type Modal =
+  | { readonly kind: "newTask"; readonly draft: TaskDraft }
   | { readonly kind: "capture" }
   | { readonly kind: "history" }
   | { readonly kind: "newNote" }
@@ -214,6 +217,8 @@ export type Proposal =
   | { readonly kind: "hydrated"; readonly notes: readonly Note[] }
   | { readonly kind: "opened"; readonly path: string }
   | { readonly kind: "created"; readonly path: string }
+  | { readonly kind: "taskDraftChanged"; readonly patch: Partial<TaskDraft> }
+  | { readonly kind: "taskAdded" }
   | { readonly kind: "edited"; readonly path: string; readonly body: string }
   // Into the editor's own history, handled by the loop — the model holds no
   // undo stack, so presenting these changes nothing and must change nothing.
@@ -603,6 +608,42 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // where setting openPath alone changed nothing visible. Same rule as
       // `created`, which already did this.
       m.mode = "notes";
+      return null;
+    }
+
+    case "taskDraftChanged": {
+      if (m.modal?.kind !== "newTask") return reject("No task form is open.");
+      m.modal = { kind: "newTask", draft: { ...m.modal.draft, ...p.patch } };
+      m.error = null;
+      return null;
+    }
+
+    case "taskAdded": {
+      if (m.modal?.kind !== "newTask") return reject("No task form is open.");
+      const draft = m.modal.draft;
+      const markdown = taskMarkdown(draft);
+      const fail = (reason: string) => { m.error = reason; return reject(reason); };
+      if (!markdown.ok) return fail(markdown.error);
+      const path = normalizePath(draft.path);
+      if (!/\.md$/i.test(path) || isFiledPath(path)) return fail("Choose a Markdown note outside Archive and Trash.");
+      const existing = m.notes.get(path);
+      if (existing?.deleted) return fail("That note was deleted. Choose another note or restore it first.");
+      if (existing && existing.encoding !== "utf8") return fail("Tasks belong in a text note.");
+      const checked = checkPath(m, path);
+      if (checked.problem !== null && checked.problem.kind !== "exists") return refusePath(m, path, checked.problem);
+      const body = existing?.body ?? "";
+      const next = body + (body === "" ? "" : body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n") + markdown.value;
+      if (!tasksIn(next, path).some((ref) => ref.from >= body.length)) {
+        return fail("This note ends inside a code block or another Markdown structure. Close it or choose another note.");
+      }
+      if (!existing) {
+        const refusal = present(m, { kind: "created", path });
+        if (refusal !== null) return refusal;
+      }
+      present(m, { kind: "edited", path, body: next });
+      m.mode = "tasks";
+      m.modal = null;
+      m.error = null;
       return null;
     }
 

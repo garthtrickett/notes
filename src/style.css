@@ -531,6 +531,36 @@ kbd {
 
 .capture.floating input { font-size: 16px; }
 
+.scrim:has(.task-form) { padding: max(12px, 4dvh) 16px; }
+.task-form {
+  width: min(480px, 100%); max-height: 92dvh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px; padding: 18px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); box-shadow: 0 16px 40px rgb(0 0 0 / 45%);
+}
+.task-form h2 { margin: 0; font-size: 18px; }
+.task-form label { display: flex; flex-direction: column; gap: 5px; font-size: 14px; min-width: 0; }
+.task-form-field { display: flex; flex-direction: column; gap: 5px; }
+.task-form input:not([type=checkbox]), .task-form textarea, .task-form select {
+  box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 9px;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--text);
+  font: inherit; font-size: 16px;
+}
+.task-form textarea { resize: vertical; }
+.task-form :is(input, textarea, select, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-form :disabled { opacity: 0.5; }
+.task-date-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 12px; }
+.task-form .task-alarm { flex-direction: row; align-items: center; min-height: 44px; gap: 10px; }
+.task-alarm input { width: 22px; height: 22px; accent-color: var(--accent); }
+.task-hint, .task-form .optional { margin: 0; font-size: 12px; color: var(--muted); }
+.task-form-error { margin: 0; color: var(--danger, #f88); }
+.task-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.task-form-actions button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+.task-form-actions button[type=submit] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.tasks-head { flex-wrap: wrap; flex: none; }
+.tasks-head > span { margin-right: auto; }
+.tasks-head .new-task { min-height: 44px; padding: 8px 12px; }
+
 /* the open palette */
 .palette {
   width: min(560px, calc(100vw - 32px));

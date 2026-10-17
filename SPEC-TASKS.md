@@ -1,5 +1,27 @@
 # Tasks aggregate — spec
 
+## Task creation form (October 2026)
+
+The Tasks page now offers **New task**, including in an empty vault. Its dialog
+collects a title, optional description, optional due date and local time, an
+alarm checkbox (`!`), a repeat choice, and a destination note (default
+`reminders.md`). A date without a time means 9am. Alarm and repeat controls
+require a date. Cancel writes nothing.
+
+Creating a task generates the existing `- [ ] title @date time! every rule`
+syntax, with description lines indented beneath it. It appends to the note's
+current body, or creates the selected Markdown note, then returns to Tasks.
+Ordinary note persistence, the outbox, sync, task scanning, and alarm scheduling
+handle the result. The form introduces no separate task storage. Invalid
+fields or destinations retain the draft and explain the refusal; appending
+inside an unfinished code block is refused rather than hiding the new task.
+
+`task-draft.test.ts` covers serialization and the existing task/alarm readers;
+`task-form.test.ts` exercises the dialog through the real loop and IndexedDB,
+including offline creation, existing text, validation, cancellation, and ticks.
+The original aggregate specification below records the earlier v1 scope;
+its creation/reminder non-goals do not limit this later extension.
+
 One place that lists every open checkbox in the vault, grouped by note.
 Tapping a box ticks it in the file it came from. No new state, no new sync,
 no notifications — those are later specs. This one ends at: see everything,

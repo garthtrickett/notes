@@ -36,6 +36,8 @@ import { flipTask, tasksInVault, type TaskCache, type TaskRef } from "./tasks.ts
 import { CHOICES, describe as describeDue } from "./reminders.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 import { settingsView, type VaultConfig } from "./view-settings.ts";
+import { emptyTaskDraft } from "./task-draft.ts";
+import { taskForm } from "./view-task-form.ts";
 
 type Propose = (p: Proposal) => void;
 
@@ -617,7 +619,6 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
   const groups = tasksInVault(model.notes, tasks);
   const openGroups = groups.filter((g) => g.refs.some((r) => !r.done));
   const shown = model.showDone ? groups : openGroups;
-  if (groups.length === 0) return html`<p class="empty">No open tasks.</p>`;
   const openTotal = groups.reduce(
     (n, g) => n + g.refs.filter((r) => !r.done).length,
     0,
@@ -633,6 +634,7 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
         >
           ${model.showDone ? "Hide done" : "Show done"}
         </button>
+        <button class="toggle new-task" aria-haspopup="dialog" @click=${() => propose({ kind: "modalOpened", modal: { kind: "newTask", draft: emptyTaskDraft } })}>New task</button>
       </div>
       ${shown.length === 0
         ? html`<p class="empty">No open tasks.</p>`
@@ -852,7 +854,9 @@ const modal = (
 ) => {
   if (model.modal === null) return nothing;
   const inner =
-    model.modal.kind === "capture"
+    model.modal.kind === "newTask"
+      ? taskForm(model, model.modal.draft, propose)
+      : model.modal.kind === "capture"
       ? modalBox(propose, "What's on your mind?", "Quick capture", "Add", onCapture)
       : model.modal.kind === "newNote"
         ? modalBox(propose, "inbox/new-note.md", "New note", "Create", (path) =>

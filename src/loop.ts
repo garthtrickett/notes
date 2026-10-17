@@ -622,7 +622,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         model.retryAt = now() + model.retryDelay;
       }
     }
+    const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && model.modal.draft.date !== "";
     const rejection = present(model, p);
+    if (taskHasDate && rejection === null) {
+      track(askToRemind().then(() => propose({ kind: "woke" })));
+    }
     // Self-update downloads follow the attachImage shape: the proposal moves
     // the state, the work after it is tracked, and whatever comes back is
     // another proposal. The installer itself is fire-and-forget — cancelling
