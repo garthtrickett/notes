@@ -33,6 +33,9 @@ public class AlarmReceiver extends BroadcastReceiver {
             }
             case Intent.ACTION_BOOT_COMPLETED:
             case Intent.ACTION_MY_PACKAGE_REPLACED:
+                Alarms.restore(app);
+                VaultWatch.restore(app);
+                return;
             case EXACT_ALLOWED:
                 Alarms.restore(app);
                 return;

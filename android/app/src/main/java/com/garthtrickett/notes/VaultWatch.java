@@ -30,7 +30,7 @@ import org.json.JSONObject;
 // the next time the phone opened the app, which is exactly the evening you
 // forget to.
 //
-// A periodic job, roughly every half hour when the phone allows; overnight
+// A periodic job, roughly every 15 minutes when the phone allows; overnight
 // Android stretches that out. It asks GitHub for the branch head (one small
 // request) and stops there if nothing moved. If it did, it lists the tree,
 // fetches only the notes whose blob changed since it last looked, reads their
@@ -39,7 +39,8 @@ import org.json.JSONObject;
 // whole vault, and the app's own sync stays the last word whenever it runs.
 public class VaultWatch extends JobService {
     private static final int JOB_ID = 4711;
-    private static final long PERIOD_MS = 30 * 60 * 1000L;
+    // Android clamps periodic jobs to at least 15 minutes.
+    private static final long PERIOD_MS = 15 * 60 * 1000L;
     // Notes fetched per run. A big change set finishes over a few runs rather
     // than one long one the system might cut short; the head is only recorded
     // once everything is read, so nothing is skipped.
@@ -57,13 +58,39 @@ public class VaultWatch extends JobService {
             .putString("branch", branch)
             .putString("token", token)
             .apply();
+        schedule(context);
+    }
+
+    // Persisted jobs survive upgrades with their old interval. Reconcile the
+    // schedule after an update too, without waiting for the app to be opened.
+    static void restore(Context context) {
+        SharedPreferences p = prefs(context);
+        if (!p.contains("owner") || !p.contains("repo") || !p.contains("branch") || !p.contains("token")) return;
+        try {
+            schedule(context);
+        } catch (RuntimeException refused) {
+            // A refused background job must not crash the broadcast receiver.
+            // Opening the app retries through configure's plugin error path.
+            android.util.Log.w("VaultWatch", "Background vault check could not be restored");
+        }
+    }
+
+    private static void schedule(Context context) {
         JobScheduler scheduler = context.getSystemService(JobScheduler.class);
-        if (scheduler == null || scheduler.getPendingJob(JOB_ID) != null) return;
-        scheduler.schedule(new JobInfo.Builder(JOB_ID, new ComponentName(context, VaultWatch.class))
+        if (scheduler == null) return;
+        long period = Math.max(PERIOD_MS, JobInfo.getMinPeriodMillis());
+        JobInfo pending = scheduler.getPendingJob(JOB_ID);
+        if (pending != null && pending.isPeriodic() && pending.getIntervalMillis() == period) return;
+        // Scheduling the same ID replaces the old job; unchanged jobs are left
+        // alone so foreground sync cannot keep resetting the next check.
+        int result = scheduler.schedule(new JobInfo.Builder(JOB_ID, new ComponentName(context, VaultWatch.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-            .setPeriodic(PERIOD_MS)
+            .setPeriodic(period)
             .setPersisted(true)
             .build());
+        if (result != JobScheduler.RESULT_SUCCESS) {
+            throw new IllegalStateException("Background vault check was refused by Android");
+        }
     }
 
     // What the app already has: path -> blob sha. Forgetting the head makes
