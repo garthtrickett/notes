@@ -1,10 +1,19 @@
 package com.garthtrickett.notes;
 
 import static org.junit.Assert.*;
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Looper;
+import android.net.Uri;
+import androidx.media3.session.DefaultMediaNotificationProvider;
 import java.io.File;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.time.Duration;
 import java.lang.reflect.Field;
 import java.util.concurrent.TimeUnit;
 import org.junit.After;
@@ -68,4 +77,70 @@ public class AudioServiceStartupTest {
         assertSame(service.onGetSession(null), service.onGetSession(null));
         assertNull(service.position()); assertNull(Shadows.shadowOf(service).getLastForegroundNotification());
     }
+    @Test public void directServiceStartupRegistersTheSessionForMediaNotifications() throws Exception {
+        AudioPlaybackService service = create();
+        assertEquals("Direct Play must register without an external controller binding", 1, service.getSessions().size());
+        assertSame(service.onGetSession(null), service.getSessions().get(0));
+        assertNull(Shadows.shadowOf(service).getLastForegroundNotification());
+    }
+
+    private void loadSyntheticRecording(AudioPlaybackService service) throws Exception {
+        // Silent PCM avoids relying on a host Opus decoder or audio device.
+        int bytes = 16000 * 2 * 30;
+        ByteBuffer wave = ByteBuffer.allocate(44 + bytes).order(ByteOrder.LITTLE_ENDIAN);
+        wave.put("RIFF".getBytes(StandardCharsets.US_ASCII)).putInt(36 + bytes)
+            .put("WAVEfmt ".getBytes(StandardCharsets.US_ASCII)).putInt(16)
+            .putShort((short) 1).putShort((short) 1).putInt(16000).putInt(32000)
+            .putShort((short) 2).putShort((short) 16)
+            .put("data".getBytes(StandardCharsets.US_ASCII)).putInt(bytes);
+        File audio = new File(context.getCacheDir(), "notification-tone.wav");
+        Files.write(audio.toPath(), wave.array());
+        AudioDelete.Version v = new AudioDelete.Version(AudioLedgerTest.ROOT,
+            "youtube/notification-test.opus", "synthetic-document", bytes, 123, "a".repeat(64));
+        AudioLedger.Item item = new AudioLedger.Item("shade-test", v, "Synthetic recording", "Test speaker", AudioListening.unplayed(30000));
+        service.install(new AudioRuntime.Prepared(item, Uri.fromFile(audio), 1));
+    }
+    private Notification awaitMediaNotification(String actionTitle) throws Exception {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20));
+            Notification notification = Shadows.shadowOf(manager).getNotification(DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID);
+            if (notification != null && notification.extras.getParcelable(Notification.EXTRA_MEDIA_SESSION) != null && notification.actions != null)
+                for (Notification.Action action : notification.actions) if (actionTitle.contentEquals(action.title)) return notification;
+            Thread.sleep(2);
+        }
+        throw new AssertionError("Direct playback did not publish a media-session notification");
+    }
+    @Test public void directPlaybackPublishesMediaControlsAndKeepsThemWhilePaused() throws Exception {
+        AudioPlaybackService service = create();
+        loadSyntheticRecording(service);
+        Notification notification = awaitMediaNotification("Pause");
+        assertEquals("Synthetic recording", notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString());
+        assertEquals("Test speaker", notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString());
+        assertEquals("android.app.Notification$MediaStyle", notification.extras.getString(Notification.EXTRA_TEMPLATE));
+        assertNotNull(notification.contentIntent); assertNotNull(notification.actions); assertTrue(notification.actions.length > 0);
+        Notification.Action pause = null;
+        for (Notification.Action action : notification.actions) if ("Pause".contentEquals(action.title)) pause = action;
+        assertNotNull(pause);
+        service.onStartCommand(Shadows.shadowOf(pause.actionIntent).getSavedIntent(), 0, 2);
+        Notification paused = awaitMediaNotification("Play");
+        assertNotNull(paused.extras.getParcelable(Notification.EXTRA_MEDIA_SESSION));
+        assertFalse(service.onGetSession(null).getPlayer().getPlayWhenReady());
+        service.clear(); Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(200));
+        assertNull(Shadows.shadowOf(context.getSystemService(NotificationManager.class))
+            .getNotification(DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID));
+    }
+    @Test public void cancellingPreparationRestoresThePausedRecordingsMediaNotification() throws Exception {
+        AudioPlaybackService service = create(); loadSyntheticRecording(service); awaitMediaNotification("Pause");
+        service.pausePlayer(); awaitMediaNotification("Play");
+        java.lang.reflect.Method foreground = AudioPlaybackService.class.getDeclaredMethod("foregroundPreparation", String.class);
+        foreground.setAccessible(true); foreground.invoke(service, "synthetic-preparation-token");
+        Field preparing = AudioPlaybackService.class.getDeclaredField("preparing"); preparing.setAccessible(true); preparing.setBoolean(service, true);
+        service.abortPreparation();
+        Notification restored = awaitMediaNotification("Play");
+        assertEquals("Synthetic recording", restored.extras.getCharSequence(Notification.EXTRA_TITLE).toString());
+        assertFalse(service.onGetSession(null).getPlayer().getPlayWhenReady());
+    }
+
 }

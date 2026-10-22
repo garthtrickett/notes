@@ -79,6 +79,9 @@ public class AudioPlaybackService extends MediaSessionService {
             }
         }).setSessionActivity(PendingIntent.getActivity(this, 3101, new Intent(this, MainActivity.class),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE)).build();
+        // Notes starts playback directly rather than binding a MediaController.
+        // Register here so Media3 publishes the media notification on that path.
+        addSession(session);
         runtime.attach(this);
     }
 
@@ -183,7 +186,7 @@ public class AudioPlaybackService extends MediaSessionService {
         if (!preparing) return;
         preparing = false; releasePreparationWakeLock();
         stopForeground(STOP_FOREGROUND_REMOVE);
-        if (loaded == null) stopSelf(); else onUpdateNotification(session, false);
+        if (loaded == null) stopSelf(); else triggerNotificationUpdate();
     }
     void clear() {
         pausePlayer(); installing = true;

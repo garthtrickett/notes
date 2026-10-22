@@ -334,3 +334,22 @@ have passed. Existing positive playback/storage observations remain as recorded.
 No Syncthing configuration, ignores, server bytes or AntennaPod data were changed
 for this implementation. Actual phone deletion persistence and the post-deletion
 server comparison remain unverified under the user’s manual-test waiver.
+
+## Notification-shade controls follow-up
+
+Direct in-app Play started the playback service without registering its session
+with `MediaSessionService`. The service's own session list was empty, so Media3's
+notification manager did not observe playback; returning the session from
+`onGetSession` did not register it for Notes’ own preparation intent. A regression
+reproduced that empty session list before the fix.
+
+The service now registers its one session during creation, enabling Media3's
+standard media-style notification with title, author and transport controls.
+Cancelling preparation of another item requests a proper notification refresh
+for the previous paused item. Host tests exercise the actual Media3 notification,
+its Pause pending intent, the paused Play action, clearing the item, and cancelled
+preparation; cold start still neither plays nor posts a playback notification.
+These are host checks; a new phone notification-shade observation is not implied.
+
+Follow-up validation: **95 Android tests** and **869 web tests** pass; TypeScript,
+production web build and release APK assembly pass.
