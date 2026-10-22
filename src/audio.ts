@@ -3,6 +3,13 @@ import { attemptAsync, err, ok, type Result } from "./result.ts";
 import { parseAudioSnapshot, type AudioFailure, type AudioSnapshot, type AudioStamp } from "./audio-wire.ts";
 export type { AudioFailure, AudioSnapshot, AudioStamp } from "./audio-wire.ts";
 
+export const nativeAudioPlugin = registerPlugin<AudioBridge & {
+  openStorageTest(): Promise<void>;
+  audioChooseFolder(scope: unknown): Promise<unknown>;
+  audioPrepareDelete(target: unknown): Promise<unknown>;
+  audioCommand(command: unknown): Promise<unknown>;
+}>("Audio");
+
 // Storage qualification stays on a separate native screen. The snapshot seam
 // below carries metadata, never audio bytes or caller-supplied media URIs.
 export interface AudioStorageTest {
@@ -12,7 +19,7 @@ export interface AudioStorageTest {
 
 export const nativeStorageTest = (): AudioStorageTest => {
   const supported = Capacitor.getPlatform() === "android" && Capacitor.isPluginAvailable("Audio");
-  const plugin = registerPlugin<{ openStorageTest(): Promise<void> }>("Audio");
+  const plugin = nativeAudioPlugin;
   return {
     supported,
     open: async () => {
@@ -122,5 +129,5 @@ export const audioSnapshots = (supported: boolean, bridge: AudioBridge): AudioSn
 
 export const nativeAudioSnapshots = (): AudioSnapshots => audioSnapshots(
   Capacitor.getPlatform() === "android" && Capacitor.isPluginAvailable("Audio"),
-  registerPlugin<AudioBridge>("Audio"),
+  nativeAudioPlugin,
 );

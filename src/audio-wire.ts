@@ -19,6 +19,7 @@ export interface AudioRow {
   readonly path: string;
   readonly title: string;
   readonly author: string | null;
+  readonly error?: string | null;
   readonly sizeBytes: number | null;
   readonly durationMs: number | null;
   readonly durableId: string | null;
@@ -29,6 +30,8 @@ export interface AudioHistory {
   readonly path: string;
   readonly title: string;
   readonly author: string | null;
+  readonly availability?: "PRESENT" | "MISSING" | "UNKNOWN" | "OTHER_ROOT";
+  readonly deletion?: "INTENT" | "ABSENT" | "CHANGED" | null;
   readonly currentRoot: boolean;
   readonly listening: AudioListening;
 }
@@ -87,9 +90,10 @@ export const parseAudioSnapshot = (raw: unknown): Result<AudioSnapshot, AudioFai
         !optionalText(row.author) || !optionalText(row.durableId) || !size(row.sizeBytes) || !duration(row.durationMs) || rowIds.has(row.item)) return invalid();
     const progress = row.listening === null ? null : listening(row.listening);
     if (row.listening !== null && progress === null) return invalid();
+    if (row.error !== undefined && !optionalText(row.error)) return invalid();
     rowIds.add(row.item);
     rows.push({ item: row.item, version: row.version, path: row.path, title: row.title, author: row.author,
-      durableId: row.durableId, sizeBytes: row.sizeBytes, durationMs: row.durationMs, listening: progress });
+      durableId: row.durableId, sizeBytes: row.sizeBytes, durationMs: row.durationMs, listening: progress, ...(row.error === undefined ? {} : { error: row.error as string | null }) });
   }
   const history: AudioHistory[] = [], historyIds = new Set<string>();
   for (const rawItem of value.history) {
@@ -97,8 +101,12 @@ export const parseAudioSnapshot = (raw: unknown): Result<AudioSnapshot, AudioFai
     if (!item || !text(item.id) || !text(item.path) || !text(item.title) || !optionalText(item.author) ||
         typeof item.currentRoot !== "boolean" || historyIds.has(item.id)) return invalid();
     const progress = listening(item.listening); if (progress === null) return invalid();
+    if (item.availability !== undefined && !["PRESENT", "MISSING", "UNKNOWN", "OTHER_ROOT"].includes(String(item.availability))) return invalid();
+    if (item.deletion !== undefined && item.deletion !== null && !["INTENT", "ABSENT", "CHANGED"].includes(String(item.deletion))) return invalid();
     historyIds.add(item.id);
-    history.push({ id: item.id, path: item.path, title: item.title, author: item.author, currentRoot: item.currentRoot, listening: progress });
+    history.push({ id: item.id, path: item.path, title: item.title, author: item.author, currentRoot: item.currentRoot, listening: progress,
+      ...(item.availability === undefined ? {} : { availability: item.availability as Exclude<AudioHistory["availability"], undefined> }),
+      ...(item.deletion === undefined ? {} : { deletion: item.deletion as Exclude<AudioHistory["deletion"], undefined> }) });
   }
   let player: AudioPlayer | null = null;
   if (value.player !== null) {

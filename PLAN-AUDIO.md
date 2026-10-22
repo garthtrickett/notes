@@ -1,10 +1,16 @@
 # Audio library in Notes
 
-Status: storage/deletion and native playback diagnostics delivered in signed
-builds 59 and 60. Initial phone storage access is confirmed; deletion, playback,
-full library UI and release acceptance remain behind the evidence gates.
+Status: production library implemented after phone storage and playback tests in
+signed builds 59 and 60. On 22 October the user authorized proceeding with the
+complete feature and waived further manual testing before delivery. Remaining
+phone checks are unverified, not passing.
 Current implementation and test evidence: `AUDIO-VALIDATION.md`.
 Date: 22 October 2026.
+**Delivery decision:** the user waived the remaining manual gates (including the
+one-week trial) before this production release. Implement all requested actions,
+run automated regression/build checks, and publish the signed update. Preserve
+the manual protocol below as deferred checks; do not claim those observations.
+
 Source baseline inspected: `54fe3dcd101a2fb050ca4f7eff495d8ad7c6d04f`.
 
 ## Outcome
@@ -39,8 +45,9 @@ No recommendations, autoplay, streaks, browsing feed or consumption targets.
   truth, and effects outside pure presentation.
   Its historical descriptions must be checked against current source.
 - The media workflow already supplies Opus recordings and an M4B audiobook.
-  The server's media share is send-only; the phone's exact folder type,
-  ignore rules, Android version and storage location require device inspection.
+  The server's media share is send-only. The phone reports Android 17 (API 37),
+  Send & Receive and empty ignore patterns; Ignore Delete is not shown and its
+  value is unknown. Its persisted local SAF read/write grant is confirmed.
   Server settings alone cannot establish safe phone deletion.
 - `.github/workflows/android-apk.yml` builds and publishes an APK on pushes to
   `main`, including documentation-only pushes under its current trigger.
@@ -142,6 +149,14 @@ whether the exact document is absent or has changed before completing the intent
 It never blindly replays deletion against a reused path.
 
 #### Syncthing compatibility gate
+
+**22 October user override:** proceed with the full production library, including
+version-bound local document deletion, using the existing share configuration.
+The following original acceptance protocol remains a record of unexecuted checks,
+not a hold on implementation or delivery. No ignore rules or share settings are
+changed. Persistence of phone deletion across Syncthing reconnect/rescan/restart
+and preservation of server bytes after an actual phone deletion remain unverified.
+If a download returns, surface it normally; never conceal restored bytes.
 
 Do not assume send-only mode or Ignore Delete solves local deletion.
 Syncthing can preserve local changes, report them, or restore cluster content

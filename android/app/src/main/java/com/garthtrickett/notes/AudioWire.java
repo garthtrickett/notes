@@ -21,13 +21,21 @@ final class AudioWire {
                 .put("path", row.document.path).put("title", row.title).put("author", nullable(row.author))
                 .put("sizeBytes", row.document.size >= 0 ? row.document.size : JSONObject.NULL)
                 .put("durationMs", duration(row.durationMs)).put("durableId", nullable(row.durableId))
+                .put("error", nullable(row.error))
                 .put("listening", known == null ? JSONObject.NULL : listening(known.listening)));
         }
         JSArray history = new JSArray();
         for (AudioLedger.Item item : state.ledger.items.values()) {
+            boolean present = false;
+            for (AudioCatalog.Row row : state.catalog.rows) if (item.id.equals(row.durableId)) present = true;
+            boolean listed = state.catalog.root.equals(state.ledger.root) && state.catalog.rootGeneration == state.ledger.rootGeneration;
+            String availability = !item.version.root.equals(state.ledger.root) ? "OTHER_ROOT" :
+                !listed || (state.failure != null && state.failure.kind == AudioProblem.Kind.PERMISSION) ? "UNKNOWN" : present ? "PRESENT" : "MISSING";
+            AudioLedger.DeletePhase deletion = state.ledger.deletions.get(item.id);
             history.put(new JSObject().put("id", item.id).put("path", item.version.path)
                 .put("title", item.title).put("author", nullable(item.author))
-                .put("currentRoot", item.version.root.equals(state.ledger.root)).put("listening", listening(item.listening)));
+                .put("currentRoot", item.version.root.equals(state.ledger.root)).put("listening", listening(item.listening))
+                .put("availability", availability).put("deletion", deletion == null ? JSONObject.NULL : deletion.name()));
         }
         JSObject player = state.player == null ? null : new JSObject().put("item", state.player.item)
             .put("positionMs", state.player.elapsedMs).put("durationMs", duration(state.player.durationMs))

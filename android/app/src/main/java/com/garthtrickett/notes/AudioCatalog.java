@@ -15,8 +15,14 @@ final class AudioCatalog {
         final AudioDocuments.Entry document;
         final AudioDelete.Version fingerprint;
         final long durationMs;
+        final String error;
         Row(String id, String version, AudioDocuments.Entry document, String title, String author,
             long durationMs, String durableId, AudioDelete.Version fingerprint) {
+            this(id, version, document, title, author, durationMs, durableId, fingerprint, null);
+        }
+        Row(String id, String version, AudioDocuments.Entry document, String title, String author,
+            long durationMs, String durableId, AudioDelete.Version fingerprint, String error) {
+            this.error = error;
             this.id = id; this.version = version; this.document = document; this.title = title; this.author = author;
             this.durationMs = durationMs; this.durableId = durableId; this.fingerprint = fingerprint;
         }
@@ -55,6 +61,32 @@ final class AudioCatalog {
         List<Row> next = new ArrayList<>();
         for (Row row : rows) next.add(row.id.equals(id) && row.version.equals(expectedVersion) ?
             new Row(row.id, ids.get(), row.document, row.document.name.replaceFirst("(?i)\\.(opus|m4b)$", ""), null, -1, null, null) : row);
+        return new AudioCatalog(root, rootGeneration, next);
+    }
+    AudioCatalog metadata(String id, String version, AudioProbe probe, String error) {
+        List<Row> next = new ArrayList<>();
+        for (Row row : rows) next.add(row.id.equals(id) && row.version.equals(version) ?
+            new Row(row.id, row.version, row.document, probe == null ? row.title : probe.title,
+                probe == null ? row.author : probe.author, probe == null ? row.durationMs : probe.durationMs,
+                row.durableId, row.fingerprint, error) : row);
+        return new AudioCatalog(root, rootGeneration, next);
+    }
+    AudioCatalog cached(AudioLedger ledger) {
+        List<Row> next = new ArrayList<>();
+        for (Row row : rows) {
+            Row cached = row;
+            if (row.durableId == null) for (AudioLedger.Item item : ledger.items.values()) {
+                AudioDelete.Version v = item.version;
+                if (v.root.equals(root) && v.path.equals(row.document.path) && v.document.equals(row.document.id) &&
+                    v.size == row.document.size && v.modified == row.document.modified) cached = row.identified(item);
+            }
+            next.add(cached);
+        }
+        return new AudioCatalog(root, rootGeneration, next);
+    }
+    AudioCatalog removed(AudioDelete.Version version) {
+        List<Row> next = new ArrayList<>();
+        for (Row row : rows) if (!(root.equals(version.root) && row.document.path.equals(version.path))) next.add(row);
         return new AudioCatalog(root, rootGeneration, next);
     }
     static AudioCatalog listed(AudioCatalog previous, String root, long generation, List<AudioDocuments.Entry> documents, Supplier<String> ids) {

@@ -8,6 +8,7 @@
 // model would cost one per keystroke for no benefit, since there is exactly one
 // writer.
 
+import { emptyAudio, isAudioProposal, presentAudio, type AudioModel, type AudioProposal } from "./audio-model.ts";
 import type { Revision, SyncError } from "./github.ts";
 import { resolveLink, rewriteLinks } from "./links.ts";
 import { describeProblem, normalizePath, pathProblem, type PathProblem } from "./paths.ts";
@@ -56,7 +57,7 @@ export interface Note extends NoteRecord {
   readonly dirty: boolean;
 }
 
-export type Mode = "notes" | "dump" | "tasks" | "archive" | "trash" | "settings";
+export type Mode = "notes" | "dump" | "tasks" | "archive" | "trash" | "settings" | "audio";
 
 // The vault is a git branch, so a note's history is its commits. Nothing is
 // stored: this is emptied when the panel closes.
@@ -90,6 +91,7 @@ export type Modal =
 export type Encoding = "utf8" | "base64";
 
 export interface Model {
+  audio: AudioModel;
   notes: Map<string, Note>;
   openPath: string | null;
   // A note something outside the app asked for — so far, a tapped reminder.
@@ -183,6 +185,7 @@ export const idleUpdate: UpdateInfo = {
 };
 
 export const createModel = (): Model => ({
+  audio: emptyAudio(),
   notes: new Map(),
   openPath: null,
   openRequest: null,
@@ -213,7 +216,7 @@ export const createModel = (): Model => ({
   error: null,
 });
 
-export type Proposal =
+export type Proposal = AudioProposal
   | { readonly kind: "hydrated"; readonly notes: readonly Note[] }
   | { readonly kind: "opened"; readonly path: string }
   | { readonly kind: "created"; readonly path: string }
@@ -546,6 +549,11 @@ const settleSync = (m: Model): void => {
 // `renamed` delegates to `moved` and returns its verdict. At a third delegation
 // this switch has become a dispatcher and the arms want to be named functions.
 export const present = (m: Model, p: Proposal): Rejection | null => {
+  if (isAudioProposal(p)) {
+    if (p.kind === "audioRequested" && (!m.audio.supported || m.audio.snapshot === null ||
+        (m.audio.busy > 0 && p.command.action !== "pause"))) return reject("Wait for Audio to finish connecting or saving.");
+    m.audio = presentAudio(m.audio, p); return null;
+  }
   switch (p.kind) {
     case "hydrated": {
       m.notes = new Map(p.notes.map((n) => [n.path, withoutBytes(n)]));

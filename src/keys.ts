@@ -27,6 +27,9 @@ export const keyAction = (
   // Leave the browser's own chords alone, and ignore held keys.
   if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return null;
 
+  if (model.audio.confirmation !== null) {
+    return event.key === "Escape" ? propose({ kind: "audioRequested", command: { action: "cancelDelete", token: model.audio.confirmation.token } }) : null;
+  }
   if (event.key === "Escape") {
     // Dismissing quick capture beats blurring its own field — otherwise Escape
     // in the box you just opened does nothing visible.

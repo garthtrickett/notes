@@ -37,6 +37,7 @@ import { CHOICES, describe as describeDue } from "./reminders.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 import { settingsView, type VaultConfig } from "./view-settings.ts";
 import { emptyTaskDraft } from "./task-draft.ts";
+import { audioView, audioPlayer, audioConfirmation } from "./view-audio.ts";
 import { taskForm } from "./view-task-form.ts";
 
 type Propose = (p: Proposal) => void;
@@ -925,6 +926,8 @@ const tabs = (model: Model, propose: Propose) => html`
       >
         Trash <kbd>T</kbd>
       </button>
+      ${model.audio.supported ? html`<button class=${model.mode === "audio" ? "on" : ""}
+        @click=${() => propose({ kind: "modeChanged", mode: "audio" })}>Audio</button>` : nothing}
       <button
         class=${model.mode === "settings" ? "on" : ""}
         title="Vault settings"
@@ -1075,10 +1078,12 @@ const filedView = (model: Model, propose: Propose, folder: string) => {
   `;
 };
 
-export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
+const contentView = (model: Model, ctx: ViewCtx): TemplateResult => {
   const { propose, now, onCapture, previewCache } = ctx;
   if (!model.hydrated) return html`<p class="empty">Loading…</p>`;
 
+  if (model.mode === "audio") return html`
+    <main class="single">${tabs(model, propose)}${audioView(model.audio, propose)}${modal(model, propose, onCapture)}${updateBanner(model, propose)}</main>`;
   if (model.mode === "settings") {
     return html`
       <main class="single">
@@ -1165,3 +1170,8 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
     </main>
   `;
 };
+
+export const view = (model: Model, ctx: ViewCtx): TemplateResult => html`
+  <div class=${model.audio.snapshot?.player ? "app-with-audio" : "app-content"}>
+    ${contentView(model, ctx)}${audioPlayer(model.audio, ctx.propose)}${audioConfirmation(model.audio, ctx.propose)}
+  </div>`;

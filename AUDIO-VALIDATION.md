@@ -2,8 +2,11 @@
 
 The full outcome remains `PLAN-AUDIO.md`: see local recordings, background
 playback, durable bookmarks/Done marks, and physical deletion without server
-deletion or restoration. Initial phone access is confirmed; reboot, playback and
-deletion acceptance gates remain open.
+deletion or restoration. The production library is implemented. Phone storage,
+Opus/M4B playback, lock-screen/headphone controls and paused cold resume are
+reported passing below. Further manual qualification was waived by the user on
+22 October before delivery; unexecuted deletion/lifecycle checks remain unverified.
+The original procedures below are retained as a test record, not a delivery hold.
 
 ## Storage spike — 22 October 2026
 
@@ -92,9 +95,9 @@ document and test a successor integration before implementing it.
 | Server originals and unrelated files remain unchanged | Private SHA-256 baseline of 76 pre-existing files recorded; after-deletion comparison pending |
 | Opus/M4B locked-screen playback and headset controls | User confirms both formats' lock-screen playback/Pause/Resume, headphone Pause/Resume and pause on unplug/disconnection without speaker playback |
 | Native checkpoints, marks, explicit cold resume, alarm coexistence | User confirms paused bookmark/cold resume, manual Done/Unplayed and tone replay-zero/stop-at-end; mark durability, abrupt-playing checkpoint window and alarms pending |
-| Full Audio UI and offline journey | Awaiting spike gates |
+| Full Audio UI and offline journey | Implemented; host SAM/bridge/layout checks pass; final phone journey deferred by user |
 | Automated regression and exact signed build | Record checks/build per delivered increment |
-| Complete phone acceptance and one-week usability trial | Pending; full outcome not yet achieved |
+| Complete phone acceptance and one-week usability trial | Deferred by user before production delivery on 22 October; unverified |
 
 ## Delivered storage diagnostic
 
@@ -286,3 +289,48 @@ This branch is not in build 60; command wiring and full UI remain outstanding.
 
 This procedure does not substitute for the separate storage/Syncthing deletion
 gate or the final full-library acceptance and one-week trial.
+
+## Production authorization — 22 October 2026
+
+The user explicitly requested proceeding with the real feature and reporting bugs
+after use, waiving further manual qualification before delivery. Implement the full
+library and physical local deletion. Phone Send & Receive and empty ignore patterns
+are reported; Ignore Delete remains unknown. No cancellation/deletion/reconnect/
+rescan/restart, reboot, alarm interaction or Activity/Recents test is inferred to
+have passed. Existing positive playback/storage observations remain as recorded.
+
+## Production library implementation
+
+- Android Audio mode reuses the existing local folder grant and offers the system
+  folder picker directly. It lists Opus and M4B under the three approved sources,
+  with listening/source filters, local metadata, duration and progress. Metadata
+  work yields between files; Play and mark operations revalidate content hashes.
+- A single native player serves the library and compact controls across Notes
+  modes. The existing native checkpoints, explicit cold resume and Done/Unplayed
+  transitions remain authoritative. Native snapshots never transfer media bytes.
+- Delete download prepares a native, exact-version confirmation without pausing
+  or writing state. Cancel leaves state/files intact. Confirmation releases the
+  selected stream, commits intent, rechecks scope and content, removes the local
+  document, verifies absence and commits the result. Failures retain pending
+  history with explicit Retry/Stop retrying. Recovery never deletes automatically.
+- Missing Done history remains visible; replacement versions do not inherit a
+  bookmark when played. The diagnostic still permits only its two specimens.
+  Failed state writes can be reopened; restoring a prior checkpoint is explicit.
+- `bun test`: **843 pass, 0 fail**; TypeScript and production web build pass.
+  Tests include silent startup, cross-mode player, typed command failures,
+  cancellation, missing history and pending recovery. The native/web fixture
+  checks the same serialized contract on both sides.
+- Full Android regression: **66 tests pass, 0 failures, 0 skipped**, including
+  ordinary-file SAF deletion, pre-confirmation cancellation, pending retry,
+  same-size/same-time replacements, observer-only recovery and cancelled-root
+  refresh. Existing notes alarm and widget tests pass. Release APK assembly passes.
+- Chromium layout/render checks pass at **320, 390 and 1440 CSS pixels**, including
+  player and delete confirmation, with no horizontal overflow or browser errors.
+  These are synthetic desktop-browser previews, not new phone acceptance.
+- Current main is merged through widget PR #4 (`c281e41`); widget files and its
+  manifest receiver remain intact. Signed delivery uses the existing main APK
+  pipeline and original signing identity.
+
+No Syncthing configuration, ignores, server bytes or AntennaPod data were changed
+for this implementation. Actual phone deletion persistence and the post-deletion
+server comparison remain unverified under the user’s manual-test waiver.

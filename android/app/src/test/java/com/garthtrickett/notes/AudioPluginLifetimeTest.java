@@ -33,7 +33,8 @@ public class AudioPluginLifetimeTest {
     }
     private static final class Call extends PluginCall {
         JSObject result; String failure;
-        Call() { super(null, "Audio", "test", "audioSnapshot", new JSObject()); }
+        Call() { this(new JSObject()); }
+        Call(JSObject args) { super(null, "Audio", "test", "audioSnapshot", args); }
         @Override public void resolve(JSObject data) { result = data; }
         @Override public void reject(String message, String code, Exception error, JSObject data) { failure = message; }
     }
@@ -76,4 +77,16 @@ public class AudioPluginLifetimeTest {
         assertEquals(oldCount, first.events.size()); assertTrue(second.events.size() > newCount);
         second.handleOnDestroy(); drain();
     }
+    @Test public void productionCommandsAcceptJsonIntegersAndRejectStaleOrFractionalScope() throws Exception {
+        TestPlugin plugin = new TestPlugin(); Call initial = new Call(); plugin.audioSnapshot(initial); drain();
+        String epoch = initial.result.getString("epoch");
+        Call pause = new Call(new JSObject("{\"action\":\"pause\",\"epoch\":\"" + epoch + "\",\"rootGeneration\":0}"));
+        plugin.audioCommand(pause); drain(); assertNotNull(pause.result); assertTrue(pause.result.isNull("failure"));
+        Call invalid = new Call(new JSObject("{\"action\":\"pause\",\"epoch\":\"" + epoch + "\",\"rootGeneration\":0.5}"));
+        plugin.audioCommand(invalid); drain(); assertEquals("STALE", invalid.result.getJSONObject("failure").getString("kind"));
+        plugin.handleOnDestroy(); drain();
+        Call late = new Call(new JSObject().put("action", "pause").put("epoch", epoch).put("rootGeneration", 0));
+        plugin.audioCommand(late); drain(); assertNotNull(late.failure); assertNull(late.result);
+    }
+
 }

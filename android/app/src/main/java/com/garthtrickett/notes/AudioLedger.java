@@ -62,6 +62,11 @@ final class AudioLedger {
         Map<String, DeletePhase> next = new LinkedHashMap<>(deletions); next.put(id, phase);
         return new AudioLedger(root, rootGeneration, selected, items, next);
     }
+    AudioLedger cancelDeletion(String id) {
+        if (deletions.get(id) != DeletePhase.INTENT) throw new IllegalArgumentException("No pending deletion for this item");
+        Map<String, DeletePhase> next = new LinkedHashMap<>(deletions); next.remove(id);
+        return new AudioLedger(root, rootGeneration, selected, items, next);
+    }
     Item find(AudioDelete.Version version) {
         for (Item item : items.values()) if (item.contentAt(version)) return item;
         return null;

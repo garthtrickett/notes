@@ -18,7 +18,12 @@
       "sizeBytes": 42,
       "durationMs": 5000,
       "durableId": "known-one",
-      "listening": { "mark": "DONE", "positionMs": 0, "durationMs": 5000 }
+      "listening": {
+        "mark": "DONE",
+        "positionMs": 0,
+        "durationMs": 5000
+      },
+      "error": null
     }
   ],
   "history": [
@@ -28,8 +33,19 @@
       "title": "Synthetic recording",
       "author": null,
       "currentRoot": true,
-      "listening": { "mark": "DONE", "positionMs": 0, "durationMs": 5000 }
+      "listening": {
+        "mark": "DONE",
+        "positionMs": 0,
+        "durationMs": 5000
+      },
+      "availability": "PRESENT",
+      "deletion": null
     }
   ],
-  "player": { "item": "known-one", "positionMs": 2000, "durationMs": 5000, "playing": false }
+  "player": {
+    "item": "known-one",
+    "positionMs": 2000,
+    "durationMs": 5000,
+    "playing": false
+  }
 }
