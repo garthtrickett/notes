@@ -84,6 +84,7 @@ document and test a successor integration before implementing it.
 
 | Gate | Current evidence |
 | --- | --- |
+| Both exact named disposable copies visible in Notes | Confirmed by user on 22 October; cancellation/deletion not yet tested |
 | Storage access survives reboot | Pending actual phone |
 | Deletion survives rescan/reconnect/app restart/phone reboot | Pending actual phone, both specimens |
 | Server originals and unrelated files remain unchanged | Private SHA-256 baseline of 76 pre-existing files recorded; after-deletion comparison pending |
@@ -108,20 +109,22 @@ document and test a successor integration before implementing it.
 
 ### Phone observation received
 
-On 22 October the user initially reported that both formats appear. Their
-subsequent screenshot directly confirms **Android 17 (API 37), Notes 1.0.59,
-read/write grant, and 27 Opus/M4B files enumerated**. It shows ordinary recordings
-where the named disposable specimens and their buttons would appear first.
-Visibility of the two specifically named test copies is therefore **not yet
-verified**; ordinary format visibility must not be substituted for specimen
-delivery. The server still holds both test copies with their original SHA-256
-values. The user subsequently opened Syncthing and reported it connected; the
+The user's screenshot directly confirms **Android 17 (API 37), Notes 1.0.59,
+read/write grant, and 27 Opus/M4B files enumerated**. It showed ordinary recordings;
+the exact named test copies were initially unverified. The user subsequently
+opened Syncthing and reported it connected; the
 server API independently confirms that connection and active transfer. At
 04:43 UTC the server index reported both exact named specimens available on the
 phone, rather than temporary files, while other media was still transferring.
-The user has been asked to Refresh Notes and confirm those exact names and their
-controls. Phone visibility remains unverified until that reply; no deletion has
-been requested or acknowledged.
+
+At 05:33 UTC on 22 October the user replied **"Both named copies appear"** to
+the question explicitly naming `notes-audio-storage-test.opus` and
+`notes-audio-storage-test.m4b` with their test controls after Refresh in Notes.
+Visibility of both exact specimens is now confirmed by that phone observation.
+The app build for this later observation was not supplied. Both server copies
+were independently rehashed and still match their original synthetic fixtures.
+The next phone step is preparing and cancelling the Opus deletion, then checking
+that it remains listed. No physical deletion has been acknowledged.
 Cancellation, byte removal, rescan/reconnect/restart/reboot behaviour, and the
 phone's Syncthing configuration remain unverified. Private media titles in the
 screenshot are not copied into this public repository.
