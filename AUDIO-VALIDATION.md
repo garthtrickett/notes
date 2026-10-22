@@ -102,7 +102,17 @@ document and test a successor integration before implementing it.
 - APK SHA-256: `c2693b40eadf7e51d1f9bebc0de78fdcca61e8c1c112e31c484e5b2b2cf464be`.
 - The release identifies the exact merged source. Installation and phone tests
   remain unverified. Synthetic specimens are ready on the server; delivery was
-  pending at the last observation because the phone was disconnected.
+  pending at the initial server observation because the phone was disconnected.
+
+### Phone observation received
+
+On 22 October the user explicitly confirmed that **both the `.opus` and `.m4b`
+test files appear** in the actual phone storage test. This proves that enumeration
+can show both specimens on that phone. The Android/build line and read/write
+status have not been supplied and are not inferred. Cancellation, byte removal,
+rescan/reconnect/restart/reboot behaviour, and the phone's Syncthing configuration
+remain unverified. The next requested step is cancellation and confirmed deletion
+of the disposable Opus copy, checked both in Notes and the phone file manager.
 
 ## Playback/durability spike in progress
 
