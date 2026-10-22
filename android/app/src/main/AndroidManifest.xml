@@ -29,6 +29,8 @@
         <activity android:name=".AudioPlaybackTestActivity" android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
 
+        <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
+
         <receiver android:name=".UrgeWidget" android:exported="false"
             android:label="@string/urge_widget_name">
             <intent-filter>
