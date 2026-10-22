@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="urge_widget_name">Back to my day</string>
-    <string name="urge_widget_description">Pause instead of checking Gmail or Beeper. One tap, then put the phone down.</string>
+    <string name="urge_widget_description">Pause instead of checking Gmail or Beeper. One tap, then put the phone down. Includes an eating toggle for meals without technology.</string>
     <string name="urge_widget_inbox">Gmail &amp; Beeper · 4:30 pm Bali</string>
-    <string name="urge_widget_prompt">Put the phone down.\nReturn to what you chose.</string>
+    <string name="urge_widget_eating_off">Eating: off · tap to start\nPut the phone down.</string>
+    <string name="urge_widget_eating_on">Eating: on · tap to finish\nNo technology while eating.</string>
+    <string name="urge_widget_eating_start">Start eating mode. No technology while eating.</string>
+    <string name="urge_widget_eating_finish">Eating mode is on. Tap to finish eating.</string>
     <string name="urge_widget_resist">✓ Resisted the urge</string>
     <string name="urge_widget_undo">Undo</string>
     <string name="urge_widget_no_count">One pause at a time.</string>

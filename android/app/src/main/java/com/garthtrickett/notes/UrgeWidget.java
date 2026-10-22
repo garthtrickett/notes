@@ -11,19 +11,21 @@ import android.widget.Toast;
 
 /** Home screen: Widgets > Notes > Back to my day. No configuration or login.
  * Taps are handled natively, including when the Notes WebView isn't running.
- * Only today's optional count is kept, in private app preferences; it isn't
- * synced to the vault. Normal Android app backups may include those preferences.
+ * Today's optional count and eating toggle stay in private app preferences;
+ * neither is synced to the vault. Normal Android app backups may include those preferences.
  * No alarm or polling service is created. Android refreshes idle widgets on its
  * own schedule (which may lag midnight); every tap uses the current Bali day. */
 public class UrgeWidget extends AppWidgetProvider {
     static final String RESIST = "com.garthtrickett.notes.urge.RESIST";
     static final String UNDO = "com.garthtrickett.notes.urge.UNDO";
 
+    static final String TOGGLE_EATING = "com.garthtrickett.notes.urge.TOGGLE_EATING";
+
     @Override public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        if (RESIST.equals(action) || UNDO.equals(action)) {
+        if (RESIST.equals(action) || UNDO.equals(action) || TOGGLE_EATING.equals(action)) {
             AppWidgetManager manager = AppWidgetManager.getInstance(context);
-            // A PendingIntent left over from a removed widget must not count.
+            // Ignore PendingIntents left over from a removed widget.
             int source = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
                 AppWidgetManager.INVALID_APPWIDGET_ID);
             boolean exists = false;
@@ -31,10 +33,14 @@ public class UrgeWidget extends AppWidgetProvider {
                 if (source == id) exists = true;
             }
             if (!exists) return;
-            UrgeCounter.adjust(context, System.currentTimeMillis(), RESIST.equals(action) ? 1 : -1);
+            if (TOGGLE_EATING.equals(action)) {
+                UrgeCounter.toggleEating(context);
+            } else {
+                UrgeCounter.adjust(context, System.currentTimeMillis(), RESIST.equals(action) ? 1 : -1);
+                Toast.makeText(context, RESIST.equals(action) ? R.string.urge_widget_noted
+                    : R.string.urge_widget_undone, Toast.LENGTH_SHORT).show();
+            }
             refresh(context);
-            Toast.makeText(context, RESIST.equals(action) ? R.string.urge_widget_noted
-                : R.string.urge_widget_undone, Toast.LENGTH_SHORT).show();
         } else if (Intent.ACTION_DATE_CHANGED.equals(action) || Intent.ACTION_TIME_CHANGED.equals(action)
                 || Intent.ACTION_TIMEZONE_CHANGED.equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
@@ -52,11 +58,20 @@ public class UrgeWidget extends AppWidgetProvider {
 
     @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
         int count = UrgeCounter.today(context, System.currentTimeMillis());
+        boolean eating = UrgeCounter.isEating(context);
         for (int id : ids) {
             RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.urge_widget);
             views.setTextViewText(R.id.urge_count, count == 0
                 ? context.getString(R.string.urge_widget_no_count)
                 : context.getResources().getQuantityString(R.plurals.urge_widget_count, count, count));
+            views.setTextViewText(R.id.urge_eating, context.getString(eating
+                ? R.string.urge_widget_eating_on : R.string.urge_widget_eating_off));
+            views.setContentDescription(R.id.urge_eating, context.getString(eating
+                ? R.string.urge_widget_eating_finish : R.string.urge_widget_eating_start));
+            views.setInt(R.id.urge_eating, "setBackgroundResource", eating
+                ? R.drawable.urge_widget_eating_on : R.drawable.urge_widget_eating_off);
+            views.setTextColor(R.id.urge_eating, android.graphics.Color.parseColor(eating ? "#FFFFFF" : "#193B32"));
+            views.setOnClickPendingIntent(R.id.urge_eating, click(context, id, TOGGLE_EATING));
             views.setBoolean(R.id.urge_undo, "setEnabled", count > 0);
             views.setOnClickPendingIntent(R.id.urge_resist, click(context, id, RESIST));
             views.setOnClickPendingIntent(R.id.urge_undo, click(context, id, UNDO));
