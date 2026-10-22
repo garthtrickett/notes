@@ -23,15 +23,21 @@
         android:textSize="13sp"
         android:textColor="#36584E" />
 
-    <TextView
+    <Button
+        android:id="@+id/urge_eating"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:gravity="center_vertical"
-        android:layout_marginTop="4dp"
+        android:gravity="center"
+        android:minHeight="48dp"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="6dp"
+        android:background="@drawable/urge_widget_eating_off"
+        android:textAllCaps="false"
+        android:layout_marginTop="6dp"
         android:layout_marginBottom="4dp"
-        android:text="@string/urge_widget_prompt"
-        android:textSize="15sp"
+        android:text="@string/urge_widget_eating_off"
+        android:textSize="14sp"
         android:textColor="#193B32" />
 
     <Button

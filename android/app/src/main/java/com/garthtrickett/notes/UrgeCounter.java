@@ -9,10 +9,19 @@ import java.util.TimeZone;
 
 /** One optional count for today, shared by all copies of the home-screen widget.
  * No history, streak, account access or vault writes. The day follows the Bali
- * inbox reminder even if the phone is temporarily using another time zone. */
+ * inbox reminder even if the phone is temporarily using another time zone.
+ * Eating mode is a separate persistent choice; changing it never changes the count. */
 final class UrgeCounter {
     private static SharedPreferences preferences(Context context) {
         return context.getSharedPreferences("urge-widget", Context.MODE_PRIVATE);
+    }
+
+    static boolean isEating(Context context) {
+        return preferences(context).getBoolean("eating", false);
+    }
+
+    static synchronized void toggleEating(Context context) {
+        preferences(context).edit().putBoolean("eating", !isEating(context)).apply();
     }
 
     private static String day(long now) {

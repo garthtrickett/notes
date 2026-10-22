@@ -45,6 +45,7 @@ public class UrgeWidgetTest {
         receiver = new UrgeWidget();
         IntentFilter actions = new IntentFilter(UrgeWidget.RESIST);
         actions.addAction(UrgeWidget.UNDO);
+        actions.addAction(UrgeWidget.TOGGLE_EATING);
         context.registerReceiver(receiver, actions, Context.RECEIVER_NOT_EXPORTED);
     }
 
@@ -101,10 +102,52 @@ public class UrgeWidgetTest {
         for (int id : ids) assertFalse(widgets.getViewFor(id).findViewById(R.id.urge_undo).isEnabled());
     }
 
+    @Test public void eatingButtonTogglesAllCopiesPersistsAndDoesNotChangeCount() throws Exception {
+        int[] ids = widgets.createWidgets(UrgeWidget.class, R.layout.urge_widget, 2);
+        assertFalse(UrgeCounter.isEating(context));
+        assertTrue(widgets.getViewFor(ids[0]).findViewById(R.id.urge_resist).performClick());
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertTrue(widgets.getViewFor(ids[0]).findViewById(R.id.urge_eating).performClick());
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        Context fresh = context.createPackageContext(context.getPackageName(), 0);
+        assertTrue(UrgeCounter.isEating(fresh));
+        for (int id : ids) {
+            TextView button = widgets.getViewFor(id).findViewById(R.id.urge_eating);
+            assertEquals(context.getString(R.string.urge_widget_eating_on), button.getText().toString());
+            assertEquals(context.getString(R.string.urge_widget_eating_finish), button.getContentDescription());
+        }
+        assertEquals(1, UrgeCounter.today(context, System.currentTimeMillis()));
+        // An update and the daily reset must preserve an active meal.
+        receiver.onReceive(context, new Intent(Intent.ACTION_MY_PACKAGE_REPLACED));
+        UrgeCounter.adjust(context, bali(23, 0, 0), 1);
+        assertTrue(UrgeCounter.isEating(fresh));
+        assertTrue(widgets.getViewFor(ids[1]).findViewById(R.id.urge_eating).performClick());
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertFalse(UrgeCounter.isEating(fresh));
+        for (int id : ids) assertEquals(context.getString(R.string.urge_widget_eating_off),
+            ((TextView) widgets.getViewFor(id).findViewById(R.id.urge_eating)).getText().toString());
+        assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+    }
+
+    @Test public void urgeAndUndoLeaveEatingModeUnchanged() {
+        int[] ids = widgets.createWidgets(UrgeWidget.class, R.layout.urge_widget, 1);
+        widgets.getViewFor(ids[0]).findViewById(R.id.urge_eating).performClick();
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        widgets.getViewFor(ids[0]).findViewById(R.id.urge_resist).performClick();
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        widgets.getViewFor(ids[0]).findViewById(R.id.urge_undo).performClick();
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertTrue(UrgeCounter.isEating(context));
+        assertEquals(0, UrgeCounter.today(context, System.currentTimeMillis()));
+    }
+
     @Test public void staleWidgetAndUnrelatedBroadcastCannotCount() {
         new UrgeWidget().onReceive(context, new Intent(context, UrgeWidget.class)
             .setAction(UrgeWidget.RESIST).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, 999));
+        new UrgeWidget().onReceive(context, new Intent(context, UrgeWidget.class)
+            .setAction(UrgeWidget.TOGGLE_EATING).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, 999));
         new UrgeWidget().onReceive(context, new Intent("unrelated"));
+        assertFalse(UrgeCounter.isEating(context));
         assertEquals(0, UrgeCounter.today(context, System.currentTimeMillis()));
     }
 
@@ -117,11 +160,13 @@ public class UrgeWidgetTest {
 
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     public void minimumLayoutKeepsButtonsAndPromptVisibleWithLargerText() throws Exception {
-        assertLayout(260, 260, 1f);
-        assertLayout(260, 260, 1.3f);
+        for (boolean eating : new boolean[] {false, true}) {
+            assertLayout(250, 260, 1f, eating);
+            assertLayout(250, 260, 1.3f, eating);
+        }
     }
 
-    private void assertLayout(int width, int height, float fontScale) throws Exception {
+    private void assertLayout(int width, int height, float fontScale, boolean eating) throws Exception {
         Configuration config = new Configuration(context.getResources().getConfiguration());
         config.fontScale = fontScale;
         Context scaled = context.createConfigurationContext(config);
@@ -130,6 +175,10 @@ public class UrgeWidgetTest {
         height = Math.round(height * density);
         FrameLayout host = new FrameLayout(scaled);
         View view = android.view.LayoutInflater.from(scaled).inflate(R.layout.urge_widget, host, false);
+        TextView eatingButton = view.findViewById(R.id.urge_eating);
+        eatingButton.setText(eating ? R.string.urge_widget_eating_on : R.string.urge_widget_eating_off);
+        eatingButton.setTextColor(android.graphics.Color.parseColor(eating ? "#FFFFFF" : "#193B32"));
+        eatingButton.setBackgroundResource(eating ? R.drawable.urge_widget_eating_on : R.drawable.urge_widget_eating_off);
         host.addView(view, new FrameLayout.LayoutParams(width, height));
         host.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
@@ -140,10 +189,11 @@ public class UrgeWidgetTest {
         java.io.File directory = new java.io.File("build/reports/widget");
         directory.mkdirs();
         try (java.io.FileOutputStream out = new java.io.FileOutputStream(
-                new java.io.File(directory, "preview-" + fontScale + ".png"))) {
+                new java.io.File(directory, "preview-" + fontScale + "-eating-" + eating + ".png"))) {
             image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
         }
         assertTextsVisible((ViewGroup) view, height);
+        assertTrue(view.findViewById(R.id.urge_eating).getHeight() >= Math.round(48 * density));
         assertTrue(view.findViewById(R.id.urge_resist).getHeight() >= Math.round(48 * density));
         assertTrue(view.findViewById(R.id.urge_undo).getHeight() >= Math.round(48 * density));
     }
