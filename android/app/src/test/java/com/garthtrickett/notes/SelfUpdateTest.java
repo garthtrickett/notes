@@ -104,6 +104,8 @@ public class SelfUpdateTest {
         Notification note = Shadows.shadowOf(notifications).getNotification("notes-update", id);
         assertNotNull(note); assertNull(note.fullScreenIntent);
         assertTrue(note.contentIntent.isImmutable());
+        assertTrue((Shadows.shadowOf(note.contentIntent).getSavedIntent().getFlags()
+            & Intent.FLAG_ACTIVITY_NEW_TASK) != 0);
         note.contentIntent.send();
         assertEquals("test.install.confirm", Shadows.shadowOf(RuntimeEnvironment.getApplication())
             .getNextStartedActivity().getAction());
