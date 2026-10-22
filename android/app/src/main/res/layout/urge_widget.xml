@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/urge_widget_background">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/urge_widget_name"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="#193B32"
+        android:fontFamily="sans-serif" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/urge_widget_inbox"
+        android:textSize="13sp"
+        android:textColor="#36584E" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
+        android:text="@string/urge_widget_prompt"
+        android:textSize="15sp"
+        android:textColor="#193B32" />
+
+    <Button
+        android:id="@+id/urge_resist"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="10dp"
+        android:background="@drawable/urge_widget_button"
+        android:text="@string/urge_widget_resist"
+        android:textAllCaps="false"
+        android:textSize="15sp"
+        android:textColor="#FFFFFF" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/urge_count"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/urge_widget_no_count"
+            android:textSize="12sp"
+            android:textColor="#36584E" />
+        <Button
+            android:id="@+id/urge_undo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:paddingHorizontal="8dp"
+            android:background="@android:color/transparent"
+            android:enabled="false"
+            android:text="@string/urge_widget_undo"
+            android:textAllCaps="false"
+            android:textSize="12sp"
+            android:textColor="@color/urge_widget_undo" />
+    </LinearLayout>
+</LinearLayout>
