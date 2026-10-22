@@ -195,6 +195,7 @@ public class UrgeWidgetTest {
         assertTextsVisible((ViewGroup) view, height);
         assertTrue(view.findViewById(R.id.urge_eating).getHeight() >= Math.round(48 * density));
         assertTrue(view.findViewById(R.id.urge_resist).getHeight() >= Math.round(48 * density));
+        assertTrue(view.findViewById(R.id.urge_lookup).getHeight() >= Math.round(48 * density));
         assertTrue(view.findViewById(R.id.urge_undo).getHeight() >= Math.round(48 * density));
     }
 

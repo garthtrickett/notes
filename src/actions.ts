@@ -51,13 +51,14 @@ export const persist = async (
   // bytes in the blob store come to be replaced by nothing. Two stores is
   // precisely so this cannot happen by accident.
   const written: NoteRecord[] = notes.map(
-    ({ path, body, baseSha, pending, deleted, encoding }) => ({
+    ({ path, body, baseSha, pending, deleted, encoding, lookupCaptures }) => ({
       path,
       body: encoding === "base64" ? "" : body,
       baseSha,
       pending,
       deleted,
       encoding,
+      ...(lookupCaptures?.length ? { lookupCaptures } : {}),
     }),
   );
 

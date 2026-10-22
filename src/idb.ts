@@ -6,9 +6,10 @@
 // write amplification that made gafu's store O(n) per edit.
 
 import type { NoteRecord } from "./model.ts";
+import { validLookupId } from "./lookup-capture.ts";
 
 const DB_NAME = "notes";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 export const NOTES_STORE = "notes";
 // Attachment bytes live apart from note metadata, and that separation is the
 // point rather than tidiness. The model holds every note; if the bytes sat on
@@ -17,6 +18,7 @@ export const NOTES_STORE = "notes";
 export const BLOBS_STORE = "blobs";
 // Device-local delivery bookkeeping, independent of later note renames/deletes.
 export const PHOTO_IMPORTS_STORE = "photo-imports";
+export const LOOKUP_IMPORTS_STORE = "lookup-imports";
 
 const request = <T>(req: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {
@@ -46,6 +48,9 @@ export const openDb = (): Promise<IDBDatabase> => {
     }
     if (!db.objectStoreNames.contains(PHOTO_IMPORTS_STORE)) {
       db.createObjectStore(PHOTO_IMPORTS_STORE);
+    }
+    if (!db.objectStoreNames.contains(LOOKUP_IMPORTS_STORE)) {
+      db.createObjectStore(LOOKUP_IMPORTS_STORE);
     }
     // Anything already stored keeps its bytes: move them across rather than
     // asking the next sync to fetch every attachment again.
@@ -171,10 +176,28 @@ export const putMany = async (
   records: readonly NoteRecord[],
 ): Promise<void> => {
   if (records.length === 0) return;
-  const tx = db.transaction(NOTES_STORE, "readwrite");
+  const tx = db.transaction([NOTES_STORE, LOOKUP_IMPORTS_STORE], "readwrite");
   const store = tx.objectStore(NOTES_STORE);
-  queueAll(tx, records, (record) => void store.put(record));
+  const receipts = tx.objectStore(LOOKUP_IMPORTS_STORE);
+  // Ordinary persistence commits question + receipt together. Never release
+  // native copies before this, or bypass SAM to race another dump edit.
+  queueAll(tx, records, (record) => {
+    store.put(record);
+    if (record.encoding === "utf8") {
+      for (const id of record.lookupCaptures ?? []) {
+        if (typeof id !== "string" || !validLookupId(id)) throw new Error("Invalid lookup receipt ID.");
+        receipts.put(true, id);
+      }
+    }
+  });
   await commit(tx);
+};
+
+export const lookupImported = async (db: IDBDatabase, id: string): Promise<boolean> => {
+  const value = await request(db.transaction(LOOKUP_IMPORTS_STORE, "readonly")
+    .objectStore(LOOKUP_IMPORTS_STORE).get(id));
+  if (value !== undefined && value !== true) throw new Error("Invalid saved lookup receipt.");
+  return value === true;
 };
 
 export const deleteMany = async (

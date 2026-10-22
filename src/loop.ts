@@ -40,8 +40,11 @@ import { nativeStorageTest, type AudioStorageTest } from "./audio.ts";
 import { nativePhotoShares, type PhotoShares } from "./photos.ts";
 import { photoNotePath, preparePhotoShare } from "./photo-actions.ts";
 import { importPhotoShare, photoImportPath } from "./idb.ts";
+import { nativeLookupInbox, type LookupInbox } from "./lookup.ts";
+import { lookupImported } from "./idb.ts";
 
 export interface Deps {
+  readonly lookupInbox?: LookupInbox;
   readonly photoShares?: PhotoShares;
   readonly audioStorageTest?: AudioStorageTest;
   readonly audioLibrary?: AudioLibrary;
@@ -93,6 +96,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const audioStorageTest = deps.audioStorageTest ?? nativeStorageTest();
   const audioLibrary = deps.audioLibrary ?? nativeAudioLibrary();
   const photoShares = deps.photoShares ?? nativePhotoShares();
+  const lookupInbox = deps.lookupInbox ?? nativeLookupInbox();
   let audioConnection: AudioConnection | null = null;
   let disposed = false;
   let audioConnectionGeneration = 0;
@@ -239,6 +243,26 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   };
 
   let receivingPhotos = false;
+  let receivingLookups = false;
+  let lookupsChanged = false;
+  const receiveLookups = async (): Promise<void> => {
+    if (!lookupInbox.supported || !model.hydrated || disposed) return;
+    lookupsChanged = true;
+    if (receivingLookups) return;
+    receivingLookups = true;
+    try {
+      do {
+        lookupsChanged = false;
+        for (const capture of await lookupInbox.pending()) {
+          if (disposed) return;
+          if (await lookupImported(db, capture.id)) {
+            try { await lookupInbox.acknowledge(capture.id); } catch { /* Retry next open. */ }
+          } else if (!disposed) propose({ kind: "lookupCaptured", capture });
+        }
+      } while (lookupsChanged && !disposed);
+    } catch { if (!disposed) propose({ kind: "lookupFailed" }); }
+    finally { receivingLookups = false; }
+  };
   let photosChanged = false;
   const receivePhotos = async (): Promise<void> => {
     if (!photoShares.supported || !model.hydrated || disposed) return;
@@ -748,6 +772,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && model.modal.draft.date !== "";
     const rejection = present(model, p);
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed")) track(receivePhotos());
+    if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed" || p.kind === "persisted")) track(receiveLookups());
     if (rejection === null && p.kind === "audioReconnect") connectAudio();
     if (rejection === null && p.kind === "audioRequested" && model.audio.snapshot !== null) {
       const snapshot = model.audio.snapshot;
@@ -828,9 +853,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const flush = async (): Promise<void> => {
     if (import.meta.env.PROD) return;
     for (let i = 0; i < 40; i += 1) {
-      await idle;
+      const observed = idle;
+      await observed;
       await new Promise<void>((r) => queueMicrotask(() => r()));
-      if (!model.persisting && !model.syncing) return;
+      if (observed === idle && !model.persisting && !model.syncing) return;
     }
     throw new Error("Loop did not settle");
   };
@@ -860,6 +886,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   propose({ kind: "audioSupported", supported: audioLibrary.supported });
   if (audioLibrary.supported) connectAudio();
   let stopPhotos: (() => void) | null = null;
+  let stopLookups: (() => void) | null = null;
+  if (lookupInbox.supported) track(lookupInbox.listen(() => { track(receiveLookups()); }).then(stop => {
+    if (disposed) stop(); else stopLookups = stop;
+  }).catch(() => { if (!disposed) propose({ kind: "lookupFailed" }); }));
   if (photoShares.supported) track(photoShares.listen(() => { track(receivePhotos()); }).then(stop => {
     if (disposed) stop(); else stopPhotos = stop;
   }).catch((cause: unknown) => {
@@ -868,6 +898,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const dispose = () => {
     disposed = true;
     stopPhotos?.();
+    stopLookups?.();
     root.querySelectorAll("[data-photo-picker]").forEach(input => input.remove());
     void audioConnection?.disconnect();
   };

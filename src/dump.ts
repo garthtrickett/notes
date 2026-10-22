@@ -1,4 +1,5 @@
 // The dump: one file per day, and the day does not start at midnight.
+import { lookupHeadingOffset } from "./lookup-capture.ts";
 
 export const DUMP_DIR = "dump";
 
@@ -44,6 +45,12 @@ export const stamp = (now: number): string => {
 export const appendEntry = (body: string, text: string, now: number): string => {
   const line = `${stamp(now)} ${text.trim()}`;
   if (body.trim() === "") return `${line}\n`;
+  // Ordinary thoughts stay outside the dedicated Lookup list.
+  const lookup = lookupHeadingOffset(body);
+  if (lookup >= 0) {
+    const before = body.slice(0, lookup).replace(/\n*$/, "");
+    return `${before}${before ? "\n" : ""}${line}\n\n${body.slice(lookup)}`;
+  }
   return `${body.replace(/\n*$/, "")}\n${line}\n`;
 };
 

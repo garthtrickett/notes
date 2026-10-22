@@ -132,7 +132,7 @@ describe("durable photo handoff", () => {
     await new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error); });
     old.close();
     db = await openDb();
-    expect(db.version).toBe(3);
+    expect(db.version).toBe(4);
     expect(await getAll(db)).toHaveLength(2);
     expect((await getAll(db)).find(n => n.path === note.path)).toEqual(note);
     expect(await getBlob(db, attachment.record.path)).toBe(attachment.base64);

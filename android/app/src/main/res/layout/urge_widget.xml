@@ -40,18 +40,39 @@
         android:textSize="14sp"
         android:textColor="#193B32" />
 
-    <Button
-        android:id="@+id/urge_resist"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:baselineAligned="false">
+    <Button
+        android:id="@+id/urge_resist"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="64dp"
         android:minHeight="48dp"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="10dp"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="4dp"
         android:background="@drawable/urge_widget_button"
         android:text="@string/urge_widget_resist"
         android:textAllCaps="false"
-        android:textSize="15sp"
+        android:textSize="14sp"
         android:textColor="#FFFFFF" />
+    <Button
+        android:id="@+id/urge_lookup"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="64dp"
+        android:layout_marginStart="6dp"
+        android:minHeight="48dp"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="4dp"
+        android:background="@drawable/urge_widget_eating_off"
+        android:text="@string/urge_widget_lookup"
+        android:textAllCaps="false"
+        android:textSize="14sp"
+        android:textColor="#193B32" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"

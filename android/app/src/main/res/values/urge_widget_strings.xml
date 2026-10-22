@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="urge_widget_name">Back to my day</string>
-    <string name="urge_widget_description">Pause instead of checking Gmail or Beeper. One tap, then put the phone down. Includes an eating toggle for meals without technology.</string>
+    <string name="urge_widget_description">Pause instead of checking Gmail or Beeper. Save a question to look up later, or start a meal without technology.</string>
+    <string name="urge_widget_lookup">Look up later</string>
     <string name="urge_widget_inbox">Gmail &amp; Beeper · 4:30 pm Bali</string>
     <string name="urge_widget_eating_off">Eating: off · start\nPut the phone down.</string>
     <string name="urge_widget_eating_on">Eating: on · finish\nNo tech while eating.</string>
