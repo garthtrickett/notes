@@ -89,7 +89,7 @@ document and test a successor integration before implementing it.
 | Deletion survives rescan/reconnect/app restart/phone reboot | Pending actual phone, both specimens |
 | Server originals and unrelated files remain unchanged | Private SHA-256 baseline of 76 pre-existing files recorded; after-deletion comparison pending |
 | Opus/M4B locked-screen playback and headset controls | User confirms both formats' lock-screen playback/Pause/Resume, headphone Pause/Resume and pause on unplug/disconnection without speaker playback |
-| Native checkpoints, marks, explicit cold resume, alarm coexistence | User confirms seek/paused bookmark survives force-stop, no autoplay and explicit resume near saved position; marks, abrupt-playing checkpoint window and alarms pending |
+| Native checkpoints, marks, explicit cold resume, alarm coexistence | User confirms paused bookmark/cold resume, manual Done/Unplayed and tone replay-zero/stop-at-end; mark durability, abrupt-playing checkpoint window and alarms pending |
 | Full Audio UI and offline journey | Awaiting spike gates |
 | Automated regression and exact signed build | Record checks/build per delivered increment |
 | Complete phone acceptance and one-week usability trial | Pending; full outcome not yet achieved |
@@ -164,12 +164,20 @@ replied **"yup that all works"**. Headphone controls and the disconnection-pause
 behaviour are now confirmed by that phone report; the headphone connection type
 was not supplied.
 
-Done/Unplayed, natural end, Activity recreation/Recents/reboot behaviour, the
-checkpoint-loss window when stopping while actively playing, and Notes alarm
-coexistence remain unverified. The separate Syncthing deletion gate and full
-Audio UI acceptance also remain open. The next playback step uses a disposable
-tone for Done/Unplayed, restart-from-zero and stop-at-end checks, preserving the
-real audiobook's bookmark.
+Asked to select `notes-audio-storage-test.opus`, manually mark Done and check
+DONE in history, play the five-second tone to its end without another recording
+starting, replay it from zero, then mark Unplayed and check UNPLAYED/0:00/paused,
+the user replied **"yup"**. Those manual mark, stop-at-end and replay-from-zero
+checks pass by their report, using the disposable tone to preserve the real
+audiobook's bookmark. The expected saved state for this tone is now Unplayed at
+zero; it must still be checked after deletion/reboot.
+
+Automatic Done at natural end, mark durability across cold start/reboot,
+Activity recreation/Recents/reboot behaviour, the checkpoint-loss window when
+stopping while actively playing, and Notes alarm coexistence remain unverified.
+The separate Syncthing deletion gate and full Audio UI acceptance also remain
+open. The next storage step is inspection of the phone's actual Syncthing folder
+type, Ignore Delete and ignore patterns before the disposable deletion test.
 
 ## Playback/durability spike — source and host evidence
 
