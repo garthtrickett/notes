@@ -1,7 +1,8 @@
 # Audio library in Notes
 
-Status: ready for the storage and playback spikes; full implementation depends on
-their evidence gates. No audio feature is implemented by this document.
+Status: storage/deletion diagnostic implemented; actual-phone evidence pending.
+Playback, library UI and release acceptance remain behind the evidence gates.
+Current implementation and test evidence: `AUDIO-VALIDATION.md`.
 Date: 22 October 2026.
 Source baseline inspected: `54fe3dcd101a2fb050ca4f7eff495d8ad7c6d04f`.
 

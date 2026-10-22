@@ -52,6 +52,39 @@ const settle = async (loop: Loop) => {
   await paint();
 };
 
+describe("audio storage test entry", () => {
+  it("opens only on an explicit request and reports failure through the model", async () => {
+    let opened = 0;
+    const loop = createLoop({ ...localOnly(), audioStorageTest: {
+      supported: true,
+      open: async () => { opened++; return { ok: false, error: "Storage screen unavailable" }; },
+    } }, root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "modeChanged", mode: "settings" });
+    await loop.flush();
+    expect(root.textContent).toContain("Audio storage test");
+    expect(opened).toBe(0);
+    loop.propose({ kind: "audioStorageTestRequested" });
+    await loop.flush();
+    expect(opened).toBe(1);
+    expect(loop.model.error).toBe("Storage screen unavailable");
+    loop.propose({ kind: "modeChanged", mode: "notes" });
+    loop.propose({ kind: "modeChanged", mode: "settings" });
+    await loop.flush();
+    expect(opened).toBe(1);
+  });
+
+  it("keeps the entry hidden in unsupported browser builds", async () => {
+    const loop = createLoop({ ...localOnly(), audioStorageTest: {
+      supported: false, open: async () => ({ ok: true, value: undefined }),
+    } }, root);
+    loop.propose({ kind: "hydrated", notes: [] });
+    loop.propose({ kind: "modeChanged", mode: "settings" });
+    await loop.flush();
+    expect(root.textContent).not.toContain("Audio storage test");
+  });
+});
+
 beforeEach(async () => {
   await reset();
   document.body.innerHTML = '<div id="app"></div>';

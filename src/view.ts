@@ -44,6 +44,7 @@ type Propose = (p: Proposal) => void;
 // Everything the view is handed. The positional list grew by exactly one per
 // feature and had reached six.
 export interface ViewCtx {
+  readonly audioStorageTestSupported?: boolean;
   readonly propose: Propose;
   readonly now: () => number;
   readonly onCapture: (text: string) => void;
@@ -1085,6 +1086,10 @@ export const view = (model: Model, ctx: ViewCtx): TemplateResult => {
         ${settingsView(ctx.onSaveConfig, ctx.config, () =>
           propose({ kind: "modeChanged", mode: "notes" }),
         )}
+        ${ctx.audioStorageTestSupported
+          ? html`<button @click=${() => propose({ kind: "audioStorageTestRequested" })}>Audio storage test</button>`
+          : nothing}
+        ${model.error ? html`<p class="error" role="alert">${model.error}</p>` : nothing}
         ${status(model)}
         ${updateBanner(model, propose)}
       </main>

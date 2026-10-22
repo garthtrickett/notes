@@ -255,6 +255,8 @@ export type Proposal =
   | { readonly kind: "conflicted"; readonly path: string; readonly copyPath: string; readonly body: string }
   | { readonly kind: "syncFailed"; readonly error: SyncError }
   | { readonly kind: "modeChanged"; readonly mode: Mode }
+  | { readonly kind: "audioStorageTestRequested" }
+  | { readonly kind: "audioStorageTestFinished"; readonly error: string | null }
   | { readonly kind: "folderToggled"; readonly path: string }
   | { readonly kind: "folderDeleted"; readonly path: string }
   | { readonly kind: "folderMoved"; readonly from: string; readonly to: string }
@@ -784,6 +786,15 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       m.error = null;
       m.numberScope = null;
       m.mode = p.mode;
+      return null;
+    }
+
+    case "audioStorageTestRequested": {
+      m.error = null;
+      return null;
+    }
+    case "audioStorageTestFinished": {
+      m.error = p.error;
       return null;
     }
 
