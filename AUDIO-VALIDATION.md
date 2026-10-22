@@ -119,3 +119,9 @@ fault-injected persistence coordination and schema validation. The Android atomi
 file driver, actual process death and device power/lifecycle behaviour still need
 device qualification. The new core is not yet connected to Media3, the plugin,
 or a UI and does not yet provide playback or saved listening marks in the app.
+
+The web seam also has tested snapshot-ordering functions: callbacks cannot
+establish a new epoch, stale roots/revisions are refused, and a handshake
+reconciles updates received between subscription and the initial snapshot.
+The seven focused audio tests and TypeScript check pass. Wiring and testing the
+actual native subscription lifecycle remain part of the playback spike.
