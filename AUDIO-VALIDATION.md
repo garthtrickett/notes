@@ -90,3 +90,32 @@ document and test a successor integration before implementing it.
 | Full Audio UI and offline journey | Awaiting spike gates |
 | Automated regression and exact signed build | Record checks/build per delivered increment |
 | Complete phone acceptance and one-week usability trial | Pending; full goal remains active |
+
+## Delivered storage diagnostic
+
+- [PR #1](https://github.com/garthtrickett/notes/pull/1) merged as
+  `b5b64c7803a77480ab4d65eb684f0a7ab0057b92`.
+- [Signed build 59](https://github.com/garthtrickett/notes/actions/runs/39717716028)
+  passed, including the native unit tests, signing and publication steps.
+- APK: `com.garthtrickett.notes`, versionCode **59**, versionName **1.0.59**;
+  certificate SHA-256 matches the prior published build 58.
+- APK SHA-256: `c2693b40eadf7e51d1f9bebc0de78fdcca61e8c1c112e31c484e5b2b2cf464be`.
+- The release identifies the exact merged source. Installation and phone tests
+  remain unverified. Synthetic specimens are ready on the server; delivery was
+  pending at the last observation because the phone was disconnected.
+
+## Playback/durability spike in progress
+
+The next branch has a native listening transition core, an immutable ledger of
+known file versions and deletion intents, and a checkpoint writer retaining the
+prior validated version. Corrupt-primary recovery is explicit, reports possible
+loss of newer bookmarks/marks and preserves the damaged original before restore.
+Unknown schemas cannot fall back and overwrite a newer app's state. An uncertain
+write faults the writer until disk is reopened, so a retry cannot blindly erase
+an intent whose commit status was unclear.
+
+All **34 native JVM tests** pass, including the 15 tests in build 59. These include
+fault-injected persistence coordination and schema validation. The Android atomic
+file driver, actual process death and device power/lifecycle behaviour still need
+device qualification. The new core is not yet connected to Media3, the plugin,
+or a UI and does not yet provide playback or saved listening marks in the app.
