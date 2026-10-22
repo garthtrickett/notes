@@ -88,7 +88,7 @@ document and test a successor integration before implementing it.
 | Storage access survives reboot | Pending actual phone |
 | Deletion survives rescan/reconnect/app restart/phone reboot | Pending actual phone, both specimens |
 | Server originals and unrelated files remain unchanged | Private SHA-256 baseline of 76 pre-existing files recorded; after-deletion comparison pending |
-| Opus/M4B locked-screen playback and headset controls | User confirms ordinary Opus playback and lock-screen Pause/Resume; M4B and headset tests pending |
+| Opus/M4B locked-screen playback and headset controls | User confirms ordinary Opus and M4B playback with lock-screen Pause/Resume; headset/unplug tests pending |
 | Native checkpoints, marks, explicit cold resume, alarm coexistence | Implemented in native spike; host durability/cold-start tests pass; actual phone pending |
 | Full Audio UI and offline journey | Awaiting spike gates |
 | Automated regression and exact signed build | Record checks/build per delivered increment |
@@ -147,12 +147,17 @@ screenshot are not copied into this public repository.
 ### Phone playback observation received
 
 On 22 October the user confirmed playback and lock-screen controls in the
-requested Notes 1.0.60 Opus procedure. This is the first actual-phone playback
-pass. M4B playback, headset controls/unplug, seek/bookmark recovery, Done/Unplayed,
-natural end, Activity recreation/Recents/force-stop/reboot behaviour and Notes
-alarm coexistence remain unverified. The separate Syncthing deletion gate and
-full Audio UI acceptance also remain open. The next playback step is an ordinary
-M4B audiobook through the same Play → lock → Pause/Resume procedure.
+requested Notes 1.0.60 Opus procedure. Asked to repeat Play → lock → Pause/Resume
+with an ordinary M4B audiobook, they replied **"yeah that also works"**. Both
+required formats now have a user-reported actual-phone locked-playback/control
+pass.
+
+Headset controls/unplug, seek/bookmark recovery, Done/Unplayed, natural end,
+Activity recreation/Recents/force-stop/reboot behaviour and Notes alarm coexistence
+remain unverified. The separate Syncthing deletion gate and full Audio UI
+acceptance also remain open. The next playback step is to seek and pause at a
+recognizable nonzero position, force-stop Notes, reopen it without autoplay and
+explicitly resume the same audiobook near the saved position.
 
 ## Playback/durability spike — source and host evidence
 
