@@ -50,6 +50,13 @@ android {
             }
         }
     }
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            maxHeapSize = '1024m'
+            maxParallelForks = 1
+        }
+    }
 }
 
 repositories {
@@ -59,6 +66,10 @@ repositories {
 }
 
 dependencies {
+    def media3Version = '1.11.1'
+    implementation "androidx.media3:media3-exoplayer:$media3Version"
+    implementation "androidx.media3:media3-session:$media3Version"
+    implementation "androidx.media3:media3-inspector:$media3Version"
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
@@ -67,6 +78,7 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     // Exercise the native journal parser on the JVM instead of Android's JSON stubs.
     testImplementation 'org.json:json:20240303'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

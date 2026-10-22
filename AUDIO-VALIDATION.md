@@ -2,7 +2,8 @@
 
 The full outcome remains `PLAN-AUDIO.md`: see local recordings, background
 playback, durable bookmarks/Done marks, and physical deletion without server
-deletion or restoration. No phone gate has passed yet.
+deletion or restoration. Initial phone access is confirmed; reboot, playback and
+deletion acceptance gates remain open.
 
 ## Storage spike — 22 October 2026
 
@@ -37,8 +38,9 @@ storage; it is diagnostic state, not the final player-state schema.
 - App source starts at the reviewed plan commit `6dc1f26`.
 - Server share: send-only, Ignore Delete false, filesystem watcher enabled,
   rescan interval 300 seconds; observed via its local Syncthing API.
-- Phone Syncthing folder type, Ignore Delete, ignore patterns, Android version,
-  provider grants and lifecycle behaviour remain **unverified**.
+- Phone: Android 17 (API 37), Notes 1.0.59, local read/write grant and 27 audio
+  files confirmed by screenshot. Syncthing folder type, Ignore Delete, ignore
+  patterns and lifecycle behaviour remain **unverified**.
 - No phone is attached to the host's ADB server. Phone steps require the user.
 - Web validation: `bun test` **816 pass, 0 fail**, `bun run check` and
   `bun run build` pass. Native unit tests pass (15 tests, including existing
@@ -84,9 +86,9 @@ document and test a successor integration before implementing it.
 | --- | --- |
 | Storage access survives reboot | Pending actual phone |
 | Deletion survives rescan/reconnect/app restart/phone reboot | Pending actual phone, both specimens |
-| Server originals and unrelated files remain unchanged | Baseline/after comparison pending |
-| Opus/M4B locked-screen playback and headset controls | Not implemented/tested yet |
-| Native checkpoints, marks, explicit cold resume, alarm coexistence | Not implemented/tested yet |
+| Server originals and unrelated files remain unchanged | Private SHA-256 baseline of 76 pre-existing files recorded; after-deletion comparison pending |
+| Opus/M4B locked-screen playback and headset controls | Native spike built and host-tested; actual phone pending |
+| Native checkpoints, marks, explicit cold resume, alarm coexistence | Implemented in native spike; host durability/cold-start tests pass; actual phone pending |
 | Full Audio UI and offline journey | Awaiting spike gates |
 | Automated regression and exact signed build | Record checks/build per delivered increment |
 | Complete phone acceptance and one-week usability trial | Pending; full goal remains active |
@@ -100,8 +102,8 @@ document and test a successor integration before implementing it.
 - APK: `com.garthtrickett.notes`, versionCode **59**, versionName **1.0.59**;
   certificate SHA-256 matches the prior published build 58.
 - APK SHA-256: `c2693b40eadf7e51d1f9bebc0de78fdcca61e8c1c112e31c484e5b2b2cf464be`.
-- The release identifies the exact merged source. Installation and phone tests
-  remain unverified. Synthetic specimens are ready on the server; delivery was
+- The release identifies the exact merged source. Installation and initial
+  access are confirmed below. Synthetic specimens are ready on the server; delivery was
   pending at the initial server observation because the phone was disconnected.
 
 ### Phone observation received
@@ -113,16 +115,17 @@ where the named disposable specimens and their buttons would appear first.
 Visibility of the two specifically named test copies is therefore **not yet
 verified**; ordinary format visibility must not be substituted for specimen
 delivery. The server still holds both test copies with their original SHA-256
-values, and its API reports the phone disconnected at this observation.
-The next step is to reconnect phone Syncthing, refresh Notes, and establish
-visibility of the named specimens before requesting their deletion.
+values. The user subsequently opened Syncthing and reported it connected; the
+server API independently confirms that connection and active transfer. Both
+named specimens remain in the remote-needed list behind the media backlog.
+Establish visibility of the named specimens before requesting their deletion.
 Cancellation, byte removal, rescan/reconnect/restart/reboot behaviour, and the
 phone's Syncthing configuration remain unverified. Private media titles in the
 screenshot are not copied into this public repository.
 
-## Playback/durability spike in progress
+## Playback/durability spike — source and host evidence
 
-The next branch has a native listening transition core, an immutable ledger of
+The playback branch has a native listening transition core, an immutable ledger of
 known file versions and deletion intents, and a checkpoint writer retaining the
 prior validated version. Corrupt-primary recovery is explicit, reports possible
 loss of newer bookmarks/marks and preserves the damaged original before restore.
@@ -130,14 +133,50 @@ Unknown schemas cannot fall back and overwrite a newer app's state. An uncertain
 write faults the writer until disk is reopened, so a retry cannot blindly erase
 an intent whose commit status was unclear.
 
-All **34 native JVM tests** pass, including the 15 tests in build 59. These include
-fault-injected persistence coordination and schema validation. The Android atomic
-file driver, actual process death and device power/lifecycle behaviour still need
-device qualification. The new core is not yet connected to Media3, the plugin,
-or a UI and does not yet provide playback or saved listening marks in the app.
+One Media3 `MediaSessionService` now owns the player independently of Activities
+and the WebView. The native **Audio playback test** screen opens from the storage
+test. It provides local Opus/M4B selection, explicit Play/resume, Pause, seek,
+Done/Unplayed, saved history and explicit prior-checkpoint recovery. It does not
+enable deletion of ordinary recordings or implement the final Audio mode.
+
+Media3 exoplayer/session/inspector are aligned at **1.11.1**. Playback preparation
+identifies the file, probes local metadata, then re-identifies before committing
+the listening state. Hash/probe work is cancellable and separate from the single
+checkpoint writer. Checkpoints run every 15 seconds during playback and on
+pause/seek/end/item change. Cold service creation never loads a saved playlist or
+starts foreground playback. Session callbacks refuse caller-supplied media IDs
+and URIs. Notes alarms explicitly pause an existing player before posting their
+notification; alarm scheduling and sound settings are unchanged.
+
+All **44 native tests** pass, including the 15 tests in build 59. Coverage includes
+fault-injected persistence coordination, schema validation, stale catalogue
+capabilities, replacement versions, Android AtomicFile reopen/recovery, and
+Media3 cold-service startup with saved progress and a forged preparation intent.
+Android-framework tests use Robolectric 4.16.1 at API 36; these are not evidence
+of API 37 phone playback. The local release APK compiles successfully.
+Actual process death, codecs, lock/headset controls, focus, alarm sound and
+device power/lifecycle behaviour still require qualification on the phone.
 
 The web seam also has tested snapshot-ordering functions: callbacks cannot
 establish a new epoch, stale roots/revisions are refused, and a handshake
 reconciles updates received between subscription and the initial snapshot.
-The seven focused audio tests and TypeScript check pass. Wiring and testing the
-actual native subscription lifecycle remain part of the playback spike.
+The complete web suite passes **822 tests**, TypeScript check and Vite build.
+Wiring and testing the actual native/JavaScript subscription lifecycle and full
+SAM Audio UI remain outstanding.
+
+### Playback phone procedure for the forthcoming signed update
+
+1. Open Settings → Audio storage test → Audio playback test. Pick a local Opus
+   recording and tap Play. Lock the phone, use its media notification and headset
+   Play/Pause, and unplug headphones. Report whether playback/control/pause work.
+2. Seek, pause, leave and reopen the screen. Check the saved bookmark. Mark Done,
+   then Play again (zero); mark Unplayed (paused at zero). No next item should
+   start at natural end. Repeat with the M4B audiobook.
+3. While playing, use Notes normally, recreate the Activity and swipe Notes from
+   Recents. Separately force-stop Notes and reopen: nothing should autoplay;
+   explicit Play must resume the last saved checkpoint (up to 15 seconds lost).
+4. Ring a Notes alarm during playback: it must pause audio and remain audible.
+   Check existing note editing, sync and reminders. Record the exact app build.
+
+This procedure does not substitute for the separate storage/Syncthing deletion
+gate or the final full-library acceptance and one-week trial.

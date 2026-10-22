@@ -51,6 +51,7 @@ final class AudioStateFile {
 
     AudioLedger current() { return current; }
     String warning() { return warning; }
+    boolean recoveryRequired() { return recoveryRequired; }
     boolean writable() { return !recoveryRequired && !faulted; }
 
     void save(AudioLedger next) throws Failure {

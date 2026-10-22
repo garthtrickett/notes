@@ -274,6 +274,7 @@ final class Alarms {
     // ---- ringing ----
 
     static void fire(Context context, Entry e) {
+        AudioRuntime.pauseExisting();
         synchronized (LOCK) {
             remove(context, ALARMS, e.id);
             remove(context, SNOOZES, e.id);
