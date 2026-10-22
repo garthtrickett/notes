@@ -1,0 +1,73 @@
+package com.garthtrickett.notes;
+
+import android.app.PendingIntent;
+import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProvider;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.widget.RemoteViews;
+import android.widget.Toast;
+
+/** Home screen: Widgets > Notes > Back to my day. No configuration or login.
+ * Taps are handled natively, including when the Notes WebView isn't running.
+ * Only today's optional count is kept, in private app preferences; it isn't
+ * synced to the vault. Normal Android app backups may include those preferences.
+ * No alarm or polling service is created. Android refreshes idle widgets on its
+ * own schedule (which may lag midnight); every tap uses the current Bali day. */
+public class UrgeWidget extends AppWidgetProvider {
+    static final String RESIST = "com.garthtrickett.notes.urge.RESIST";
+    static final String UNDO = "com.garthtrickett.notes.urge.UNDO";
+
+    @Override public void onReceive(Context context, Intent intent) {
+        String action = intent.getAction();
+        if (RESIST.equals(action) || UNDO.equals(action)) {
+            AppWidgetManager manager = AppWidgetManager.getInstance(context);
+            // A PendingIntent left over from a removed widget must not count.
+            int source = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
+                AppWidgetManager.INVALID_APPWIDGET_ID);
+            boolean exists = false;
+            for (int id : manager.getAppWidgetIds(new ComponentName(context, UrgeWidget.class))) {
+                if (source == id) exists = true;
+            }
+            if (!exists) return;
+            UrgeCounter.adjust(context, System.currentTimeMillis(), RESIST.equals(action) ? 1 : -1);
+            refresh(context);
+            Toast.makeText(context, RESIST.equals(action) ? R.string.urge_widget_noted
+                : R.string.urge_widget_undone, Toast.LENGTH_SHORT).show();
+        } else if (Intent.ACTION_DATE_CHANGED.equals(action) || Intent.ACTION_TIME_CHANGED.equals(action)
+                || Intent.ACTION_TIMEZONE_CHANGED.equals(action)
+                || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            refresh(context);
+        } else {
+            super.onReceive(context, intent);
+        }
+    }
+
+    private static void refresh(Context context) {
+        AppWidgetManager manager = AppWidgetManager.getInstance(context);
+        int[] ids = manager.getAppWidgetIds(new ComponentName(context, UrgeWidget.class));
+        new UrgeWidget().onUpdate(context, manager, ids);
+    }
+
+    @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
+        int count = UrgeCounter.today(context, System.currentTimeMillis());
+        for (int id : ids) {
+            RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.urge_widget);
+            views.setTextViewText(R.id.urge_count, count == 0
+                ? context.getString(R.string.urge_widget_no_count)
+                : context.getResources().getQuantityString(R.plurals.urge_widget_count, count, count));
+            views.setBoolean(R.id.urge_undo, "setEnabled", count > 0);
+            views.setOnClickPendingIntent(R.id.urge_resist, click(context, id, RESIST));
+            views.setOnClickPendingIntent(R.id.urge_undo, click(context, id, UNDO));
+            manager.updateAppWidget(id, views);
+        }
+    }
+
+    private static PendingIntent click(Context context, int id, String action) {
+        Intent intent = new Intent(context, UrgeWidget.class).setAction(action)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
+        return PendingIntent.getBroadcast(context, id, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+}
