@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="10dp"
     android:background="@drawable/urge_widget_background">
 
     <TextView
@@ -30,11 +30,11 @@
         android:layout_weight="1"
         android:gravity="center"
         android:minHeight="48dp"
-        android:paddingHorizontal="6dp"
-        android:paddingVertical="6dp"
+        android:paddingHorizontal="4dp"
+        android:paddingVertical="4dp"
         android:background="@drawable/urge_widget_eating_off"
         android:textAllCaps="false"
-        android:layout_marginTop="6dp"
+        android:layout_marginTop="4dp"
         android:layout_marginBottom="4dp"
         android:text="@string/urge_widget_eating_off"
         android:textSize="14sp"

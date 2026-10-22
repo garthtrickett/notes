@@ -48,6 +48,18 @@ jobs:
         # shipping two readers that disagree.
         run: ./gradlew testReleaseUnitTest assembleRelease --no-daemon
 
+      - name: Upload Android test reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports-${{ github.run_number }}
+          path: |
+            android/app/build/reports/tests/testReleaseUnitTest/
+            android/app/build/reports/widget/
+          if-no-files-found: ignore
+          retention-days: 7
+
       # The Gradle signing block silently skips when the secrets are missing,
       # which would publish an uninstallable APK. Fail here instead.
       - name: Verify the APK is signed
