@@ -88,11 +88,11 @@ document and test a successor integration before implementing it.
 | Storage access survives reboot | Pending actual phone |
 | Deletion survives rescan/reconnect/app restart/phone reboot | Pending actual phone, both specimens |
 | Server originals and unrelated files remain unchanged | Private SHA-256 baseline of 76 pre-existing files recorded; after-deletion comparison pending |
-| Opus/M4B locked-screen playback and headset controls | Native spike built and host-tested; actual phone pending |
+| Opus/M4B locked-screen playback and headset controls | User confirms ordinary Opus playback and lock-screen Pause/Resume; M4B and headset tests pending |
 | Native checkpoints, marks, explicit cold resume, alarm coexistence | Implemented in native spike; host durability/cold-start tests pass; actual phone pending |
 | Full Audio UI and offline journey | Awaiting spike gates |
 | Automated regression and exact signed build | Record checks/build per delivered increment |
-| Complete phone acceptance and one-week usability trial | Pending; full goal remains active |
+| Complete phone acceptance and one-week usability trial | Pending; full outcome not yet achieved |
 
 ## Delivered storage diagnostic
 
@@ -139,8 +139,20 @@ screenshot are not copied into this public repository.
   source/version, package identity and original signing certificate.
 - APK: `com.garthtrickett.notes`, versionCode **60**, versionName **1.0.60**.
 - APK SHA-256: `629afee69c736b6e1f73b77c323f48a49806509dbd45513dc756a9881841a2a3`.
-- The user has been asked to install this update and test an ordinary Opus file
-  with the phone locked. Installation and playback are **not yet confirmed**.
+- In response to the build-60 installation/Opus test procedure, the user reports
+  **"Playback and lock-screen controls work"**. This confirms their ordinary Opus
+  recording keeps playing with the phone locked and lock-screen Pause/Resume
+  works. The phone's build line was not independently captured in this reply.
+
+### Phone playback observation received
+
+On 22 October the user confirmed playback and lock-screen controls in the
+requested Notes 1.0.60 Opus procedure. This is the first actual-phone playback
+pass. M4B playback, headset controls/unplug, seek/bookmark recovery, Done/Unplayed,
+natural end, Activity recreation/Recents/force-stop/reboot behaviour and Notes
+alarm coexistence remain unverified. The separate Syncthing deletion gate and
+full Audio UI acceptance also remain open. The next playback step is an ordinary
+M4B audiobook through the same Play → lock → Pause/Resume procedure.
 
 ## Playback/durability spike — source and host evidence
 
