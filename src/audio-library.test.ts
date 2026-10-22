@@ -103,3 +103,44 @@ describe("production Audio SAM flow", () => {
     expect([...root.querySelectorAll(".audio-row button")].some(b => b.textContent === "Play")).toBe(false);
   });
 });
+
+describe("Audio library search", () => {
+  it("searches title, author and filename while retaining the selected filters", async () => {
+    const { root, loop, emit, commands } = await setup();
+    loop.propose({ kind: "modeChanged", mode: "audio" }); await loop.flush();
+    const row = snapshot.rows[0]!;
+    emit({ ...snapshot, revision: 10, history: [], player: null, rows: [
+      { ...row, item: "lecture", version: "lecture-v1", durableId: null, listening: null,
+        title: "An evening lecture", author: "Ada Example", path: "youtube/first.opus" },
+      { ...row, item: "book", version: "book-v1", durableId: null, listening: null,
+        title: "Local book", author: null, path: "audiobooks/second.m4b" },
+    ] }); await loop.flush();
+    const input = root.querySelector<HTMLInputElement>('input[type="search"][aria-label="Search audio"]')!;
+    const search = async (query: string) => { input.value = query; input.dispatchEvent(new Event("input", { bubbles: true })); await loop.flush(); };
+    const titles = () => [...root.querySelectorAll(".audio-row h2")].map(h => h.textContent);
+    await search("  EVENING ada  "); expect(titles()).toEqual(["An evening lecture"]);
+    await search("SECOND.M4B"); expect(titles()).toEqual(["Local book"]);
+    loop.propose({ kind: "audioFilter", source: "youtube" }); await loop.flush();
+    expect(titles()).toEqual([]); expect(root.textContent).toContain("No recordings match your search in this view.");
+    [...root.querySelectorAll<HTMLButtonElement>(".audio-search button")].find(b => b.textContent === "Clear")!.click();
+    await loop.flush(); expect(titles()).toEqual(["An evening lecture"]);
+    expect(input.value).toBe(""); expect(loop.model.audio.source).toBe("youtube");
+    expect(commands.map(c => c.action)).toEqual(["refresh"]);
+  });
+  it("searches missing listening history without hiding pending deletion recovery", async () => {
+    const { root, loop, emit } = await setup();
+    loop.propose({ kind: "modeChanged", mode: "audio" }); await loop.flush();
+    emit({ ...snapshot, revision: 10, rows: [], player: null, history: [
+      { ...snapshot.history[0]!, id: "kept", title: "Kept history", author: "A speaker", availability: "MISSING" },
+      { ...snapshot.history[0]!, id: "pending", title: "Pending deletion", deletion: "INTENT" },
+    ] });
+    loop.propose({ kind: "audioFilter", filter: "DONE" }); await loop.flush();
+    const input = root.querySelector<HTMLInputElement>('input[aria-label="Search audio"]')!;
+    input.value = "speaker"; input.dispatchEvent(new Event("input", { bubbles: true })); await loop.flush();
+    expect(root.querySelectorAll(".audio-history").length).toBe(2);
+    expect(root.textContent).toContain("Kept history"); expect(root.textContent).toContain("Not downloaded on this phone");
+    input.value = "unmatched"; input.dispatchEvent(new Event("input", { bubbles: true })); await loop.flush();
+    expect(root.textContent).not.toContain("Kept history");
+    expect(root.querySelector(".audio-pending")?.textContent).toContain("Retry deletion");
+  });
+});
