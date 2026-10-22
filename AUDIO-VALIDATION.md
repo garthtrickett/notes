@@ -126,6 +126,19 @@ Cancellation, byte removal, rescan/reconnect/restart/reboot behaviour, and the
 phone's Syncthing configuration remain unverified. Private media titles in the
 screenshot are not copied into this public repository.
 
+## Delivered playback diagnostic
+
+- [PR #2](https://github.com/garthtrickett/notes/pull/2) merged as
+  `e8ceb87e2c5c3e2bb5b58f5723dd75e0276ff45e`.
+- [Signed build 60](https://github.com/garthtrickett/notes/actions/runs/39723311880)
+  passed native tests, signing and rolling-release publication after a runner
+  queue delay. The downloaded APK was separately checked against the release's
+  source/version, package identity and original signing certificate.
+- APK: `com.garthtrickett.notes`, versionCode **60**, versionName **1.0.60**.
+- APK SHA-256: `629afee69c736b6e1f73b77c323f48a49806509dbd45513dc756a9881841a2a3`.
+- The user has been asked to install this update and test an ordinary Opus file
+  with the phone locked. Installation and playback are **not yet confirmed**.
+
 ## Playback/durability spike — source and host evidence
 
 The playback branch has a native listening transition core, an immutable ledger of
@@ -181,9 +194,31 @@ the instrumentation-style threading mode permits the real extractor threads.
 The next run exposed an incorrect test expectation for filename fallback: both
 fixtures contain real title metadata. Correcting that expectation yielded the
 47-test pass. No production playback code changed for these checks. The new
-tests are additional to the 44 tests in the source of forthcoming build 60.
+tests are additional to the 44 tests in the source of build 60.
 
-### Playback phone procedure for the forthcoming signed update
+### Native snapshot connection follow-up
+
+The `audio-native-bridge` branch now exposes native snapshot/refresh methods and
+an `audioState` subscription. It sends metadata, history and player position with
+the native epoch/root-generation/revision stamp; provider grants, document IDs,
+fingerprints and audio bytes remain native. Connecting reads saved state without
+scanning or starting playback. WebView teardown removes the native subscriber
+without owning or stopping the media service. No ordinary-file deletion or full
+Audio UI is enabled by this branch.
+
+Host evidence: the complete web suite passes 836 tests, TypeScript check and
+build; the native suite passes 51 tests and release APK packaging. New tests cover
+subscription-before-handshake ordering, epoch/root changes, same-process
+reconnection, failed/malformed messages, listener ownership, cancellation during
+registration/handshake and unsupported browsers. Android tests exercise the
+actual serializer and plugin lifetime against an empty Media3 service, not
+audible background playback. A shared JSON snapshot fixture additionally checks
+that the native serializer and web parser agree on the wire contract.
+The shared-fixture assertions pass in a focused native follow-up; the final web
+typecheck/build passes after fixing a test-only expected-value type annotation.
+This branch is not in build 60; command wiring and full UI remain outstanding.
+
+### Playback phone procedure for signed build 60
 
 1. Open Settings → Audio storage test → Audio playback test. Pick a local Opus
    recording and tap Play. Lock the phone, use its media notification and headset

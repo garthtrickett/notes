@@ -1,7 +1,8 @@
 # Audio library in Notes
 
-Status: storage/deletion diagnostic implemented; actual-phone evidence pending.
-Playback, library UI and release acceptance remain behind the evidence gates.
+Status: storage/deletion and native playback diagnostics delivered in signed
+builds 59 and 60. Initial phone storage access is confirmed; deletion, playback,
+full library UI and release acceptance remain behind the evidence gates.
 Current implementation and test evidence: `AUDIO-VALIDATION.md`.
 Date: 22 October 2026.
 Source baseline inspected: `54fe3dcd101a2fb050ca4f7eff495d8ad7c6d04f`.
@@ -31,8 +32,9 @@ No recommendations, autoplay, streaks, browsing feed or consumption targets.
   as base64 blobs or GitHub attachments.
 - Android is Capacitor with Java plugins registered in `MainActivity.java`.
   Existing plugin patterns include `AlarmPlugin` and `BeeperPlugin`.
-- `android/variables.gradle` currently targets SDK 36 with minimum SDK 24.
-  There is no existing playback service or Media3 dependency.
+- `android/variables.gradle` targets SDK 36 with minimum SDK 24. The reviewed
+  baseline had no playback service or Media3 dependency; the native spike now
+  adds these. See `AUDIO-VALIDATION.md` for delivered builds and remaining gates.
 - `DECISIONS.md` requires small interfaces, typed failures, files as durable
   truth, and effects outside pure presentation.
   Its historical descriptions must be checked against current source.
