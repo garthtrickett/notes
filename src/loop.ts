@@ -27,6 +27,7 @@ import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
 import { createTaskCache, rollRepeats, setReminder, tasksInVault, type TaskRef } from "./tasks.ts";
+import { advanceTaskLinks, guardedTasks } from "./task-links.ts";
 import { askToRemind, reminderSetKey, remindersDeliverable, knownShas, syncAlarms, syncTaskReminders, syncWebReminders } from "./notify.ts";
 import type { CheckinSlot } from "./checkins.ts";
 import { createMedia } from "./media.ts";
@@ -72,6 +73,7 @@ export interface Loop {
   readonly model: Model;
   readonly propose: (p: Proposal) => void;
   readonly flush: () => Promise<void>;
+  readonly whenSaved: () => Promise<boolean>;
   // Focus is not model state, so it is not a proposal. The loop holds the
   // editor, so it is the only thing that can offer this.
   readonly enterEditor: () => void;
@@ -563,8 +565,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let lastAlarmKey: string | null = null;
   const napReminders = () => {
     if (!model.hydrated || !remindersDeliverable()) return;
-    const refs: TaskRef[] = [];
-    for (const group of tasksInVault(model.notes, tasks)) refs.push(...group.refs);
+    const refs = guardedTasks(tasksInVault(model.notes, tasks).flatMap(group => group.refs));
     const key = reminderSetKey(refs);
     // Alarms are separate from notifications. The phone takes the whole set
     // and diffs it itself, so this runs every time the set changes — that is
@@ -624,6 +625,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   };
 
   const nap = () => {
+    if (model.hydrated) {
+      const edits = advanceTaskLinks(model.notes.values(), now(), tasksInVault(model.notes, tasks).flatMap(g => g.refs));
+      if (edits.size > 0) { propose({ kind: "taskLinksAdvanced", edits }); return; }
+    }
     // Before anything is saved or scheduled, so neither sees a repeating task
     // ticked for the moment before it reopens.
     if (napRepeats()) return;
@@ -769,7 +774,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         model.retryAt = now() + model.retryDelay;
       }
     }
-    const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && model.modal.draft.date !== "";
+    const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && (model.modal.draft.date !== "" || Boolean(model.modal.draft.after));
     const rejection = present(model, p);
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed")) track(receivePhotos());
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed" || p.kind === "persisted")) track(receiveLookups());
@@ -861,6 +866,21 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     throw new Error("Loop did not settle");
   };
 
+  // Production durability barrier for a native inbox acknowledgement. Unlike
+  // the test-only flush it runs in a release build too. Waiting is driven by
+  // actual tracked actions, not a delay or a busy loop.
+  const whenSaved = async (): Promise<boolean> => {
+    while (!disposed) {
+      const observed = idle;
+      await observed;
+      await new Promise<void>(resolve => queueMicrotask(resolve));
+      if (model.persistBlocked) return false;
+      if (observed === idle && !model.persisting)
+        return model.hydrated && ![...model.notes.values()].some(n => n.dirty);
+    }
+    return false;
+  };
+
   // The caret at the top, because the shortcut exists to start writing — not to
   // resume wherever the last visit left off.
   const enterEditor = () => cm.focusAt(0);
@@ -902,7 +922,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     root.querySelectorAll("[data-photo-picker]").forEach(input => input.remove());
     void audioConnection?.disconnect();
   };
-  return { model, propose, flush, enterEditor, find, dispose };
+  return { model, propose, flush, whenSaved, enterEditor, find, dispose };
 };
 
 export const boot = async (

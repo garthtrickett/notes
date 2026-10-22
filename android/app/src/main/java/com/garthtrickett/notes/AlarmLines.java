@@ -6,6 +6,8 @@ import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.json.JSONObject;
+import org.json.JSONException;
 
 // Which lines of a note want an alarm, read on the phone while the app is
 // closed (VaultWatch). The app's own reader is src/tasks.ts + src/reminders.ts
@@ -54,6 +56,7 @@ final class AlarmLines {
         Pattern.compile("^\\s*(?:[-*+]|\\d{1,9}[.)])\\s+\\[([ xX])\\](.*)$");
 
     private static final Pattern FENCE = Pattern.compile("^ {0,3}(```|~~~)");
+    private static final Pattern META = Pattern.compile("\\s*<!-- notes-task (\\{[^\\r\\n]*\\}) -->\\s*$");
 
     private static final int DEFAULT_HOUR = 9;
     private static final int TASK_ID_FLOOR = 1000;
@@ -76,6 +79,23 @@ final class AlarmLines {
             if (!task.matches()) continue;
             if (!" ".equals(task.group(1))) continue;
             String raw = task.group(2);
+            String linkedId = null;
+            Matcher metadata = META.matcher(raw);
+            if (metadata.find()) {
+                try {
+                    JSONObject link = new JSONObject(metadata.group(1));
+                    if (!(link.opt("id") instanceof String) || !link.getString("id").matches("[a-zA-Z0-9_-]{1,64}")) continue;
+                    if (link.has("after") && (!(link.opt("after") instanceof String) || !link.getString("after").matches("[a-zA-Z0-9_-]{1,64}"))) continue;
+                    boolean malformed = false;
+                    for (String key : new String[]{"ready", "alarm"}) if (link.has(key) && !(link.opt(key) instanceof Boolean)) malformed = true;
+                    for (String key : new String[]{"seen", "completed"}) if (link.has(key) && (!(link.opt(key) instanceof String) || !link.getString(key).matches("[a-zA-Z0-9:._-]{1,128}"))) malformed = true;
+                    if (link.has("round") && (!(link.opt("round") instanceof Number) || link.optDouble("round") < 0 || link.optDouble("round") != Math.floor(link.optDouble("round")) || link.optDouble("round") > 9007199254740991d)) malformed = true;
+                    if (malformed) continue;
+                    linkedId = link.getString("id");
+                    if (link.has("after") && !link.optBoolean("ready")) continue;
+                } catch (JSONException invalid) { continue; }
+                raw = raw.substring(0, metadata.start());
+            } else if (raw.contains("<!-- notes-task")) continue;
             Matcher stamp = STAMP.matcher(raw);
             if (!stamp.find()) continue;
             if (!"!".equals(stamp.group(6))) continue;
@@ -83,7 +103,7 @@ final class AlarmLines {
             if (at == null || at <= now) continue;
             String title = (raw.substring(0, stamp.start()) + raw.substring(stamp.end()))
                 .replaceAll("\\s{2,}", " ").trim();
-            found.add(new Found(id(path, title), at, title, path, stamp.group(7) != null));
+            found.add(new Found(linkedId == null ? id(path, title) : linkId(linkedId), at, title, path, stamp.group(7) != null));
         }
         return found;
     }
@@ -119,4 +139,6 @@ final class AlarmLines {
         }
         return (int) (TASK_ID_FLOOR + (Math.abs((long) h) % (TASK_ID_CEILING - TASK_ID_FLOOR)));
     }
+
+    static int linkId(String taskId) { return id("", "notes-task:" + taskId); }
 }

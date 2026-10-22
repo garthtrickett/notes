@@ -1302,3 +1302,10 @@ body {
 .audio-dialog { max-width: 440px; width: 100%; max-height: 90dvh; overflow-y: auto; padding: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 .audio-dialog h2 { margin-top: 0; }
 @media (max-width: 380px) { .audio-clock { white-space: normal; text-align: right; } .audio-player-controls { gap: 4px; } .audio-player-controls button { padding: 8px; } }
+/* A follow-up stays visible so its order can be understood without opening
+   another screen. It is not offered as something to do before its cue. */
+.task-dependency { display: block; font-size: .78em; opacity: .7; margin-top: .25rem; }
+.task-waiting { font-size: .8em; opacity: .65; }
+.waiting-task > input { opacity: .5; }
+.remove-dependency { font-size: .75em; min-height: 44px; padding: .65rem .4rem; }
+.task-form [hidden] { display: none; }

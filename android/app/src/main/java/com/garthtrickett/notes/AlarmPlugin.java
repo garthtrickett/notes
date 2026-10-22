@@ -45,6 +45,7 @@ public class AlarmPlugin extends Plugin {
             // Absent from an app older than this plugin, which sent no repeats.
             JSArray live = call.getArray("live", new JSArray());
             scheduled = Alarms.sync(getContext(), alarms, live, System.currentTimeMillis());
+            Alarms.links(getContext(), call.getArray("links", new JSArray()));
             // What the app already has, so the background job only fetches
             // notes that changed after this.
             JSObject shas = call.getObject("shas");
@@ -97,6 +98,15 @@ public class AlarmPlugin extends Plugin {
             return;
         }
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void acknowledge(PluginCall call) {
+        JSArray receipts = call.getArray("receipts");
+        if (receipts == null) { call.reject("No alarm receipts were given."); return; }
+        try { Alarms.acknowledge(getContext(), receipts); }
+        catch (RuntimeException failed) { call.reject("Alarm answers could not be acknowledged."); return; }
+        call.resolve();
     }
 
     // A press while the app is alive behind the alarm screen. The app takes

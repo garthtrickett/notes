@@ -21,6 +21,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.UUID;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -50,9 +52,20 @@ final class Alarms {
     private static final String ALARMS = "alarms";
     private static final String SNOOZES = "snoozes";
     private static final String ANSWERS = "answers";
+    private static final String LINKS = "links";
+    private static final String NEXT_LINKS = "links-after-ack";
     private static final Object LOCK = new Object();
 
     private Alarms() {}
+
+    static void links(Context context, JSONArray nodes) {
+        synchronized (LOCK) {
+            // A queued release belongs to the native snapshot until the app
+            // has collected it. A stale foreground paint must not undo it.
+            String key = readArray(context, ANSWERS).length() == 0 ? LINKS : NEXT_LINKS;
+            prefs(context).edit().putString(key, nodes.toString()).commit();
+        }
+    }
 
     static final class Entry {
         final int id;
@@ -134,6 +147,15 @@ final class Alarms {
     // every other alarm is left exactly as it was.
     static int replacePaths(Context context, Map<String, List<Entry>> read, Set<String> gone, long now) {
         synchronized (LOCK) {
+            // A remotely changed/deleted note invalidates its cached links.
+            // Reopening Notes installs the current graph. Never execute a stale
+            // dependency just because its old alarm snapshot still exists.
+            JSONArray nodes = readArray(context, LINKS), keptNodes = new JSONArray();
+            for (int i = 0; i < nodes.length(); i++) {
+                JSONObject n = nodes.optJSONObject(i);
+                if (n != null && !read.containsKey(n.optString("path")) && !gone.contains(n.optString("path"))) keptNodes.put(n);
+            }
+            prefs(context).edit().putString(LINKS, keptNodes.toString()).apply();
             Map<Integer, Entry> wanted = new LinkedHashMap<>();
             for (Entry e : read(context, ALARMS)) {
                 if (read.containsKey(e.path) || gone.contains(e.path)) continue;
@@ -161,6 +183,19 @@ final class Alarms {
     // background job reads notes, not the app's state), and then every snooze
     // still to ring is kept until the app's next sync decides.
     private static int apply(Context context, Map<Integer, Entry> wanted, Map<Integer, Long> stamps, long now) {
+        // Like a snooze, a freshly released step is newer than the Markdown
+        // snapshot until the app has replayed its activation receipt. A vault
+        // poll must not silently cancel it in that interval.
+        JSONArray answers = readArray(context, ANSWERS);
+        for (Entry held : read(context, ALARMS)) {
+            if (held.at <= now) continue;
+            for (int i = 0; i < answers.length(); i++) {
+                JSONObject a = answers.optJSONObject(i);
+                if (a != null && "activate".equals(a.optString("kind")) && a.optBoolean("alarm")
+                    && held.path.equals(a.optString("path")) && held.title.equals(a.optString("title"))
+                    && held.stamp == a.optLong("at")) wanted.put(held.id, held);
+            }
+        }
         List<Entry> snoozes = new ArrayList<>();
         for (Entry s : read(context, SNOOZES)) {
             boolean held;
@@ -185,18 +220,45 @@ final class Alarms {
         return kept.size();
     }
 
-    // Done and Snooze presses since the app last asked. Taking them is the
-    // app's promise to write them into the notes, so the snoozes they protect
-    // are released too: the next set the app sends already has the new stamp.
-    // A repeating task's snooze is not written into the note, so it stays.
+    // Reading is not acknowledgement: a killed WebView must not lose a Done
+    // between the bridge reply and IndexedDB commit. Legacy queued presses get
+    // receipt IDs here, before the app sees them.
     static JSONArray take(Context context) {
         synchronized (LOCK) {
-            JSONArray answers = readArray(context, ANSWERS);
-            List<Entry> held = new ArrayList<>();
-            for (Entry s : read(context, SNOOZES)) if (s.repeat) held.add(s);
-            prefs(context).edit().remove(ANSWERS).apply();
-            write(context, SNOOZES, held);
+            JSONArray stored = readArray(context, ANSWERS), answers = new JSONArray();
+            for (int i = 0; i < stored.length(); i++) {
+                JSONObject answer = stored.optJSONObject(i);
+                if (answer == null) continue;
+                try {
+                    if (!answer.has("receipt")) answer.put("receipt", UUID.randomUUID().toString());
+                    answers.put(answer);
+                } catch (JSONException impossible) { /* finite strings */ }
+            }
+            prefs(context).edit().putString(ANSWERS, answers.toString()).commit();
             return answers;
+        }
+    }
+
+    static void acknowledge(Context context, JSONArray receipts) {
+        synchronized (LOCK) {
+            Set<String> ids = new HashSet<>();
+            for (int i = 0; i < receipts.length(); i++) ids.add(receipts.optString(i));
+            JSONArray kept = new JSONArray(), answers = readArray(context, ANSWERS);
+            for (int i = 0; i < answers.length(); i++) {
+                JSONObject a = answers.optJSONObject(i);
+                if (a != null && !ids.contains(a.optString("receipt"))) kept.put(a);
+            }
+            SharedPreferences.Editor edit = prefs(context).edit().putString(ANSWERS, kept.toString());
+            if (kept.length() == 0 && prefs(context).contains(NEXT_LINKS))
+                edit.putString(LINKS, prefs(context).getString(NEXT_LINKS, "[]")).remove(NEXT_LINKS);
+            edit.commit();
+            // Non-repeating snoozes are now represented by saved Markdown.
+            // Keep all snoozes while any newer press is still waiting.
+            if (kept.length() == 0) {
+                List<Entry> held = new ArrayList<>();
+                for (Entry s : read(context, SNOOZES)) if (s.repeat) held.add(s);
+                write(context, SNOOZES, held);
+            }
         }
     }
 
@@ -386,7 +448,36 @@ final class Alarms {
                 }
                 JSONArray answers = readArray(context, ANSWERS);
                 answers.put(press);
-                prefs(context).edit().putString(ANSWERS, answers.toString()).apply();
+                JSONArray nodes = readArray(context, LINKS);
+                JSONArray releases = new JSONArray();
+                try {
+                    if ("done".equals(kind)) {
+                        TaskLinks.Advanced advanced = TaskLinks.complete(nodes, e.id, e.path, e.title, e.stamp, now);
+                        nodes = advanced.nodes;
+                        releases = advanced.releases;
+                        if (advanced.sourceId != null) press.put("taskId", advanced.sourceId).put("token", advanced.token);
+                        for (int i = 0; i < releases.length(); i++) answers.put(releases.getJSONObject(i));
+                    } else if (!e.repeat) {
+                        nodes = TaskLinks.snooze(nodes, e.path, e.title, e.stamp, press.getLong("snoozeTo"));
+                    }
+                } catch (JSONException invalidLinks) {
+                    // Optional task ordering cannot swallow an ordinary Done
+                    // or Snooze if a stored snapshot became unreadable.
+                    nodes = new JSONArray();
+                    releases = new JSONArray();
+                }
+                // The press and its follow-ups are one durable handoff. The
+                // WebView can later replay the entire sequence in order.
+                prefs(context).edit().putString(ANSWERS, answers.toString()).putString(LINKS, nodes.toString()).commit();
+                for (int i = 0; i < releases.length(); i++) {
+                    JSONObject r = releases.getJSONObject(i);
+                    if (!r.optBoolean("alarm")) continue;
+                    long at = r.getLong("at");
+                    String path = r.getString("path"), title = r.getString("title");
+                    Entry followup = new Entry(AlarmLines.linkId(r.getString("taskId")), at, title, path, at, false);
+                    add(context, ALARMS, followup);
+                    schedule(context, followup);
+                }
             } catch (JSONException impossible) {
                 // put() only throws for non-finite doubles; there are none here.
             }

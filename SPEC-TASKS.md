@@ -1,5 +1,71 @@
 # Tasks aggregate — spec
 
+## After completing another task (October 2026)
+
+Tasks → New task → **After completing** selects one unfinished predecessor
+from any live note. The follow-up waits visibly in Tasks; its checkbox and
+ordinary reminder picker are disabled until release. It has no independent due
+date or calendar repeat. Optional **Ring an alarm after completion** rings at
+the next whole minute; without it, the follow-up simply becomes available.
+**Unlink** removes the dependency and leaves an ordinary task. To choose a
+different predecessor, unlink and create the replacement follow-up.
+
+Ticking the predecessor in Tasks, the Markdown editor, or Android's alarm Done
+releases the follow-up. Snooze never means completion. A repeating predecessor
+releases it once per completed occurrence, and retains its original schedule.
+A completed follow-up reopens on the next occurrence; an unfinished one stays
+as a single task without moving its existing reminder or accumulating copies.
+Missing, archived, duplicate or circular task links wait with an explanation.
+Unchecking a completed one-off predecessor rearms it for a new occurrence.
+
+Only linked tasks receive durable IDs, in a trailing HTML comment:
+
+```md
+- [ ] Flashcards @2026-10-23 08:00! every day <!-- notes-task {"id":"flashcards"} -->
+- [ ] Today review <!-- notes-task {"id":"today","after":"flashcards","alarm":true,"ready":false} -->
+```
+
+The app maintains completion/consumption tokens in the same comment. Stable
+IDs survive title and note renames; copying an ID is ambiguous and blocks the
+affected links rather than choosing a copy. Comments are hidden in rendered
+Markdown and task titles, but remain editable text in the source. The original
+offset identity still applies to ordinary tasks. No new task database, network
+service, manifest permission or package is introduced.
+Linked alarm IDs use the durable task ID too: equally named steps keep separate
+alarms, and Done identifies the exact step even if its label matches another.
+
+`task-links.ts` owns validation, identity assignment and completion processing.
+The loop advances links before rolling calendar repeats, persisting or
+scheduling. Related note edits are presented together and use the existing
+multi-note IndexedDB transaction. Synced completed tasks use their scheduled
+occurrence rather than the observing device's clock, avoiding duplicate release
+when a second device sees the same completion. The latest completed occurrence
+is retained; missed days are not replayed as a backlog.
+
+Android receives a validated snapshot whenever the app syncs alarms. Alarm Done
+can schedule the next step offline with the WebView closed. Native presses and
+activation receipts are queued in order and reconciled into Markdown on the
+next opening; completed follow-ups are not reopened by replaying a receipt.
+Reading that queue does not consume it: receipts are acknowledged only after
+local persistence settles successfully. A failed save or interrupted bridge
+handoff leaves them on Android for retry. Cached graph updates wait for that
+acknowledgement too, and pending native activations survive stale vault polls.
+Reboot/update restoration uses the existing alarm storage. Android permissions
+still determine delivery; this feature does not grant them.
+
+Closed-app execution requires the graph to have reached that phone first.
+Remote edits to a note invalidate its cached dependency snapshot; open Notes
+to sync and install the new graph. A completion on another device is processed
+when this app syncs; a closed browser cannot deliver alarms. These are not
+instant cross-device push notifications. Physical phone qualification remains
+separate from host browser and native JVM tests.
+
+Tests cover the form and offline persistence/reload, repeat rollover and
+rearming, chains across notes, missing/copy/cycle guards, Markdown/native alarm
+reader parity, native Done and Snooze, closed-app chained alarms and ordered
+receipt replay. Existing audio, widget, image and updater regression checks
+remain required.
+
 ## Task creation form (October 2026)
 
 The Tasks page now offers **New task**, including in an empty vault. Its dialog
