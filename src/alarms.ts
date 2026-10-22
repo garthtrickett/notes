@@ -10,9 +10,14 @@
 // a new stamp, both ordinary edits that sync like any other.
 
 import { flipTask, setReminder, tasksIn } from "./tasks.ts";
+import { activateTask, completionToken } from "./task-links.ts";
 
 export interface AlarmAnswer {
-  readonly kind: "done" | "snooze";
+  readonly kind: "done" | "snooze" | "activate";
+  readonly taskId?: string;
+  readonly sourceId?: string;
+  readonly sourcePath?: string;
+  readonly token?: string;
   readonly path: string;
   // The task as it read when the alarm was scheduled: its title and the stamp
   // it rang at. Together they find the line again without stored offsets.
@@ -31,12 +36,20 @@ export const parseAnswers = (raw: unknown): AlarmAnswer[] => {
   const answers: AlarmAnswer[] = [];
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
-    const { kind, path, title, at, snoozeTo } = item as Record<string, unknown>;
-    if (kind !== "done" && kind !== "snooze") continue;
+    const { kind, path, title, at, snoozeTo, taskId, sourceId, sourcePath, token } = item as Record<string, unknown>;
+    if (kind !== "done" && kind !== "snooze" && kind !== "activate") continue;
     if (typeof path !== "string" || typeof title !== "string") continue;
     if (typeof at !== "number" || !Number.isFinite(at)) continue;
+    if (kind === "activate") {
+      if (typeof taskId !== "string" || typeof sourceId !== "string" || typeof sourcePath !== "string" || typeof token !== "string" || !/^[a-zA-Z0-9:._-]{1,128}$/.test(token)) continue;
+      answers.push({ kind, path, title, at, snoozeTo: null, taskId, sourceId, sourcePath, token });
+      continue;
+    }
     if (kind === "snooze" && (typeof snoozeTo !== "number" || !Number.isFinite(snoozeTo))) continue;
-    answers.push({ kind, path, title, at, snoozeTo: kind === "snooze" ? (snoozeTo as number) : null });
+    if (kind === "done" && (taskId !== undefined || token !== undefined)) {
+      if (typeof taskId !== "string" || typeof token !== "string" || !/^[a-zA-Z0-9:._-]{1,128}$/.test(token)) continue;
+      answers.push({ kind, path, title, at, snoozeTo: null, taskId, token });
+    } else answers.push({ kind, path, title, at, snoozeTo: kind === "snooze" ? (snoozeTo as number) : null });
   }
   return answers;
 };
@@ -58,8 +71,20 @@ export const applyAnswers = (
   for (const answer of answers) {
     const body = changed.get(answer.path) ?? bodyOf(answer.path);
     if (body === undefined) continue;
+    if (answer.kind === "activate") {
+      const sourcePath = answer.sourcePath ?? "";
+      const sourceBody = changed.get(sourcePath) ?? bodyOf(sourcePath);
+      const sources = sourceBody === undefined ? [] : tasksIn(sourceBody, sourcePath).filter(r => r.link?.id === answer.sourceId);
+      if (sources.length !== 1) continue;
+      const source = sources[0]!;
+      if (source.link?.completed !== answer.token && !(source.done && completionToken(source) === answer.token)) continue;
+      const next = activateTask(body, answer.path, answer.taskId ?? "", answer.sourceId ?? "", answer.token ?? "", answer.at, answer.title);
+      if (next !== body) changed.set(answer.path, next);
+      continue;
+    }
     const ref = tasksIn(body, answer.path).find(
-      (r) => !r.done && r.title === answer.title && r.remindAt === answer.at,
+      (r) => !r.done && r.title === answer.title && r.remindAt === answer.at
+        && (answer.taskId === undefined || (r.link?.id === answer.taskId && completionToken(r) === answer.token)),
     );
     if (ref === undefined) continue;
     // A repeating task keeps its stamp through a snooze. Moving it would move

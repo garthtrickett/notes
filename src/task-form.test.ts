@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getAll, openDb } from "./idb.ts";
 import { boot, type Loop } from "./loop.ts";
 import { tasksIn } from "./tasks.ts";
+import { taskChoice } from "./task-links.ts";
+import { parseAnswers } from "./alarms.ts";
 
 let db: IDBDatabase;
 let root: HTMLElement;
@@ -13,7 +15,7 @@ const button = (label: string) => [...root.querySelectorAll("button")].find((b) 
 const field = (name: string) => root.querySelector<HTMLInputElement>(`[name="${name}"]`)!;
 const fill = async (loop: Loop, name: string, value: string) => {
   field(name).value = value;
-  field(name).dispatchEvent(new Event(name === "repeat" ? "change" : "input", { bubbles: true }));
+  field(name).dispatchEvent(new Event(name === "repeat" || name === "after" ? "change" : "input", { bubbles: true }));
   await settle(loop);
 };
 const start = async () => {
@@ -43,6 +45,69 @@ beforeEach(async () => {
 afterEach(() => db.close());
 
 describe("task creation dialog", () => {
+  it("creates a waiting alarm offline, releases on Done, rolls daily, and survives reloading", async () => {
+    const loop = await start();
+    loop.propose({ kind: "created", path: "morning.md" });
+    loop.propose({ kind: "edited", path: "morning.md", body: "- [ ] Japanese @2026-10-17 08:00! every day\n" });
+    await settle(loop);
+    const parent = tasksIn(loop.model.notes.get("morning.md")!.body, "morning.md")[0]!;
+    await fill(loop, "title", "Today review");
+    await fill(loop, "after", taskChoice(parent));
+    expect(field("date").disabled).toBe(true);
+    expect(field("alarm").disabled).toBe(false);
+    field("alarm").click();
+    await settle(loop);
+    await submit(loop);
+    expect(root.querySelector(".task-waiting")?.textContent).toBe("Waiting");
+    expect(root.querySelector<HTMLInputElement>('[aria-label="Tick off Today review"]')?.disabled).toBe(true);
+    const persisted = await getAll(db);
+    expect(persisted.find(n => n.path === "morning.md")?.body).toContain("notes-task");
+    expect(persisted.find(n => n.path === "reminders.md")?.body).toContain('"after":');
+    loop.propose({ kind: "alarmAnswered", answers: parseAnswers([{ kind: "done", path: "morning.md", title: "Japanese", at: parent.remindAt }]) });
+    await settle(loop);
+    expect(root.querySelector<HTMLInputElement>('[aria-label="Tick off Today review"]')?.disabled).toBe(false);
+    const child = tasksIn(loop.model.notes.get("reminders.md")!.body, "reminders.md")[0]!;
+    expect(child).toMatchObject({ done: false, alarm: true, link: { ready: true } });
+    expect(child.remindAt).toBe(new Date(2026, 9, 17, 9, 1).getTime());
+    expect(tasksIn(loop.model.notes.get("morning.md")!.body, "morning.md")[0]?.remindAt).toBe(new Date(2026, 9, 18, 8).getTime());
+    const before = (await getAll(db)).map(n => [n.path, n.body]);
+    loop.dispose();
+    const reloaded = await boot({ db, github: null, shrink: async () => new ArrayBuffer(0), now: () => new Date(2026, 9, 17, 9).getTime(), schedule: (_ms, fire) => void queueMicrotask(fire) }, root);
+    await settle(reloaded);
+    expect((await getAll(db)).map(n => [n.path, n.body])).toEqual(before);
+    reloaded.dispose();
+  });
+
+  it("refuses a changed predecessor without creating a partial task or changing its note", async () => {
+    const loop = await start();
+    loop.propose({ kind: "created", path: "morning.md" });
+    loop.propose({ kind: "edited", path: "morning.md", body: "- [ ] Japanese\n" });
+    await settle(loop);
+    await fill(loop, "title", "Today review");
+    await fill(loop, "after", taskChoice(tasksIn("- [ ] Japanese\n", "morning.md")[0]!));
+    loop.propose({ kind: "edited", path: "morning.md", body: "- [x] Japanese\n" });
+    await settle(loop);
+    await submit(loop);
+    expect(root.querySelector(".task-form-error")?.textContent).toContain("changed");
+    expect(loop.model.notes.has("reminders.md")).toBe(false);
+    expect(loop.model.notes.get("morning.md")?.body).toBe("- [x] Japanese\n");
+    loop.dispose();
+  });
+
+  it("can remove a dependency and make a waiting task available", async () => {
+    const loop = await start();
+    loop.propose({ kind: "created", path: "morning.md" });
+    loop.propose({ kind: "edited", path: "morning.md", body: "- [ ] Japanese\n" });
+    await settle(loop);
+    await fill(loop, "title", "Today review");
+    await fill(loop, "after", taskChoice(tasksIn("- [ ] Japanese\n", "morning.md")[0]!));
+    await submit(loop);
+    root.querySelector<HTMLButtonElement>('[aria-label="Remove dependency from Today review"]')!.click();
+    await settle(loop);
+    expect(root.querySelector<HTMLInputElement>('[aria-label="Tick off Today review"]')?.disabled).toBe(false);
+    expect(tasksIn(loop.model.notes.get("reminders.md")!.body, "reminders.md")[0]?.link?.after).toBeUndefined();
+    loop.dispose();
+  });
   it("is available in an empty vault, creates and persists Markdown offline, and stays in Tasks", async () => {
     const loop = await start();
     expect(document.activeElement).toBe(field("title"));

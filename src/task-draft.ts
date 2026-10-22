@@ -10,10 +10,11 @@ export interface TaskDraft {
   readonly time: string;
   readonly alarm: boolean;
   readonly repeat: string;
+  readonly after?: string;
 }
 
 export const emptyTaskDraft: TaskDraft = {
-  path: "reminders.md", title: "", description: "", date: "", time: "09:00", alarm: false, repeat: "",
+  path: "reminders.md", title: "", description: "", date: "", time: "09:00", alarm: false, repeat: "", after: "",
 };
 
 export const TASK_REPEATS = [
@@ -26,9 +27,11 @@ export const taskMarkdown = (draft: TaskDraft): Result<string, string> => {
   if (title === "") return err("Give the task a title.");
   if (/[\r\n]/.test(title)) return err("Keep the title on one line; use Description for details.");
   if (reminderIn(title) !== null) return err("Use the due date fields instead of an @date in the title.");
+  if (/<!--\s*notes-task/.test(title) || /<!--\s*notes-task/.test(draft.description)) return err("Use the task controls to set task links.");
+  if (draft.after && (draft.date !== "" || draft.repeat !== "")) return err("A follow-up uses its predecessor’s completion instead of a due date or repeat.");
   let stamp = "";
   if (draft.date === "") {
-    if (draft.alarm || draft.repeat !== "") return err("Choose a due date for an alarm or repeating task.");
+    if ((draft.alarm && !draft.after) || draft.repeat !== "") return err("Choose a due date for an alarm or repeating task.");
   } else {
     const time = draft.time || "09:00";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date) || !/^\d{2}:\d{2}$/.test(time)) {

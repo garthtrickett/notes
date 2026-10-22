@@ -1,3 +1,5 @@
+import { stripTaskMeta, taskMetaSuffix } from "./task-meta.ts";
+
 // When a task wants to be brought up again.
 //
 // The time is written into the task line — `- [ ] call the bank @2026-09-11
@@ -63,7 +65,7 @@ export const reminderIn = (title: string): number | null => {
 
 // What the row should read once the machinery is taken out of it.
 export const titleWithout = (title: string): string =>
-  title.replace(PATTERN, "").replace(/\s{2,}/g, " ").trim();
+  stripTaskMeta(title).replace(PATTERN, "").replace(/\s{2,}/g, " ").trim();
 
 const two = (n: number): string => String(n).padStart(2, "0");
 
@@ -87,12 +89,14 @@ export const withReminder = (
   alarm = false,
 ): string => {
   const bare = titleWithout(title);
-  if (at === null) return bare;
+  const meta = taskMetaSuffix(title);
+  const keepMeta = (text: string) => meta === "" ? text : `${text} ${meta}`;
+  if (at === null) return keepMeta(bare);
   // Moving the time keeps the repeat; it is part of the task, not of the time.
   // Clearing the reminder takes it too, since a repeat has nothing to repeat.
   const repeat = repeatIn(title);
   const stamp = repeat === null ? stampOf(at, alarm) : `${stampOf(at, alarm)} every ${repeat}`;
-  return bare === "" ? stamp : `${bare} ${stamp}`;
+  return keepMeta(bare === "" ? stamp : `${bare} ${stamp}`);
 };
 
 // The quick choices the Tasks tab offers, resolved against an injected now.

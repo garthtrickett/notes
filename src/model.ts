@@ -29,6 +29,8 @@ import {
 } from "./paths.ts";
 import { describeLocal, type LocalError } from "./local-error.ts";
 import { applyAnswers, type AlarmAnswer } from "./alarms.ts";
+import { linkTask } from "./task-links.ts";
+import { withTaskLink } from "./task-meta.ts";
 import { taskMarkdown, type TaskDraft } from "./task-draft.ts";
 import { tasksIn } from "./tasks.ts";
 import { appendLookup, type LookupCapture } from "./lookup-capture.ts";
@@ -238,6 +240,8 @@ export type Proposal = AudioProposal
   | { readonly kind: "created"; readonly path: string }
   | { readonly kind: "taskDraftChanged"; readonly patch: Partial<TaskDraft> }
   | { readonly kind: "taskAdded" }
+  | { readonly kind: "taskLinksAdvanced"; readonly edits: ReadonlyMap<string, string> }
+  | { readonly kind: "taskLinkRemoved"; readonly path: string; readonly id: string }
   | { readonly kind: "edited"; readonly path: string; readonly body: string }
   // Into the editor's own history, handled by the loop — the model holds no
   // undo stack, so presenting these changes nothing and must change nothing.
@@ -592,6 +596,9 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         m.alarmAnswers = [...m.alarmAnswers, ...p.answers];
         return null;
       }
+      // Each finite delivery/resume may retry a failed local save. It does
+      // not spin: another failed attempt blocks again and retains the queue.
+      if (p.answers.length > 0) m.persistBlocked = false;
       // Each answer becomes the edit a tap would have made — a tick, or a new
       // stamp — so it persists and syncs by the ordinary road. A line that has
       // changed since the alarm was set is left alone; see applyAnswers.
@@ -644,6 +651,21 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
+    case "taskLinksAdvanced": {
+      for (const [path, body] of p.edits) present(m, { kind: "edited", path, body });
+      return null;
+    }
+
+    case "taskLinkRemoved": {
+      const note = m.notes.get(p.path);
+      if (!note || note.deleted) return null;
+      const matches = tasksIn(note.body, p.path).filter(r => r.link?.id === p.id);
+      if (matches.length !== 1) return reject("Resolve the copied task link before removing its dependency.");
+      const ref = matches[0]!, { after: _after, alarm: _alarm, ready: _ready, seen: _seen, ...link } = ref.link!;
+      const raw = note.body.slice(ref.titleFrom, ref.titleTo);
+      return present(m, { kind: "edited", path: p.path, body: note.body.slice(0, ref.titleFrom) + " " + withTaskLink(raw.trim(), link) + note.body.slice(ref.titleTo) });
+    }
+
     case "taskAdded": {
       if (m.modal?.kind !== "newTask") return reject("No task form is open.");
       const draft = m.modal.draft;
@@ -659,14 +681,24 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       if (checked.problem !== null && checked.problem.kind !== "exists") return refusePath(m, path, checked.problem);
       const body = existing?.body ?? "";
       const next = body + (body === "" ? "" : body.endsWith("\n\n") ? "" : body.endsWith("\n") ? "\n" : "\n\n") + markdown.value;
-      if (!tasksIn(next, path).some((ref) => ref.from >= body.length)) {
+      const added = tasksIn(next, path).find((ref) => ref.from >= body.length);
+      if (!added) {
         return fail("This note ends inside a code block or another Markdown structure. Close it or choose another note.");
+      }
+      let linked: Map<string, string> | null = null;
+      if (draft.after) {
+        const prospective = new Map(m.notes);
+        prospective.set(path, { ...(existing ?? { baseSha: null, pending: true, dirty: true, deleted: false, encoding: "utf8" as const }), path, body: next });
+        const result = linkTask(prospective.values(), added, draft.after, draft.alarm);
+        if (!result.ok) return fail(result.error);
+        linked = result.value;
       }
       if (!existing) {
         const refusal = present(m, { kind: "created", path });
         if (refusal !== null) return refusal;
       }
-      present(m, { kind: "edited", path, body: next });
+      present(m, { kind: "edited", path, body: linked?.get(path) ?? next });
+      if (linked) for (const [other, linkedBody] of linked) if (other !== path) present(m, { kind: "edited", path: other, body: linkedBody });
       m.mode = "tasks";
       m.modal = null;
       m.error = null;

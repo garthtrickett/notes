@@ -7,8 +7,8 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { settingsView } from "./view-settings.ts";
 import { canvasShrinker } from "./attachments.ts";
 import { keyAction } from "./keys.ts";
-import { onAlarmAnswered, onNotificationTap, syncCheckinNotifications, takeAlarmAnswers, watchVault } from "./notify.ts";
-import { parseAnswers } from "./alarms.ts";
+import { acknowledgeAlarmAnswers, onAlarmAnswered, onNotificationTap, syncCheckinNotifications, takeAlarmAnswers, watchVault } from "./notify.ts";
+import { receiveAlarmAnswers } from "./alarm-inbox.ts";
 import { checkForUpdate, updateCheckDue } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 
@@ -111,10 +111,7 @@ if (config === null) {
   // alarm, which the phone announces. The model holds them until the notes
   // they edit have loaded.
   const takeAnswers = () => {
-    void takeAlarmAnswers().then((raw) => {
-      const answers = parseAnswers(raw);
-      if (answers.length > 0) loop.propose({ kind: "alarmAnswered", answers });
-    });
+    void receiveAlarmAnswers(loop, takeAlarmAnswers, acknowledgeAlarmAnswers);
   };
   takeAnswers();
   onAlarmAnswered(takeAnswers);

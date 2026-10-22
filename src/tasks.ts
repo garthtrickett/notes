@@ -11,6 +11,7 @@ import { markdownLanguage } from "@codemirror/lang-markdown";
 import type { Note } from "./model.ts";
 import { isArchivePath, isTrashPath } from "./paths.ts";
 import { alarmWanted, nextOccurrence, reminderIn, repeatIn, titleWithout, withReminder } from "./reminders.ts";
+import { readTaskLink, taskWaiting, type TaskLink } from "./task-meta.ts";
 
 export interface TaskRef {
   // Vault path of the file holding the box.
@@ -33,6 +34,8 @@ export interface TaskRef {
   // without rescanning. Same bargain as `marker`: good for one paint.
   readonly titleFrom: number;
   readonly titleTo: number;
+  readonly link?: TaskLink;
+  readonly invalidLink?: boolean;
 }
 
 // Every task in one file. Identity is (path, from), good only for the paint
@@ -55,6 +58,7 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
       let end = body.indexOf("\n", marker.to);
       if (end === -1) end = body.length;
       const raw = body.slice(marker.to, end);
+      const link = readTaskLink(raw);
       refs.push({
         path,
         from: node.from,
@@ -66,6 +70,7 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
         repeat: repeatIn(raw),
         titleFrom: marker.to,
         titleTo: end,
+        ...(link === undefined ? (raw.includes("<!-- notes-task") ? { invalidLink: true } : {}) : { link }),
       });
     },
   });
@@ -101,6 +106,7 @@ export const tasksInVault = (
 // and the edited proposal arrives a no-change, which present() already
 // answers with null. A double tap therefore cannot flap.
 export const flipTask = (body: string, ref: TaskRef): string => {
+  if (!ref.done && taskWaiting(ref)) return body;
   if (body[ref.marker - 1] !== "[" || body[ref.marker + 1] !== "]") return body;
   const next = body[ref.marker] === " " ? "x" : " ";
   return body.slice(0, ref.marker) + next + body.slice(ref.marker + 1);
@@ -140,7 +146,7 @@ export const setReminder = (
 export const rollRepeats = (body: string, path: string, now: number): string => {
   let next = body;
   const refs = tasksIn(body, path).filter(
-    (r) => r.done && r.repeat !== null && r.remindAt !== null,
+    (r) => r.done && r.repeat !== null && r.remindAt !== null && !r.link?.after,
   );
   for (const ref of refs.reverse()) {
     const at = nextOccurrence(ref.remindAt as number, ref.repeat as string, now);

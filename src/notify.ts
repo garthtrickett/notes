@@ -30,6 +30,8 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { SLOTS } from "./checkins.ts";
 import type { TaskRef } from "./tasks.ts";
 import type { NoteRecord } from "./model.ts";
+import { taskWaiting } from "./task-meta.ts";
+import { nativeTaskLinks } from "./task-links.ts";
 
 export const syncCheckinNotifications = async (): Promise<void> => {
   if (!Capacitor.isNativePlatform()) return;
@@ -108,7 +110,7 @@ export const dueReminders = (
   refs: readonly TaskRef[],
   now: number,
 ): TaskRef[] =>
-  refs.filter((r) => !r.done && r.remindAt !== null && r.remindAt > now);
+  refs.filter((r) => !taskWaiting(r) && !r.done && r.remindAt !== null && r.remindAt > now);
 
 // Which of those Android delivers as a plain notification. A task flagged for
 // an alarm is left to the alarm, which posts its own ringing notification at
@@ -266,7 +268,7 @@ export const onNotificationTap = async (routes: TapRoutes): Promise<void> => {
 // appeared after closing and reopening the app, and the dropdown's "Ring an
 // alarm" never took effect at all without a restart.
 export const reminderSetKey = (refs: readonly TaskRef[]): string =>
-  refs
+  JSON.stringify(nativeTaskLinks(refs)) + "|" + refs
     .filter((r) => !r.done && r.remindAt !== null)
     .map((r) => `${r.path}\u0000${r.title}\u0000${r.remindAt as number}\u0000${r.alarm ? "alarm" : ""}\u0000${r.repeat ?? ""}`)
     .sort()
@@ -298,7 +300,7 @@ export const alarmsWanted = (
   now: number,
 ): AlarmEntry[] =>
   refs
-    .filter((r) => r.alarm && !r.done && r.remindAt !== null && r.remindAt > now)
+    .filter((r) => !taskWaiting(r) && r.alarm && !r.done && r.remindAt !== null && r.remindAt > now)
     .map((r) => ({
       id: reminderId(r),
       at: r.remindAt as number,
@@ -318,7 +320,7 @@ export interface AlarmLive {
 
 export const alarmsLive = (refs: readonly TaskRef[]): AlarmLive[] =>
   refs
-    .filter((r) => r.alarm && !r.done && r.remindAt !== null)
+    .filter((r) => !taskWaiting(r) && r.alarm && !r.done && r.remindAt !== null)
     .map((r) => ({ id: reminderId(r), stamp: r.remindAt as number }));
 
 // What the phone said about the settings that decide whether an alarm rings
@@ -354,9 +356,11 @@ interface AlarmNative {
     alarms: AlarmEntry[];
     live: AlarmLive[];
     shas: Record<string, string>;
+    links: ReturnType<typeof nativeTaskLinks>;
   }): Promise<AlarmStatus & { scheduled: number }>;
   watch(options: { owner: string; repo: string; branch: string; token: string }): Promise<void>;
   take(): Promise<{ answers: unknown }>;
+  acknowledge(options: { receipts: string[] }): Promise<void>;
   addListener(event: "answered", listener: () => void): Promise<unknown>;
 }
 
@@ -390,7 +394,7 @@ export const syncAlarms = async (
 ): Promise<AlarmSyncResult> => {
   if (!Capacitor.isNativePlatform()) return { scheduled: 0, error: null };
   try {
-    const status = await alarmPlugin.sync({ alarms: alarmsWanted(refs, now), live: alarmsLive(refs), shas });
+    const status = await alarmPlugin.sync({ alarms: alarmsWanted(refs, now), live: alarmsLive(refs), shas, links: nativeTaskLinks(refs) });
     return { scheduled: status.scheduled, error: alarmWarning(status) };
   } catch (cause) {
     return {
@@ -434,8 +438,7 @@ export const knownShas = (
   return shas;
 };
 
-// Done and Snooze presses waiting since the app last ran. Taking them clears
-// them on the phone, so each answer is applied exactly once.
+// Answers remain on Android until the app confirms their edits were saved.
 export const takeAlarmAnswers = async (): Promise<unknown> => {
   if (!Capacitor.isNativePlatform()) return [];
   try {
@@ -445,6 +448,10 @@ export const takeAlarmAnswers = async (): Promise<unknown> => {
     // the phone and are taken next time.
     return [];
   }
+};
+
+export const acknowledgeAlarmAnswers = async (receipts: string[]): Promise<void> => {
+  if (Capacitor.isNativePlatform() && receipts.length > 0) await alarmPlugin.acknowledge({ receipts });
 };
 
 // Raised by the phone when an answer is written while the app is still

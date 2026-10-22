@@ -39,6 +39,8 @@ import { settingsView, type VaultConfig } from "./view-settings.ts";
 import { emptyTaskDraft } from "./task-draft.ts";
 import { audioView, audioPlayer, audioConfirmation } from "./view-audio.ts";
 import { taskForm } from "./view-task-form.ts";
+import { dependencyProblem } from "./task-links.ts";
+import { taskWaiting } from "./task-meta.ts";
 
 type Propose = (p: Proposal) => void;
 
@@ -563,6 +565,10 @@ const dumpView = (
 // collapsed; reopening moves them back on the next paint.
 const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
   const { propose, tasks } = ctx;
+  const groups = tasksInVault(model.notes, tasks);
+  const refs = groups.flatMap(g => g.refs);
+  const problem = (ref: TaskRef) => dependencyProblem(ref, refs);
+  const waiting = (ref: TaskRef) => taskWaiting(ref) || problem(ref) !== null;
   const toggle = (ref: TaskRef): void => {
     const body = model.notes.get(ref.path)?.body;
     if (body === undefined) return;
@@ -573,7 +579,7 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
   // A native <select> rather than a popup of our own: the phone renders it as a
   // proper picker, it is reachable by keyboard for free, and there is no menu
   // state to keep. Exact times are typed into the line itself.
-  const remind = (ref: TaskRef) => html`<select
+  const remind = (ref: TaskRef) => waiting(ref) ? html`<span class="task-waiting">Waiting</span>` : html`<select
     class="remind ${ref.remindAt === null ? "" : "set"}"
     aria-label=${`Remind me about ${ref.title}`}
     .value=${""}
@@ -610,10 +616,11 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
   // controls, and a plain .checked binding skips the write because the value
   // it last wrote (false) has not changed. Ticking task one showed task two
   // ticked. live() compares against the element itself, so it always lands.
-  const row = (ref: TaskRef) => html`<li>
+  const row = (ref: TaskRef) => html`<li class=${waiting(ref) ? "waiting-task" : ""}>
     <input
       type="checkbox"
       .checked=${live(ref.done)}
+      ?disabled=${!ref.done && waiting(ref)}
       aria-label=${ref.done ? `Reopen ${ref.title}` : `Tick off ${ref.title}`}
       @change=${() => toggle(ref)}
     />
@@ -623,20 +630,22 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
       @click=${() => propose({ kind: "opened", path: ref.path })}
     >
       ${ref.title}
+      ${ref.link?.after || problem(ref) ? html`<small class="task-dependency">${problem(ref) ?? `After ${refs.find(r => r.link?.id === ref.link?.after)?.title ?? "missing task"}`}</small>` : nothing}
     </button>
     ${remind(ref)}
+    ${ref.link?.after ? html`<button class="remove-dependency" aria-label=${`Remove dependency from ${ref.title}`}
+      @click=${() => propose({ kind: "taskLinkRemoved", path: ref.path, id: ref.link!.id })}>Unlink</button>` : nothing}
   </li>`;
-  const groups = tasksInVault(model.notes, tasks);
   const openGroups = groups.filter((g) => g.refs.some((r) => !r.done));
   const shown = model.showDone ? groups : openGroups;
   const openTotal = groups.reduce(
-    (n, g) => n + g.refs.filter((r) => !r.done).length,
+    (n, g) => n + g.refs.filter((r) => !r.done && !waiting(r)).length,
     0,
   );
   return html`
     <div class="tasks">
       <div class="tasks-head">
-        <span>${openTotal} open</span>
+        <span>${openTotal} open${refs.some(r => !r.done && waiting(r)) ? ` · ${refs.filter(r => !r.done && waiting(r)).length} waiting` : ""}</span>
         <button
           class="toggle"
           title="Show or hide finished tasks"
