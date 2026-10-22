@@ -89,7 +89,7 @@ document and test a successor integration before implementing it.
 | Deletion survives rescan/reconnect/app restart/phone reboot | Pending actual phone, both specimens |
 | Server originals and unrelated files remain unchanged | Private SHA-256 baseline of 76 pre-existing files recorded; after-deletion comparison pending |
 | Opus/M4B locked-screen playback and headset controls | User confirms ordinary Opus and M4B playback with lock-screen Pause/Resume; headset/unplug tests pending |
-| Native checkpoints, marks, explicit cold resume, alarm coexistence | Implemented in native spike; host durability/cold-start tests pass; actual phone pending |
+| Native checkpoints, marks, explicit cold resume, alarm coexistence | User confirms seek/paused bookmark survives force-stop, no autoplay and explicit resume near saved position; marks, abrupt-playing checkpoint window and alarms pending |
 | Full Audio UI and offline journey | Awaiting spike gates |
 | Automated regression and exact signed build | Record checks/build per delivered increment |
 | Complete phone acceptance and one-week usability trial | Pending; full outcome not yet achieved |
@@ -152,12 +152,17 @@ with an ordinary M4B audiobook, they replied **"yeah that also works"**. Both
 required formats now have a user-reported actual-phone locked-playback/control
 pass.
 
-Headset controls/unplug, seek/bookmark recovery, Done/Unplayed, natural end,
-Activity recreation/Recents/force-stop/reboot behaviour and Notes alarm coexistence
-remain unverified. The separate Syncthing deletion gate and full Audio UI
-acceptance also remain open. The next playback step is to seek and pause at a
-recognizable nonzero position, force-stop Notes, reopen it without autoplay and
-explicitly resume the same audiobook near the saved position.
+Asked to seek past the audiobook's start, pause/note the time, force-stop Notes
+through Android app settings, reopen the playback test and explicitly resume the
+same book, the user replied **"yeh this works"**. Their reply confirms the paused
+bookmark survives force-stop, reopening stays silent until Play, and explicit
+Play resumes near the noted position.
+
+Headset controls/unplug, Done/Unplayed, natural end, Activity recreation/Recents/
+reboot behaviour, the checkpoint-loss window when stopping while actively
+playing, and Notes alarm coexistence remain unverified. The separate Syncthing
+deletion gate and full Audio UI acceptance also remain open. The next playback
+step is headphone Pause/Resume and pause on unplug/disconnection.
 
 ## Playback/durability spike — source and host evidence
 
