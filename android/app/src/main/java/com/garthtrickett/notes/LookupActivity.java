@@ -61,7 +61,10 @@ public class LookupActivity extends Activity {
         Button cancel = new Button(this);
         cancel.setId(R.id.lookup_cancel);
         cancel.setText(android.R.string.cancel);
-        cancel.setOnClickListener(v -> { if (!saving) finishAndRemoveTask(); });
+        // Closing a popup is not dismissing the app's tasks: task removal can
+        // call Media3's onTaskRemoved and stop a paused player/notification.
+        // This separate activity is already excluded from Recents.
+        cancel.setOnClickListener(v -> { if (!saving) finish(); });
         buttons.addView(cancel);
         save = new Button(this);
         save.setId(R.id.lookup_save);
@@ -93,7 +96,7 @@ public class LookupActivity extends Activity {
                     runOnUiThread(() -> {
                         if (isDestroyed() || isFinishing()) return;
                         Toast.makeText(this, R.string.lookup_saved, Toast.LENGTH_SHORT).show();
-                        finishAndRemoveTask();
+                        finish();
                     });
                 } catch (Exception failed) {
                     runOnUiThread(() -> {

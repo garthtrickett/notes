@@ -26,6 +26,11 @@ import org.robolectric.annotation.GraphicsMode;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 36)
 public class LookupTest {
+    public static class NonRemovingLookupActivity extends LookupActivity {
+        @Override public void finishAndRemoveTask() {
+            throw new AssertionError("Popup must not remove tasks and stop a paused media service");
+        }
+    }
     private Context context;
     private static final String ID = "12345678-1234-4123-8123-123456789abc";
     @Before public void setup() throws Exception {
@@ -122,6 +127,17 @@ public class LookupTest {
         assertEquals(1, new LookupInbox(context).pending().length());
         assertTrue(controller.get().isFinishing());
         controller.pause().stop().destroy();
+    }
+    @Test public void bothSaveAndCancelCloseOnlyTheComposerWithoutRemovingTasks() throws Exception {
+        for (boolean save : new boolean[] { false, true }) {
+            var controller = Robolectric.buildActivity(NonRemovingLookupActivity.class).setup();
+            var activity = controller.get();
+            ((EditText)activity.findViewById(R.id.lookup_question)).setText("Keep the paused player alone");
+            activity.findViewById(save ? R.id.lookup_save : R.id.lookup_cancel).performClick();
+            drain();
+            assertTrue(activity.isFinishing());
+            controller.pause().stop().destroy();
+        }
     }
     @Test @GraphicsMode(GraphicsMode.Mode.NATIVE)
     public void composerKeepsQuestionAndButtonsVisibleInKeyboardSizedSpace() throws Exception {
