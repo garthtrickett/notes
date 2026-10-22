@@ -84,28 +84,32 @@ final class AudioRuntime {
             }
         });
     }
-    private final Context context;
-    private final Supplier<String> ids;
+    final Context context;
+    final Supplier<String> ids;
     final Handler main = new Handler(Looper.getMainLooper());
     final String epoch;
     private final List<Listener> listeners = new ArrayList<>();
-    private final CompletableFuture<AudioStateFile> state;
+    volatile CompletableFuture<AudioStateFile> state;
     private final Map<String, Long> sessions = new HashMap<>(); // STATE only
-    private volatile AudioLedger ledger = AudioLedger.empty();
-    private volatile AudioCatalog catalog = AudioCatalog.empty();
+    volatile AudioLedger ledger = AudioLedger.empty();
+    volatile AudioCatalog catalog = AudioCatalog.empty();
     private volatile long generation;
     private volatile Snapshot snapshot;
-    private AudioPlaybackService service;
+    AudioPlaybackService service;
     private Pending pending;
-    private CancellationSignal scan;
+    CancellationSignal scan;
     private volatile CancellationSignal rootWork = new CancellationSignal();
-    private String operation = "Loading audio state…", warning;
-    private boolean recoveryRequired;
-    private AudioProblem failure;
+    String operation = "Loading audio state…", warning;
+    boolean recoveryRequired;
+    AudioProblem failure;
     private long revision;
+    final AudioLibrary library;
+    boolean mutating;
+    private CancellationSignal metadata = new CancellationSignal();
 
     private AudioRuntime(Context context, Supplier<String> ids) {
         this.context = context; this.ids = ids; epoch = ids.get();
+        library = new AudioLibrary(this);
         snapshot = new Snapshot(epoch, 0, ledger, catalog, null, operation, null, null, false);
         state = CompletableFuture.supplyAsync(() -> {
             try {
@@ -114,7 +118,7 @@ final class AudioRuntime {
             } catch (AudioStateFile.Failure e) { throw new CompletionException(e); }
         }, AudioTasks.STATE);
         state.whenComplete((file, error) -> main.post(() -> {
-            operation = null;
+            if (!mutating) operation = null;
             if (error == null) { warning = file.warning(); recoveryRequired = file.recoveryRequired(); }
             else failure = AudioProblem.from((Exception) error);
             emit();
@@ -126,37 +130,45 @@ final class AudioRuntime {
     void subscribe(Listener listener) { listeners.add(listener); listener.changed(snapshot); }
     void unsubscribe(Listener listener) { listeners.remove(listener); }
     AudioCatalog.Target target(AudioCatalog.Row row) { return new AudioCatalog.Target(epoch, ledger.rootGeneration, row.id, row.version); }
-    private void emit() {
+    void emit() {
         snapshot = new Snapshot(epoch, ++revision, ledger, catalog, service == null ? null : service.position(), operation, warning, failure, recoveryRequired);
         for (Listener listener : new ArrayList<>(listeners)) listener.changed(snapshot);
     }
-    private <T> T write(Callable<T> action) throws Exception { return AudioTasks.STATE.submit(action).get(); }
-    private void save(AudioLedger next) throws Exception {
+    <T> T write(Callable<T> action) throws Exception { return AudioTasks.STATE.submit(action).get(); }
+    void save(AudioLedger next) throws Exception {
         AudioStateFile file = state.get(); file.save(next); ledger = file.current();
     }
     private void report(Exception error) { main.post(() -> { failure = AudioProblem.from(error); operation = null; emit(); }); }
 
     void refresh() {
+        if (mutating || pending != null) return;
+        metadata.cancel(); metadata = new CancellationSignal();
         if (scan != null) scan.cancel();
         CancellationSignal cancellation = new CancellationSignal(); scan = cancellation;
         operation = "Reading local audio…"; failure = null; emit();
         AudioTasks.FILES.execute(() -> {
             try {
-                state.get();
+                state.get(); cancellation.throwIfCanceled();
                 String root = new AudioSpikeJournal(context.getFilesDir()).root();
-                if (root.isEmpty()) throw new AudioProblem(AudioProblem.Kind.PERMISSION, "Select Phone media in the storage test first.");
+                if (root.isEmpty()) { main.post(() -> { if (scan == cancellation) { operation = null; failure = null; emit(); } }); return; }
                 if (!root.equals(ledger.root)) {
                     CompletableFuture<Void> paused = new CompletableFuture<>();
-                    main.post(() -> { cancelPending(); cancelRootWork(); if (service != null) service.clear(); paused.complete(null); });
+                    main.post(() -> {
+                        if (cancellation.isCanceled()) { paused.completeExceptionally(new android.os.OperationCanceledException()); return; }
+                        cancelPending(); cancelRootWork(); if (service != null) service.clear(); paused.complete(null);
+                    });
                     paused.get();
-                    write(() -> { save(ledger.bind(root)); return null; });
+                    write(() -> { cancellation.throwIfCanceled(); save(ledger.bind(root)); return null; });
                 }
                 long rootGeneration = ledger.rootGeneration;
                 AudioDocuments documents = new AudioDocuments(context.getContentResolver(), root, cancellation);
-                AudioCatalog result = AudioCatalog.listed(catalog, root, rootGeneration, documents.list(), ids);
+                library.reconcile(documents);
+                AudioCatalog listed = AudioCatalog.listed(catalog, root, rootGeneration, documents.list(), ids);
+                AudioCatalog result = catalog.root.equals(root) ? listed : listed.cached(ledger);
                 main.post(() -> {
                     if (scan != cancellation || cancellation.isCanceled() || ledger.rootGeneration != rootGeneration) return;
                     catalog = result; operation = null; failure = null; emit();
+                    probeNext(new ArrayList<>(result.rows), 0, metadata, rootGeneration);
                 });
             } catch (Exception error) { if (!cancellation.isCanceled()) report(error); }
         });
@@ -165,7 +177,10 @@ final class AudioRuntime {
     void play(AudioCatalog.Target target, Reply reply) {
         String op = ids.get();
         try {
-            catalog.target(target, epoch, ledger);
+            library.available();
+            library.canUse(catalog.target(target, epoch, ledger));
+            metadata.cancel();
+            if (scan != null) scan.cancel();
             cancelPending();
             if (service != null) service.pausePlayer();
             Pending next = new Pending(ids.get(), op, ++generation, target, reply); pending = next;
@@ -173,7 +188,7 @@ final class AudioRuntime {
             ContextCompat.startForegroundService(context, new Intent(context, AudioPlaybackService.class)
                 .setAction(AudioPlaybackService.PREPARE).putExtra("token", next.token));
         } catch (Exception error) {
-            AudioProblem problem = AudioProblem.from(error); failure = problem; operation = null;
+            AudioProblem problem = AudioProblem.from(error); failure = problem; if (!mutating) operation = null;
             if (pending != null && pending.operation.equals(op)) finish(pending, problem);
             else reply.complete(op, false, problem);
             emit();
@@ -202,7 +217,9 @@ final class AudioRuntime {
                     catalog.target(request.target, epoch, ledger);
                     AudioLedger.Item known = ledger.find(version);
                     AudioLedger.Item next = known == null ? new AudioLedger.Item(ids.get(), version, probe.title, probe.author,
-                        AudioListening.unplayed(probe.durationMs)) : known;
+                        AudioListening.unplayed(probe.durationMs)) :
+                        new AudioLedger.Item(known.id, version, probe.title, probe.author,
+                            new AudioListening.State(known.listening.mark, known.listening.positionMs, probe.durationMs));
                     next = next.listening(AudioListening.play(next.listening));
                     save(ledger.put(next).select(next.id)); sessions.put(next.id, request.generation); return next;
                 });
@@ -226,7 +243,7 @@ final class AudioRuntime {
         });
     }
 
-    private AudioDelete.Version identify(AudioDocuments documents, AudioCatalog.Row row) throws Exception {
+    AudioDelete.Version identify(AudioDocuments documents, AudioCatalog.Row row) throws Exception {
         AudioDelete.Version version = documents.identify(row.document.path);
         if (version == null) throw new AudioProblem(AudioProblem.Kind.MISSING, "This download is no longer present on the phone.");
         if (!version.document.equals(row.document.id) || version.size != row.document.size || version.modified != row.document.modified ||
@@ -250,24 +267,24 @@ final class AudioRuntime {
         request.replied = true; if (pending == request) pending = null;
         request.reply.complete(request.operation, error == null, error);
     }
-    private void cancelPending() {
+    void cancelPending() {
         ++generation;
         if (pending != null) {
             Pending previous = pending; previous.cancellation.cancel();
             finish(previous, new AudioProblem(AudioProblem.Kind.CANCELLED, "Preparation was cancelled."));
         }
     }
-    private void cancelRootWork() { rootWork.cancel(); rootWork = new CancellationSignal(); }
+    void cancelRootWork() { rootWork.cancel(); rootWork = new CancellationSignal(); }
     void pause() {
         cancelPending();
         if (service != null) { service.pausePlayer(); service.abortPreparation(); }
-        operation = null; emit();
+        if (!mutating) operation = null; emit();
     }
     void resumeActive() {
         if (service == null || service.loaded() == null) return;
         String id = service.loaded().item.id;
         for (AudioCatalog.Row row : catalog.rows) if (id.equals(row.durableId)) { play(target(row), (op, durable, error) -> {}); return; }
-        failure = new AudioProblem(AudioProblem.Kind.STALE, "Open the playback test and refresh before resuming."); emit();
+        failure = new AudioProblem(AudioProblem.Kind.STALE, "Open Audio and refresh before resuming."); emit();
     }
     void seek(long positionMs) {
         try { if (service != null) service.seek(positionMs); }
@@ -276,7 +293,11 @@ final class AudioRuntime {
     void mark(AudioCatalog.Target target, AudioListening.Mark mark, Reply reply) {
         String op = ids.get();
         try {
+            library.available();
             AudioCatalog.Row row = catalog.target(target, epoch, ledger);
+            library.canUse(row);
+            metadata.cancel();
+            if (scan != null) scan.cancel();
             if (pending != null && pending.target.item.equals(row.id)) cancelPending();
             if (service != null && service.loaded() != null && service.loaded().item.version.root.equals(catalog.root) &&
                 service.loaded().item.version.path.equals(row.document.path)) service.pausePlayer();
@@ -292,6 +313,8 @@ final class AudioRuntime {
                         catalog.target(target, epoch, ledger);
                         AudioLedger.Item known = ledger.find(version);
                         if (known == null) known = new AudioLedger.Item(ids.get(), version, probe.title, probe.author, AudioListening.unplayed(probe.durationMs));
+                        known = new AudioLedger.Item(known.id, version, probe.title, probe.author,
+                            new AudioListening.State(known.listening.mark, known.listening.positionMs, probe.durationMs));
                         AudioLedger.Item next = known.listening(AudioListening.mark(known.listening, mark));
                         save(ledger.put(next)); sessions.remove(next.id); return next;
                     });
@@ -317,6 +340,32 @@ final class AudioRuntime {
         } catch (Exception error) { reply.complete(op, false, AudioProblem.from(error)); }
     }
 
+    private void probeNext(List<AudioCatalog.Row> rows, int index, CancellationSignal signal, long rootGeneration) {
+        if (signal.isCanceled() || rootGeneration != ledger.rootGeneration || index >= rows.size()) return;
+        while (index < rows.size() && rows.get(index).durationMs > 0) index++;
+        if (index >= rows.size()) return;
+        int nextIndex = index + 1;
+        AudioCatalog.Row row = rows.get(index);
+        AudioTasks.FILES.execute(() -> {
+            AudioProbe probe = null; String problem = null;
+            try {
+                AudioDocuments documents = new AudioDocuments(context.getContentResolver(), catalog.root, signal);
+                AudioDelete.Version locator = new AudioDelete.Version(catalog.root, row.document.path, row.document.id,
+                    row.document.size, row.document.modified, "");
+                probe = AudioProbe.read(context, documents.playbackUri(locator), row.document.name, signal);
+            } catch (Exception error) { problem = AudioProblem.from(error).getMessage(); }
+            AudioProbe result = probe; String message = problem;
+            main.post(() -> {
+                if (signal.isCanceled() || rootGeneration != ledger.rootGeneration) return;
+                catalog = catalog.metadata(row.id, row.version, result, message); emit();
+                probeNext(rows, nextIndex, signal, rootGeneration);
+            });
+        });
+    }
+    void stopRootOperations() {
+        metadata.cancel(); cancelPending(); cancelRootWork();
+        if (scan != null) scan.cancel();
+    }
     void checkpoint(Prepared stream, long positionMs, long durationMs, boolean ended) {
         if (stream == null) return;
         AudioTasks.STATE.execute(() -> {

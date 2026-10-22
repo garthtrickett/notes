@@ -25,6 +25,7 @@ final class AudioDocuments implements AudioDelete.Documents {
     final Uri tree, root;
     final CancellationSignal cancellation;
     private int queried;
+    private final boolean libraryDelete;
 
     static final class Entry {
         final String id, name, mime, path;
@@ -46,6 +47,15 @@ final class AudioDocuments implements AudioDelete.Documents {
     }
 
     AudioDocuments(ContentResolver resolver, String binding, CancellationSignal cancellation) throws IOException {
+        this(resolver, binding, cancellation, false);
+    }
+
+    static AudioDocuments library(ContentResolver resolver, String binding, CancellationSignal cancellation) throws IOException {
+        return new AudioDocuments(resolver, binding, cancellation, true);
+    }
+
+    private AudioDocuments(ContentResolver resolver, String binding, CancellationSignal cancellation, boolean libraryDelete) throws IOException {
+        this.libraryDelete = libraryDelete;
         this.resolver = resolver;
         this.cancellation = cancellation;
         tree = Uri.parse(binding);
@@ -97,7 +107,7 @@ final class AudioDocuments implements AudioDelete.Documents {
             Set<String> names = new HashSet<>();
             while (cursor.moveToNext()) {
                 check();
-                if (++queried > 10000) throw new IOException("Folder is too large for this storage test.");
+                if (++queried > 10000) throw new IOException("Folder is too large for the audio library.");
                 Entry entry = new Entry(cursor, parent);
                 if (!AudioPaths.segment(entry.name)) continue;
                 if (!names.add(entry.name)) throw new IOException("The provider returned duplicate names in one folder.");
@@ -176,7 +186,7 @@ final class AudioDocuments implements AudioDelete.Documents {
     }
 
     public void remove(AudioDelete.Version expected) throws IOException {
-        if (!AudioPaths.specimen(expected.path)) throw new IOException("This test only deletes its disposable specimens.");
+        if (!(libraryDelete ? AudioPaths.audio(expected.path) : AudioPaths.specimen(expected.path))) throw new IOException("This test only deletes its disposable specimens.");
         if (!tree.toString().equals(expected.root)) throw new IOException("The selected folder changed.");
         if (!hasGrant(true)) throw new SecurityException("Write permission is missing. Reselect the folder.");
         Entry current = find(expected.path);

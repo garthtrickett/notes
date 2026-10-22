@@ -1,0 +1,51 @@
+{
+  "protocol": 1,
+  "epoch": "epoch-one",
+  "rootGeneration": 1,
+  "revision": 4,
+  "rootSelected": true,
+  "operation": null,
+  "warning": null,
+  "recoveryRequired": false,
+  "failure": null,
+  "rows": [
+    {
+      "item": "cap-1",
+      "version": "known-one",
+      "path": "youtube/test.opus",
+      "title": "Synthetic recording",
+      "author": null,
+      "sizeBytes": 42,
+      "durationMs": 5000,
+      "durableId": "known-one",
+      "listening": {
+        "mark": "DONE",
+        "positionMs": 0,
+        "durationMs": 5000
+      },
+      "error": null
+    }
+  ],
+  "history": [
+    {
+      "id": "known-one",
+      "path": "youtube/test.opus",
+      "title": "Synthetic recording",
+      "author": null,
+      "currentRoot": true,
+      "listening": {
+        "mark": "DONE",
+        "positionMs": 0,
+        "durationMs": 5000
+      },
+      "availability": "PRESENT",
+      "deletion": null
+    }
+  ],
+  "player": {
+    "item": "known-one",
+    "positionMs": 2000,
+    "durationMs": 5000,
+    "playing": false
+  }
+}

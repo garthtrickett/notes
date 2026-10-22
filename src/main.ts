@@ -96,6 +96,8 @@ if (config === null) {
     wanted,
   );
 
+  window.addEventListener("pagehide", event => { if (!event.persisted) loop.dispose(); });
+
   booted = true;
 
   // Registered before anything else that can await: a tap on a closed app is

@@ -34,10 +34,13 @@ import type { VaultConfig } from "./view-settings.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
 import { followLink, resolveLink } from "./links.ts";
 import { titleFor, urlFor } from "./url.ts";
+import { nativeAudioLibrary, type AudioLibrary } from "./audio-library.ts";
+import type { AudioConnection } from "./audio.ts";
 import { nativeStorageTest, type AudioStorageTest } from "./audio.ts";
 
 export interface Deps {
   readonly audioStorageTest?: AudioStorageTest;
+  readonly audioLibrary?: AudioLibrary;
   readonly db: IDBDatabase;
   readonly shrink: import("./attachments.ts").Shrinker;
   readonly github: Github | null;
@@ -58,6 +61,7 @@ export interface Deps {
 }
 
 export interface Loop {
+  readonly dispose: () => void;
   readonly model: Model;
   readonly propose: (p: Proposal) => void;
   readonly flush: () => Promise<void>;
@@ -83,6 +87,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const { db, github, now, schedule, shrink } = deps;
   const model = createModel();
   const audioStorageTest = deps.audioStorageTest ?? nativeStorageTest();
+  const audioLibrary = deps.audioLibrary ?? nativeAudioLibrary();
+  let audioConnection: AudioConnection | null = null;
+  let disposed = false;
+  let audioConnectionGeneration = 0;
   let wakeScheduled = false;
   // When each note was last typed into. Bookkeeping about the loop rather than
   // about notes — the same reason the backoff lives here and not in present(),
@@ -94,6 +102,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // Anything else is a change dispatched into the state that is already there.
   let lastEditorKey: string | null = null;
   let lastModal: string | null = null;
+  let lastAudioConfirmation: string | null = null;
   let lastPaletteIndex: number | null = null;
   let lastUrl: string | null = null;
   const previewCache = createPreviewCache();
@@ -294,6 +303,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     // Focus a modal as it opens, and only then — refocusing on every paint would
     // fight the caret while typing. One rule, whichever modal it is.
     // By kind, not by object: what matters is that a different dialog appeared.
+    const confirmation = model.audio.confirmation?.token ?? null;
+    if (confirmation !== lastAudioConfirmation) {
+      lastAudioConfirmation = confirmation;
+      if (confirmation !== null) root.querySelector<HTMLElement>("[data-audio-confirm]")?.focus();
+    }
     const modalKind = model.modal?.kind ?? null;
     if (modalKind !== lastModal) {
       lastModal = modalKind;
@@ -628,6 +642,21 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && model.modal.draft.date !== "";
     const rejection = present(model, p);
+    if (rejection === null && p.kind === "audioReconnect") connectAudio();
+    if (rejection === null && p.kind === "audioRequested" && model.audio.snapshot !== null) {
+      const snapshot = model.audio.snapshot;
+      track(audioLibrary.execute(p.command, snapshot).then(result => {
+        if (disposed) return;
+        if (!result.ok) { propose({ kind: "audioFinished", error: result.error }); return; }
+        if ("protocol" in result.value) {
+          propose({ kind: "audioSnapshot", snapshot: result.value });
+          propose({ kind: "audioFinished", error: null });
+        } else propose({ kind: "audioFinished", error: null, confirmation: result.value });
+      }).catch(() => propose({ kind: "audioFinished", error: { kind: "BRIDGE", message: "Audio could not complete the action. Please retry." } })));
+    }
+    if (rejection === null && ((p.kind === "modeChanged" && p.mode === "audio") || (p.kind === "resumed" && model.mode === "audio") || (p.kind === "audioSnapshot" && p.handshake && model.mode === "audio"))) {
+      if (model.audio.snapshot !== null && model.audio.busy === 0) propose({ kind: "audioRequested", command: { action: "refresh" } });
+    }
     if (p.kind === "audioStorageTestRequested" && rejection === null) {
       track(audioStorageTest.open().then((result) =>
         propose({ kind: "audioStorageTestFinished", error: result.ok ? null : result.error }),
@@ -710,7 +739,22 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     return true;
   };
 
-  return { model, propose, flush, enterEditor, find };
+  function connectAudio(): void {
+    void audioConnection?.disconnect();
+    let first = true;
+    const connectionGeneration = ++audioConnectionGeneration;
+    const previous = model.audio.snapshot;
+    audioConnection = audioLibrary.connect(snapshot => {
+      if (!disposed && connectionGeneration === audioConnectionGeneration) { propose({ kind: "audioSnapshot", snapshot, handshake: first }); first = false; }
+    }, error => { if (!disposed && connectionGeneration === audioConnectionGeneration) propose({ kind: "audioError", error }); }, previous);
+    track(audioConnection.ready.then(result => {
+      if (!disposed && connectionGeneration === audioConnectionGeneration && !result.ok) propose({ kind: "audioError", error: result.error });
+    }));
+  }
+  propose({ kind: "audioSupported", supported: audioLibrary.supported });
+  if (audioLibrary.supported) connectAudio();
+  const dispose = () => { disposed = true; void audioConnection?.disconnect(); };
+  return { model, propose, flush, enterEditor, find, dispose };
 };
 
 export const boot = async (

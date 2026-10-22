@@ -669,12 +669,25 @@ or checkpoint writes. Only explicit Play starts foreground preparation; cold
 start and restored history do not autoplay. Session input is limited to ordinary
 transport controls; caller-supplied media locations and deletion are refused.
 Notes alarms pause an existing player before posting their existing notification.
-The full SAM Audio projection and phone playback qualification remain pending.
+The SAM Audio projection now holds immutable native snapshots. Proposals request
+commands; loop effects call the native bridge and present results. Native epochs,
+root generations and revisions reject stale events, and opaque capabilities reject
+stale file commands. A compact player survives navigation across Notes modes.
 
-The production deletion policy remains **undecided pending actual-phone
-Syncthing tests**. Ordinary deletion is under test only for two named disposable
-files. No folder type, ignore rule or server deletion policy is changed by the
-spike. `AUDIO-VALIDATION.md` records the gates and device procedure.
+On 22 October the user waived further manual testing and requested the full
+production feature. Production deletion uses local SAF documents with a native,
+version-bound confirmation token. Preparing or cancelling confirmation writes no
+intent. Confirmation pauses/releases the selected stream, commits the exact
+version's intent, rehashes before removal, verifies absence and commits the result.
+Recovery only observes; an explicit retry always targets the old version. Stopping
+retries removes the intent and never promises to restore deleted bytes. The storage
+diagnostic retains its separate restriction to the two disposable specimens.
+
+The phone reports Send & Receive and empty ignore patterns; Ignore Delete is
+unknown. No folder type, ignore rule or server policy is changed. Syncthing
+persistence after actual phone deletion remains unverified. The original manual
+protocol remains in `AUDIO-VALIDATION.md`, with observations distinct from deferred
+checks. Local deletion cannot control a later external resupply of the file.
 
 ## Principles
 
