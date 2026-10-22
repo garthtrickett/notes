@@ -114,7 +114,8 @@ final class SelfUpdate {
             if (nm == null || !nm.areNotificationsEnabled()) return false;
             nm.createNotificationChannel(new NotificationChannel(CHANNEL,
                 "App updates", NotificationManager.IMPORTANCE_LOW));
-            PendingIntent open = PendingIntent.getActivity(context, id, confirmation,
+            PendingIntent open = PendingIntent.getActivity(context, id,
+                new Intent(confirmation).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             nm.notify(TAG, id, new Notification.Builder(context, CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
