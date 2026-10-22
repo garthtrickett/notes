@@ -8,13 +8,15 @@
 import type { NoteRecord } from "./model.ts";
 
 const DB_NAME = "notes";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 export const NOTES_STORE = "notes";
 // Attachment bytes live apart from note metadata, and that separation is the
 // point rather than tidiness. The model holds every note; if the bytes sat on
 // the same record, holding a note would mean holding megabytes of video, and
 // any write of the metadata would have to carry the bytes along or erase them.
 export const BLOBS_STORE = "blobs";
+// Device-local delivery bookkeeping, independent of later note renames/deletes.
+export const PHOTO_IMPORTS_STORE = "photo-imports";
 
 const request = <T>(req: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {
@@ -41,6 +43,9 @@ export const openDb = (): Promise<IDBDatabase> => {
     }
     if (!db.objectStoreNames.contains(BLOBS_STORE)) {
       db.createObjectStore(BLOBS_STORE);
+    }
+    if (!db.objectStoreNames.contains(PHOTO_IMPORTS_STORE)) {
+      db.createObjectStore(PHOTO_IMPORTS_STORE);
     }
     // Anything already stored keeps its bytes: move them across rather than
     // asking the next sync to fetch every attachment again.
@@ -89,6 +94,60 @@ export const getAll = (db: IDBDatabase): Promise<NoteRecord[]> =>
   request(
     db.transaction(NOTES_STORE, "readonly").objectStore(NOTES_STORE).getAll(),
   ) as Promise<NoteRecord[]>;
+
+export const photoImportPath = async (db: IDBDatabase, id: string): Promise<string | null> => {
+  const value = await request(db.transaction(PHOTO_IMPORTS_STORE, "readonly")
+    .objectStore(PHOTO_IMPORTS_STORE).get(id));
+  if (value === undefined) return null;
+  if (typeof value !== "string" || value.length === 0) throw new Error("Invalid saved photo import receipt.");
+  return value;
+};
+
+// Metadata, bytes and receipt commit together before native copies are released.
+export const importPhotoShare = async (
+  db: IDBDatabase,
+  id: string,
+  note: NoteRecord,
+  attachments: readonly { readonly record: NoteRecord; readonly base64: string }[],
+): Promise<{ readonly alreadyImported: boolean; readonly attachments: readonly NoteRecord[] }> => {
+  const tx = db.transaction([NOTES_STORE, BLOBS_STORE, PHOTO_IMPORTS_STORE], "readwrite");
+  const committed = commit(tx);
+  const notes = tx.objectStore(NOTES_STORE);
+  const blobs = tx.objectStore(BLOBS_STORE);
+  const receipts = tx.objectStore(PHOTO_IMPORTS_STORE);
+  let alreadyImported = false;
+  const written: NoteRecord[] = [];
+  const receipt = receipts.get(id);
+  receipt.onsuccess = () => {
+    if (receipt.result !== undefined) {
+      if (typeof receipt.result !== "string" || receipt.result.length === 0) { tx.abort(); return; }
+      alreadyImported = true;
+      return;
+    }
+    const target = notes.get(note.path);
+    target.onsuccess = () => {
+      if (target.result !== undefined) { tx.abort(); return; }
+      try {
+        notes.put(note);
+        for (const attachment of attachments) {
+          const existing = notes.get(attachment.record.path);
+          existing.onsuccess = () => {
+            try {
+              const record: NoteRecord = existing.result && !existing.result.deleted
+                ? existing.result as NoteRecord : attachment.record;
+              notes.put(record);
+              blobs.put(attachment.base64, record.path);
+              written.push(record);
+            } catch { tx.abort(); }
+          };
+        }
+        receipts.put(note.path, id);
+      } catch { tx.abort(); }
+    };
+  };
+  await committed;
+  return { alreadyImported, attachments: written };
+};
 
 // A request can throw *synchronously* — put() raises DataCloneError on a value
 // it cannot serialize. Without the abort, the transaction would go on to commit

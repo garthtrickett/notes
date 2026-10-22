@@ -9,6 +9,7 @@ export type LocalError =
   | { readonly kind: "writeFailed"; readonly cause: string }
   | { readonly kind: "forgetFailed"; readonly cause: string }
   | { readonly kind: "imageUnreadable"; readonly cause: string }
+  | { readonly kind: "photoImportFailed"; readonly cause: string }
   | { readonly kind: "imageTooBig"; readonly bytes: number }
   // Not the same failure. A clip or an animation is never resized — resizing
   // one means re-encoding it, which the browser will not do on a canvas — so
@@ -28,6 +29,8 @@ export const describeLocal = (error: LocalError): string => {
       return "Could not finish deleting on this device.";
     case "imageUnreadable":
       return "That image could not be read.";
+    case "photoImportFailed":
+      return "Could not finish receiving the shared photos. Reopen Notes to try again.";
     case "imageTooBig": {
       const mb = (error.bytes / 1_000_000).toFixed(1);
       return `That image is still ${mb} MB after resizing, so it was not added. Git keeps binaries forever.`;

@@ -91,6 +91,8 @@ export type Modal =
 export type Encoding = "utf8" | "base64";
 
 export interface Model {
+  photosBusy: number;
+  photoShareFailure: { readonly id: string; readonly message: string } | null;
   audio: AudioModel;
   notes: Map<string, Note>;
   openPath: string | null;
@@ -185,6 +187,8 @@ export const idleUpdate: UpdateInfo = {
 };
 
 export const createModel = (): Model => ({
+  photosBusy: 0,
+  photoShareFailure: null,
   audio: emptyAudio(),
   notes: new Map(),
   openPath: null,
@@ -217,6 +221,12 @@ export const createModel = (): Model => ({
 });
 
 export type Proposal = AudioProposal
+  | { readonly kind: "photoWorkStarted" }
+  | { readonly kind: "photoWorkFinished" }
+  | { readonly kind: "photoShareFailed"; readonly id: string; readonly error: LocalError }
+  | { readonly kind: "photoShareResolved"; readonly id: string }
+  | { readonly kind: "photoFailed"; readonly error: LocalError }
+  | { readonly kind: "photoShareImported"; readonly note: NoteRecord; readonly attachments: readonly NoteRecord[] }
   | { readonly kind: "hydrated"; readonly notes: readonly Note[] }
   | { readonly kind: "opened"; readonly path: string }
   | { readonly kind: "created"; readonly path: string }
@@ -782,6 +792,22 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return null;
     }
 
+    case "photoWorkStarted": m.photosBusy += 1; m.error = null; return null;
+    case "photoWorkFinished": m.photosBusy = Math.max(0, m.photosBusy - 1); return null;
+    case "photoShareFailed":
+      m.photoShareFailure = { id: p.id, message: describeLocal(p.error) };
+      return null;
+    case "photoShareResolved":
+      if (m.photoShareFailure?.id === p.id) m.photoShareFailure = null;
+      return null;
+
+    case "photoFailed": {
+      // Photo work can fail while an unrelated note is being persisted. It
+      // must not clear that in-flight flag or stop the ordinary save loop.
+      m.error = describeLocal(p.error);
+      return null;
+    }
+
     case "failed": {
       // The one place a local failure becomes a sentence.
       m.error = describeLocal(p.error);
@@ -991,6 +1017,21 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // would fetch the tree a second time for nothing.
       if (first || !moved) return null;
       if (!m.syncing) m.lastSyncedAt = null;
+      return null;
+    }
+
+    case "photoShareImported": {
+      if (m.notes.has(p.note.path)) return reject("That photo note already exists.");
+      for (const record of p.attachments) {
+        const existing = m.notes.get(record.path);
+        if (!existing || existing.deleted) m.notes.set(record.path, { ...record, dirty: false });
+      }
+      m.notes.set(p.note.path, { ...p.note, dirty: false });
+      m.openPath = p.note.path;
+      m.mode = "notes";
+      m.preview = false;
+      m.error = null;
+      m.persistBlocked = false;
       return null;
     }
 

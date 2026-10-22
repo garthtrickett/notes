@@ -434,6 +434,13 @@ not about wherever you are. */
   cursor: pointer;
 }
 .toggle.on { color: #fff; border-color: var(--accent); }
+.photo-action { min-height: 44px; white-space: nowrap; }
+.photo-action:disabled { opacity: .55; cursor: default; }
+.photo-recovery { position: fixed; z-index: 30; bottom: 12px; left: 12px; right: 12px; max-width: 480px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px #0006; }
+.photo-recovery p { margin: 8px 0 12px; }
+.photo-recovery button { min-height: 44px; margin-right: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+.photo-recovery button:disabled { opacity: .55; cursor: default; }
+.app-with-audio .photo-recovery { bottom: calc(var(--audio-player-height) + 12px); }
 
 /* preview */
 .preview {
