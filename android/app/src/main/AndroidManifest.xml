@@ -40,6 +40,12 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".LookupActivity" android:exported="false"
+            android:excludeFromRecents="true" android:taskAffinity=""
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar"
+            android:label="@string/lookup_title" />
+
         <activity android:name=".AudioStorageTestActivity" android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".AudioPlaybackTestActivity" android:exported="false"

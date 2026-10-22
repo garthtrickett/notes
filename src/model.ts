@@ -31,11 +31,15 @@ import { describeLocal, type LocalError } from "./local-error.ts";
 import { applyAnswers, type AlarmAnswer } from "./alarms.ts";
 import { taskMarkdown, type TaskDraft } from "./task-draft.ts";
 import { tasksIn } from "./tasks.ts";
+import { appendLookup, type LookupCapture } from "./lookup-capture.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
 // out of step with it — which was gafu's one real bug.
 export interface NoteRecord {
+  // Device-local native import identities. Never written into Markdown or
+  // uploaded to GitHub; ordinary persistence commits their receipts atomically.
+  readonly lookupCaptures?: readonly string[];
   readonly path: string;
   readonly body: string;
   // Blob SHA of the remote version last seen. null means it has never existed
@@ -221,6 +225,8 @@ export const createModel = (): Model => ({
 });
 
 export type Proposal = AudioProposal
+  | { readonly kind: "lookupCaptured"; readonly capture: LookupCapture }
+  | { readonly kind: "lookupFailed" }
   | { readonly kind: "photoWorkStarted" }
   | { readonly kind: "photoWorkFinished" }
   | { readonly kind: "photoShareFailed"; readonly id: string; readonly error: LocalError }
@@ -1017,6 +1023,30 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // would fetch the tree a second time for nothing.
       if (first || !moved) return null;
       if (!m.syncing) m.lastSyncedAt = null;
+      return null;
+    }
+
+    case "lookupFailed":
+      m.error = "Could not add your saved questions. They are still on this phone; reopen Notes to retry.";
+      return null;
+
+    case "lookupCaptured": {
+      const pending = [...m.notes.values()].find(n => n.lookupCaptures?.includes(p.capture.id));
+      if (pending) {
+        // A resumed import may be retrying a failed local save. Keep the same
+        // text, but allow ordinary persistence to retry it.
+        if (pending.dirty) m.persistBlocked = false;
+        return null;
+      }
+      const path = `dump/${p.capture.day}.md`;
+      const existing = m.notes.get(path);
+      if (existing?.deleted) return reject("Restore that day's dump to receive its saved questions.");
+      m.notes.set(path, {
+        ...(existing ?? { path, baseSha: null, encoding: "utf8" as const, deleted: false }),
+        body: appendLookup(existing?.body ?? "", p.capture), dirty: true, pending: true,
+        lookupCaptures: [...(existing?.lookupCaptures ?? []), p.capture.id],
+      });
+      m.persistBlocked = false;
       return null;
     }
 

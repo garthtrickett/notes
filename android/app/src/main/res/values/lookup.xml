@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="lookup_question" type="id" />
+    <item name="lookup_error" type="id" />
+    <item name="lookup_save" type="id" />
+    <item name="lookup_cancel" type="id" />
+    <string name="lookup_title">Look up later</string>
+    <string name="lookup_prompt">Save the question. Back to your day.</string>
+    <string name="lookup_hint">What do you want to look up?</string>
+    <string name="lookup_save">Save</string>
+    <string name="lookup_saved">Saved for later. Find it in your daily dump when you open Notes.</string>
+    <string name="lookup_failed">Could not save. Your question is still here—try again.</string>
+</resources>

@@ -145,6 +145,20 @@ without evidence. It gets answered by a thumb, not by argument.
 
 ## Repo layout
 
+### Widget: Look up later (2026-10-22)
+
+The Back to my day widget opens a small native capture dialog in its own task.
+Save closes it without opening the vault or changing audio, eating mode or the
+urge count. Questions are saved on the phone first, including offline. On the
+next Notes open/resume they enter the captured day's `dump/YYYY-MM-DD.md` under
+`## Lookup`, reusing that section. The date follows the existing 04:00 boundary
+in the phone's timezone at capture. Normal captures stay outside this section.
+
+Imports use ordinary note proposals, persistence and sync. A device-local
+receipt commits with the note before the native copy is released; retries do
+not duplicate questions or resurrect subsequently removed entries. Native
+captures do not independently contact GitHub, launch a search, or set alarms.
+
 **Two repos: the app is public, the notes are private.**
 
 - `notes` (this repo, public) — the app. Normal code history on `main`.

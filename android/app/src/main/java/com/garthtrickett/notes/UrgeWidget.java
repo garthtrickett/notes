@@ -74,6 +74,12 @@ public class UrgeWidget extends AppWidgetProvider {
             views.setOnClickPendingIntent(R.id.urge_eating, click(context, id, TOGGLE_EATING));
             views.setBoolean(R.id.urge_undo, "setEnabled", count > 0);
             views.setOnClickPendingIntent(R.id.urge_resist, click(context, id, RESIST));
+            // Direct activity PendingIntent: Android 12+ forbids launching UI
+            // through a broadcast trampoline. Keep the existing Notes task alone.
+            Intent capture = new Intent(context, LookupActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            views.setOnClickPendingIntent(R.id.urge_lookup, PendingIntent.getActivity(context, id, capture,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
             views.setOnClickPendingIntent(R.id.urge_undo, click(context, id, UNDO));
             manager.updateAppWidget(id, views);
         }
