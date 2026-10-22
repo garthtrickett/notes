@@ -22,6 +22,34 @@ import java.net.URL;
 // holds the toggle — there is no silent path and this does not try to find one.
 @CapacitorPlugin(name = "Update")
 public class UpdatePlugin extends Plugin {
+    private static volatile UpdatePlugin live;
+
+    @Override public void load() { live = this; }
+
+    @Override protected void handleOnDestroy() {
+        if (live == this) live = null;
+    }
+
+    @Override protected void handleOnResume() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) SelfUpdate.showFailure(getContext());
+    }
+
+    static void showInstallFailure() {
+        UpdatePlugin plugin = live;
+        if (plugin != null && plugin.getActivity() != null && plugin.getActivity().hasWindowFocus()) {
+            SelfUpdate.showFailure(plugin.getContext());
+        }
+    }
+
+    static boolean openConfirmation(Intent intent) {
+        UpdatePlugin plugin = live;
+        if (plugin == null || plugin.getActivity() == null
+                || !plugin.getActivity().hasWindowFocus() || plugin.getActivity().isFinishing()) return false;
+        try {
+            plugin.getActivity().startActivity(intent);
+            return true;
+        } catch (RuntimeException unavailable) { return false; }
+    }
 
     @PluginMethod
     public void canInstall(PluginCall call) {
@@ -127,6 +155,20 @@ public class UpdatePlugin extends Plugin {
         String path = call.getString("path");
         if (path == null) {
             call.reject("install needs a path");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Recent system APK viewers explicitly deny full-screen intent
+            // access for sideloads. A session preserves our current choice and
+            // still requires Android's user confirmation. Stage off the UI thread.
+            new Thread(() -> {
+                try {
+                    SelfUpdate.install(getContext(), new File(path));
+                    call.resolve();
+                } catch (Exception error) {
+                    call.reject("The update could not start: " + error.getMessage());
+                }
+            }).start();
             return;
         }
         Uri uri = FileProvider.getUriForFile(
