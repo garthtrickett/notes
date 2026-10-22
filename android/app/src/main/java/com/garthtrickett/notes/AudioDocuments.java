@@ -30,11 +30,12 @@ final class AudioDocuments implements AudioDelete.Documents {
         final String id, name, mime, path;
         final long size, modified, flags;
         Entry(Cursor cursor, String parent) throws IOException {
-            id = cursor.getString(0); name = cursor.getString(1); mime = cursor.getString(2);
-            size = cursor.isNull(3) ? -1 : cursor.getLong(3);
-            modified = cursor.isNull(4) ? -1 : cursor.getLong(4);
-            flags = cursor.getLong(5);
+            this(cursor.getString(0), cursor.getString(1), cursor.getString(2), cursor.isNull(3) ? -1 : cursor.getLong(3),
+                cursor.isNull(4) ? -1 : cursor.getLong(4), cursor.getLong(5), parent);
+        }
+        Entry(String id, String name, String mime, long size, long modified, long flags, String parent) throws IOException {
             if (id == null || name == null || mime == null) throw new IOException("The provider returned incomplete metadata.");
+            this.id = id; this.name = name; this.mime = mime; this.size = size; this.modified = modified; this.flags = flags;
             path = parent.isEmpty() ? name : parent + "/" + name;
         }
         boolean directory() { return Document.MIME_TYPE_DIR.equals(mime); }
@@ -65,6 +66,11 @@ final class AudioDocuments implements AudioDelete.Documents {
     }
 
     private Uri uri(String id) { return DocumentsContract.buildDocumentUriUsingTree(tree, id); }
+    Uri playbackUri(AudioDelete.Version version) throws IOException {
+        if (!tree.toString().equals(version.root) || !AudioPaths.audio(version.path)) throw new IOException("The selected audio root changed.");
+        descendant(version.document);
+        return uri(version.document);
+    }
     private void check() { if (cancellation != null) cancellation.throwIfCanceled(); }
     private void descendant(String id) throws IOException {
         check();

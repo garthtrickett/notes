@@ -26,6 +26,13 @@
 
         <activity android:name=".AudioStorageTestActivity" android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <activity android:name=".AudioPlaybackTestActivity" android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+        <service android:name=".AudioPlaybackService" android:foregroundServiceType="mediaPlayback" android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <!-- The ringing screen. Its own task with no affinity, so finishing it
              drops back to the lock screen or whatever was open, not into the
@@ -73,6 +80,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Beeper's ContentProvider is another app's, so both halves are needed.

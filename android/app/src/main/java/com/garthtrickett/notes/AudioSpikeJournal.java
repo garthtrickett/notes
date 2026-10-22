@@ -2,10 +2,8 @@ package com.garthtrickett.notes;
 
 import android.util.AtomicFile;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -18,10 +16,11 @@ final class AudioSpikeJournal implements AudioDelete.Journal {
     AudioSpikeJournal(File directory) throws IOException {
         file = new AtomicFile(new File(directory, "audio-storage-spike.json"));
         try {
-            if (!file.getBaseFile().exists() && !new File(file.getBaseFile() + ".bak").exists()) {
+            byte[] bytes = AudioAtomicFiles.read(file);
+            if (bytes == null) {
                 state = new JSONObject().put("schema", 1).put("root", "");
             } else {
-                state = parse(new String(file.readFully(), StandardCharsets.UTF_8));
+                state = parse(new String(bytes, StandardCharsets.UTF_8));
             }
         } catch (JSONException e) { throw new IOException("Storage test state is corrupt; deletion is disabled. Original state retained.", e); }
     }
@@ -84,20 +83,10 @@ final class AudioSpikeJournal implements AudioDelete.Journal {
     }
 
     private void write(JSONObject next) throws IOException {
-        FileOutputStream stream = null;
         try {
-            stream = file.startWrite();
-            stream.write(next.toString().getBytes(StandardCharsets.UTF_8));
-            // AtomicFile.finishWrite swallows fsync failures; check explicitly
-            // before allowing a destructive operation to use this journal.
-            stream.flush();
-            stream.getFD().sync();
-            file.finishWrite(stream);
-            if (!Arrays.equals(file.readFully(), next.toString().getBytes(StandardCharsets.UTF_8)))
-                throw new IOException("The state file commit could not be verified.");
+            AudioAtomicFiles.write(file, next.toString().getBytes(StandardCharsets.UTF_8));
             state = next;
         } catch (IOException e) {
-            if (stream != null) file.failWrite(stream);
             throw new IOException("State could not be saved. No saved result is being claimed.", e);
         }
     }

@@ -655,6 +655,22 @@ only observes; it never repeats deletion automatically. Invalid state is retaine
 and disables destructive operations. This diagnostic is not the final player
 checkpoint implementation.
 
+The playback spike now uses `audio-state.json` with an immutable, versioned
+ledger and a single native state writer. Android AtomicFile commits are flushed,
+fsynced and read back before acknowledgment; a validated prior checkpoint is
+retained. Corrupt-primary recovery requires explicit confirmation and preserves
+the damaged file. Unknown schemas fail closed. A write whose outcome is uncertain
+faults the writer until reopened instead of silently overwriting disk state.
+
+One Media3 MediaSessionService owns the player, media session and checkpoint
+timers. Activities subscribe to native state and never own player lifetime.
+Provider hashing/probing has a separate bounded worker so it cannot delay Pause
+or checkpoint writes. Only explicit Play starts foreground preparation; cold
+start and restored history do not autoplay. Session input is limited to ordinary
+transport controls; caller-supplied media locations and deletion are refused.
+Notes alarms pause an existing player before posting their existing notification.
+The full SAM Audio projection and phone playback qualification remain pending.
+
 The production deletion policy remains **undecided pending actual-phone
 Syncthing tests**. Ordinary deletion is under test only for two named disposable
 files. No folder type, ignore rule or server deletion policy is changed by the

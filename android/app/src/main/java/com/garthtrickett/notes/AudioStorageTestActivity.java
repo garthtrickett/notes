@@ -14,12 +14,11 @@ import android.widget.TextView;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 // Temporary native diagnostic for PLAN-AUDIO step 1, not the Audio library UI.
 // Single process-wide writer survives Activity recreation; no scan on app boot.
 public class AudioStorageTestActivity extends Activity {
-    private static final ExecutorService WORKER = Executors.newSingleThreadExecutor();
+    private static final ExecutorService WORKER = AudioTasks.FILES;
     private static final int PICK_ROOT = 61;
     private LinearLayout controls, rows;
     private TextView message, details;
@@ -47,6 +46,7 @@ public class AudioStorageTestActivity extends Activity {
         controls = new LinearLayout(this); controls.setOrientation(LinearLayout.VERTICAL); page.addView(controls);
         button(controls, "Select phone-media folder", this::selectRoot);
         button(controls, "Refresh / check deleted test copy", this::refresh);
+        button(controls, "Audio playback test", () -> startActivity(new Intent(this, AudioPlaybackTestActivity.class)));
         rows = new LinearLayout(this); rows.setOrientation(LinearLayout.VERTICAL); page.addView(rows);
         button(page, "Back to Notes", this::finish);
         refresh();
@@ -100,6 +100,7 @@ public class AudioStorageTestActivity extends Activity {
             message.setText("Folder selection cancelled. The previous folder and files are unchanged."); return;
         }
         Uri chosen = data.getData();
+        if (!chosen.toString().equals(binding)) AudioRuntime.rootChanging();
         int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         run("Checking folder permission…", () -> {
             AudioSpikeJournal journal = new AudioSpikeJournal(getFilesDir());
@@ -201,6 +202,7 @@ public class AudioStorageTestActivity extends Activity {
     }
 
     private void remove(AudioDelete.Version version) {
+        AudioRuntime.beforeDiagnosticDelete(version);
         run("Revalidating and deleting the selected test download…", () -> {
             AudioSpikeJournal journal = new AudioSpikeJournal(getFilesDir());
             AudioDelete.Version pending = journal.deletion();
