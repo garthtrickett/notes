@@ -46,11 +46,16 @@ const historyView = (item: AudioHistory, busy: boolean, propose: Propose): Templ
 export const audioView = (audio: AudioModel, propose: Propose): TemplateResult => {
   const s = audio.snapshot, busy = audio.busy > 0 || s?.operation !== null && s?.operation !== undefined;
   const failure = audio.error ?? s?.failure;
+  const terms = audio.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (item: AudioRow | AudioHistory): boolean => {
+    const text = [item.title, item.author ?? "", item.path].join(" ").toLocaleLowerCase();
+    return terms.every(term => text.includes(term));
+  };
   const rows = (s?.rows ?? []).filter(row => (row.listening?.mark ?? "UNPLAYED") === audio.filter &&
-    (audio.source === "all" || row.path.startsWith(`${audio.source}/`)));
+    (audio.source === "all" || row.path.startsWith(`${audio.source}/`)) && matches(row));
   const visibleIds = new Set((s?.rows ?? []).flatMap(row => row.durableId === null ? [] : [row.durableId]));
   const history = (s?.history ?? []).filter(item => item.deletion !== "INTENT" && !visibleIds.has(item.id) && item.listening.mark === audio.filter &&
-    (audio.source === "all" || item.path.startsWith(`${audio.source}/`)));
+    (audio.source === "all" || item.path.startsWith(`${audio.source}/`)) && matches(item));
   const pending = (s?.history ?? []).filter(item => item.deletion === "INTENT");
   return html`<section class="audio-library" aria-label="Audio library">
     <header class="audio-heading"><div><h1>Audio</h1><p>Downloaded recordings, at your own pace.</p></div>
@@ -66,6 +71,12 @@ export const audioView = (audio: AudioModel, propose: Propose): TemplateResult =
     ${s === null ? html`<p class="audio-notice">Connecting to audio…</p>` : !s.rootSelected ? html`
       <div class="audio-empty"><h2>Your downloads, here.</h2><p>Choose this phone’s phone-media folder to listen to Opus recordings and M4B audiobooks.</p>
       <button ?disabled=${busy} @click=${() => request(propose, { action: "chooseFolder" })}>Choose audio folder</button></div>` : html`
+      <div class="audio-search">
+        <input type="search" aria-label="Search audio" placeholder="Search title, author or filename"
+          autocomplete="off" autocapitalize="none" spellcheck="false" .value=${live(audio.query)}
+          @input=${(event: Event) => propose({ kind: "audioFilter", query: (event.target as HTMLInputElement).value })} />
+        ${audio.query ? html`<button @click=${() => propose({ kind: "audioFilter", query: "" })}>Clear</button>` : nothing}
+      </div>
       <div class="audio-filters"><div role="group" aria-label="Listening state">${(["UNPLAYED", "IN_PROGRESS", "DONE"] as const).map(filter => html`
         <button aria-pressed=${audio.filter === filter} class=${audio.filter === filter ? "on" : ""}
           @click=${() => propose({ kind: "audioFilter", filter })}>${label(filter)}</button>`)}</div>
@@ -73,7 +84,7 @@ export const audioView = (audio: AudioModel, propose: Propose): TemplateResult =
           <option value="all">All sources</option><option value="youtube">YouTube</option><option value="podcasts">Podcasts</option><option value="audiobooks">Audiobooks</option>
         </select></label></div>
       ${rows.length || history.length ? html`<ul class="audio-list">${rows.map(row => rowView(row, busy || pending.some(item => item.currentRoot && item.path === row.path), propose))}${history.map(item => historyView(item, busy, propose))}</ul>` : html`
-        <p class="audio-notice">No ${label(audio.filter).toLowerCase()} recordings here.</p>`}
+        <p class="audio-notice" role="status">${terms.length ? "No recordings match your search in this view." : `No ${label(audio.filter).toLowerCase()} recordings here.`}</p>`}
       <footer class="audio-footer"><span>Opus · M4B · Local files only</span>
         <button ?disabled=${busy} @click=${() => request(propose, { action: "chooseFolder" })}>Change audio folder</button></footer>`}
   </section>`;
