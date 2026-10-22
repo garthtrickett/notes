@@ -1,5 +1,7 @@
 # Build plan
 
+Feature plan: [Audio library in Notes](PLAN-AUDIO.md).
+
 Six phases. Each is self-contained and ends with the whole thing under test.
 
 The split is at the risky seams: phase 1 proves the architecture with no network,

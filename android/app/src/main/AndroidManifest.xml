@@ -24,6 +24,9 @@
 
         </activity>
 
+        <activity android:name=".AudioStorageTestActivity" android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
+
         <!-- The ringing screen. Its own task with no affinity, so finishing it
              drops back to the lock screen or whatever was open, not into the
              app. -->

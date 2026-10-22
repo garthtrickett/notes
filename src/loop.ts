@@ -34,8 +34,10 @@ import type { VaultConfig } from "./view-settings.ts";
 import { createEditor, type EditorHandle } from "./editor.ts";
 import { followLink, resolveLink } from "./links.ts";
 import { titleFor, urlFor } from "./url.ts";
+import { nativeStorageTest, type AudioStorageTest } from "./audio.ts";
 
 export interface Deps {
+  readonly audioStorageTest?: AudioStorageTest;
   readonly db: IDBDatabase;
   readonly shrink: import("./attachments.ts").Shrinker;
   readonly github: Github | null;
@@ -80,6 +82,7 @@ const QUIET_MS = 1_500;
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const { db, github, now, schedule, shrink } = deps;
   const model = createModel();
+  const audioStorageTest = deps.audioStorageTest ?? nativeStorageTest();
   let wakeScheduled = false;
   // When each note was last typed into. Bookkeeping about the loop rather than
   // about notes — the same reason the backoff lives here and not in present(),
@@ -273,6 +276,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const paint = () => {
     render(
       view(model, {
+        audioStorageTestSupported: audioStorageTest.supported,
         propose,
         now,
         onCapture: capture,
@@ -624,6 +628,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && model.modal.draft.date !== "";
     const rejection = present(model, p);
+    if (p.kind === "audioStorageTestRequested" && rejection === null) {
+      track(audioStorageTest.open().then((result) =>
+        propose({ kind: "audioStorageTestFinished", error: result.ok ? null : result.error }),
+      ));
+    }
     if (taskHasDate && rejection === null) {
       track(askToRemind().then(() => propose({ kind: "woke" })));
     }

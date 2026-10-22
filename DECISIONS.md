@@ -638,6 +638,28 @@ has calcified around a different shape.
 
 ---
 
+## Native audio state — prospective extension, 22 October 2026
+
+`PLAN-AUDIO.md` adds device-local listening state whose durable truth is a
+versioned JSON file in Android app-private storage. The native playback module
+will own marks, bookmarks and deletion intents even while JavaScript is suspended.
+IndexedDB and the SAM model will project native snapshots; audio bytes stay in
+the selected external folder. Updates retain this state; uninstalling or clearing
+app data can discard it. This does not change Markdown notes or their outbox,
+promise cross-device progress, or import AntennaPod's history.
+
+The first storage spike uses a separate `audio-storage-spike.json` journal,
+written by one native worker with an atomic, explicitly fsynced commit. It stores
+the selected grant and the exact disposable test-file deletion identity. Recovery
+only observes; it never repeats deletion automatically. Invalid state is retained
+and disables destructive operations. This diagnostic is not the final player
+checkpoint implementation.
+
+The production deletion policy remains **undecided pending actual-phone
+Syncthing tests**. Ordinary deletion is under test only for two named disposable
+files. No folder type, ignore rule or server deletion policy is changed by the
+spike. `AUDIO-VALIDATION.md` records the gates and device procedure.
+
 ## Principles
 
 Cited in the source by **name**, not by number — `(never duplicate rules)` rather
@@ -754,4 +776,3 @@ which is also where gafu's one real bug lives, having sailed straight through
 5. Only then: textarea, markdown rendering, links, search.
 
 If step 4 works, the rest is a text box and some CSS.
-
