@@ -116,9 +116,12 @@ Visibility of the two specifically named test copies is therefore **not yet
 verified**; ordinary format visibility must not be substituted for specimen
 delivery. The server still holds both test copies with their original SHA-256
 values. The user subsequently opened Syncthing and reported it connected; the
-server API independently confirms that connection and active transfer. Both
-named specimens remain in the remote-needed list behind the media backlog.
-Establish visibility of the named specimens before requesting their deletion.
+server API independently confirms that connection and active transfer. At
+04:43 UTC the server index reported both exact named specimens available on the
+phone, rather than temporary files, while other media was still transferring.
+The user has been asked to Refresh Notes and confirm those exact names and their
+controls. Phone visibility remains unverified until that reply; no deletion has
+been requested or acknowledged.
 Cancellation, byte removal, rescan/reconnect/restart/reboot behaviour, and the
 phone's Syncthing configuration remain unverified. Private media titles in the
 screenshot are not copied into this public repository.
@@ -163,6 +166,22 @@ reconciles updates received between subscription and the initial snapshot.
 The complete web suite passes **822 tests**, TypeScript check and Vite build.
 Wiring and testing the actual native/JavaScript subscription lifecycle and full
 SAM Audio UI remain outstanding.
+
+### Additional host extractor qualification
+
+The follow-up `audio-probe-qualification` branch adds the two synthetic tones as
+test resources and exercises the actual Media3 Inspector against local files.
+The complete native suite passes **47 tests, 0 failures**: both Ogg/Opus and
+MP4/AAC-in-M4B expose audio tracks, approximately five-second durations and their
+embedded title, without inventing an author. Pre-cancelled preparation refuses
+to open a file. These tests do not qualify audio decoders or audible output.
+
+The first attempt used Robolectric's legacy Looper simulation and timed out;
+the instrumentation-style threading mode permits the real extractor threads.
+The next run exposed an incorrect test expectation for filename fallback: both
+fixtures contain real title metadata. Correcting that expectation yielded the
+47-test pass. No production playback code changed for these checks. The new
+tests are additional to the 44 tests in the source of forthcoming build 60.
 
 ### Playback phone procedure for the forthcoming signed update
 
