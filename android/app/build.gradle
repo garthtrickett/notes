@@ -55,6 +55,9 @@ android {
         unitTests.all {
             maxHeapSize = '1024m'
             maxParallelForks = 1
+            testLogging {
+                exceptionFormat = 'full'
+            }
         }
     }
 }
