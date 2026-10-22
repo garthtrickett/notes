@@ -106,13 +106,19 @@ document and test a successor integration before implementing it.
 
 ### Phone observation received
 
-On 22 October the user explicitly confirmed that **both the `.opus` and `.m4b`
-test files appear** in the actual phone storage test. This proves that enumeration
-can show both specimens on that phone. The Android/build line and read/write
-status have not been supplied and are not inferred. Cancellation, byte removal,
-rescan/reconnect/restart/reboot behaviour, and the phone's Syncthing configuration
-remain unverified. The next requested step is cancellation and confirmed deletion
-of the disposable Opus copy, checked both in Notes and the phone file manager.
+On 22 October the user initially reported that both formats appear. Their
+subsequent screenshot directly confirms **Android 17 (API 37), Notes 1.0.59,
+read/write grant, and 27 Opus/M4B files enumerated**. It shows ordinary recordings
+where the named disposable specimens and their buttons would appear first.
+Visibility of the two specifically named test copies is therefore **not yet
+verified**; ordinary format visibility must not be substituted for specimen
+delivery. The server still holds both test copies with their original SHA-256
+values, and its API reports the phone disconnected at this observation.
+The next step is to reconnect phone Syncthing, refresh Notes, and establish
+visibility of the named specimens before requesting their deletion.
+Cancellation, byte removal, rescan/reconnect/restart/reboot behaviour, and the
+phone's Syncthing configuration remain unverified. Private media titles in the
+screenshot are not copied into this public repository.
 
 ## Playback/durability spike in progress
 
