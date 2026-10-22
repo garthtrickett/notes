@@ -39,8 +39,9 @@ storage; it is diagnostic state, not the final player-state schema.
 - Server share: send-only, Ignore Delete false, filesystem watcher enabled,
   rescan interval 300 seconds; observed via its local Syncthing API.
 - Phone: Android 17 (API 37), Notes 1.0.59, local read/write grant and 27 audio
-  files confirmed by screenshot. Syncthing folder type, Ignore Delete, ignore
-  patterns and lifecycle behaviour remain **unverified**.
+  files confirmed by screenshot. The user reports Syncthing **Send & Receive**
+  with **empty ignore patterns**. Ignore Delete is **not visible in their UI**;
+  its value remains unknown. Lifecycle/deletion behaviour remains under test.
 - No phone is attached to the host's ADB server. Phone steps require the user.
 - Web validation: `bun test` **816 pass, 0 fail**, `bun run check` and
   `bun run build` pass. Native unit tests pass (15 tests, including existing
@@ -84,6 +85,7 @@ document and test a successor integration before implementing it.
 
 | Gate | Current evidence |
 | --- | --- |
+| Phone Syncthing configuration inspected | User reports Send & Receive, empty ignore patterns; Ignore Delete not shown/value unknown |
 | Both exact named disposable copies visible in Notes | Confirmed by user on 22 October; cancellation/deletion not yet tested |
 | Storage access survives reboot | Pending actual phone |
 | Deletion survives rescan/reconnect/app restart/phone reboot | Pending actual phone, both specimens |
@@ -125,9 +127,19 @@ The app build for this later observation was not supplied. Both server copies
 were independently rehashed and still match their original synthetic fixtures.
 The next phone step is preparing and cancelling the Opus deletion, then checking
 that it remains listed. No physical deletion has been acknowledged.
-Cancellation, byte removal, rescan/reconnect/restart/reboot behaviour, and the
-phone's Syncthing configuration remain unverified. Private media titles in the
-screenshot are not copied into this public repository.
+The user subsequently inspected Syncthing **on the phone** and reported folder
+type **Send & Receive**, ignore patterns **empty**, and Ignore Delete **not
+shown**. The missing option does not establish its value. A fresh read-only
+server API check still shows **send-only**, Ignore Delete false, one connected
+phone peer, and both server specimens matching their original SHA-256 values.
+No Syncthing settings or ignore rules have been changed by this experiment.
+
+Cancellation, physical byte removal and rescan/reconnect/restart/reboot behaviour
+remain unverified. The next phone step is to prepare/cancel the Opus test deletion
+and verify it is retained, then prepare/confirm deletion and check the diagnostic
+and phone file manager. M4B stays untouched until the Opus persistence sequence
+is complete. Private media titles in the screenshot are not copied into this
+public repository.
 
 ## Delivered playback diagnostic
 
