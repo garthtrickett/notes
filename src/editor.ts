@@ -47,6 +47,7 @@ export interface EditorHooks {
 }
 
 export interface EditorHandle {
+  readonly caret: () => number;
   readonly dom: HTMLElement;
   readonly doc: () => string;
   // A different note gets a fresh state, so undo stops at the note boundary
@@ -411,6 +412,7 @@ export const createEditor = (hooks: EditorHooks): EditorHandle => {
     redecorate: () => {
       view.dispatch({ effects: rebuild.of(null), annotations: fromModel.of(true) });
     },
+    caret: () => view.state.selection.main.head,
     focus: () => view.focus(),
     focusAt: (pos) => {
       const at = Math.max(0, Math.min(pos, view.state.doc.length));

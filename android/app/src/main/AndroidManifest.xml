@@ -24,6 +24,22 @@
 
         </activity>
 
+        <activity android:name=".PhotoShareActivity" android:exported="true"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
         <activity android:name=".AudioStorageTestActivity" android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
         <activity android:name=".AudioPlaybackTestActivity" android:exported="false"
@@ -124,6 +140,7 @@
     <uses-permission android:name="com.beeper.android.permission.SEND_PERMISSION" />
 
     <queries>
+        <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
         <package android:name="com.beeper.chat" />
         <provider android:authorities="com.beeper.api" />
     </queries>

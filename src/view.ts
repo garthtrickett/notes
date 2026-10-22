@@ -45,6 +45,10 @@ type Propose = (p: Proposal) => void;
 // Everything the view is handed. The positional list grew by exactly one per
 // feature and had reached six.
 export interface ViewCtx {
+  readonly onAddPhoto?: (camera: boolean) => void;
+  readonly photoCaptureSupported?: boolean;
+  readonly onRetryPhotoShare?: () => void;
+  readonly onDiscardPhotoShare?: (id: string) => void;
   readonly audioStorageTestSupported?: boolean;
   readonly propose: Propose;
   readonly now: () => number;
@@ -271,6 +275,10 @@ const editor = (model: Model, ctx: ViewCtx) => {
       >
         History <kbd>H</kbd>
       </button>
+      <button class="toggle photo-action" title="Choose photos to add to this note" ?disabled=${model.photosBusy > 0}
+        @click=${() => ctx.onAddPhoto?.(false)}>Add photo</button>
+      ${ctx.photoCaptureSupported ? html`<button class="toggle photo-action" title="Take a photo for this note" ?disabled=${model.photosBusy > 0}
+        @click=${() => ctx.onAddPhoto?.(true)}>Take photo</button>` : nothing}
       <button
         class="toggle"
         title="Archive ${path}"
@@ -457,7 +465,7 @@ const syncMessage = (model: Model): string | null => {
 };
 
 const status = (model: Model) => {
-  const message = syncMessage(model);
+  const message = model.photosBusy > 0 ? "Adding photos…" : syncMessage(model);
   return message === null
     ? nothing
     : html`<p class="status" role="status">${message}</p>`;
@@ -1171,7 +1179,17 @@ const contentView = (model: Model, ctx: ViewCtx): TemplateResult => {
   `;
 };
 
+const photoRecovery = (failure: Model["photoShareFailure"], busy: number, ctx: ViewCtx) => failure ? html`
+  <aside class="photo-recovery" role="alert">
+    <strong>Shared photos haven’t been added</strong>
+    <p>${failure.message}</p>
+    <button ?disabled=${busy > 0} @click=${() => ctx.onRetryPhotoShare?.()}>Retry</button>
+    <button ?disabled=${busy > 0} title="Cancel this import without deleting photos in other apps"
+      @click=${() => ctx.onDiscardPhotoShare?.(failure.id)}>Discard shared photos</button>
+  </aside>` : nothing;
+
 export const view = (model: Model, ctx: ViewCtx): TemplateResult => html`
   <div class=${model.audio.snapshot?.player ? "app-with-audio" : "app-content"}>
     ${contentView(model, ctx)}${audioPlayer(model.audio, ctx.propose)}${audioConfirmation(model.audio, ctx.propose)}
+    ${photoRecovery(model.photoShareFailure, model.photosBusy, ctx)}
   </div>`;

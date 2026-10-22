@@ -37,8 +37,12 @@ import { titleFor, urlFor } from "./url.ts";
 import { nativeAudioLibrary, type AudioLibrary } from "./audio-library.ts";
 import type { AudioConnection } from "./audio.ts";
 import { nativeStorageTest, type AudioStorageTest } from "./audio.ts";
+import { nativePhotoShares, type PhotoShares } from "./photos.ts";
+import { photoNotePath, preparePhotoShare } from "./photo-actions.ts";
+import { importPhotoShare, photoImportPath } from "./idb.ts";
 
 export interface Deps {
+  readonly photoShares?: PhotoShares;
   readonly audioStorageTest?: AudioStorageTest;
   readonly audioLibrary?: AudioLibrary;
   readonly db: IDBDatabase;
@@ -88,6 +92,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const model = createModel();
   const audioStorageTest = deps.audioStorageTest ?? nativeStorageTest();
   const audioLibrary = deps.audioLibrary ?? nativeAudioLibrary();
+  const photoShares = deps.photoShares ?? nativePhotoShares();
   let audioConnection: AudioConnection | null = null;
   let disposed = false;
   let audioConnectionGeneration = 0;
@@ -177,11 +182,11 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // not (never duplicate rules).
   // The clipboard and a drag hand over an image differently; what happens to it
   // afterwards is the same (never duplicate rules).
-  const attachImage = (file: File, path: string, caret: number | null) => {
+  const attachImage = (file: File, path: string, caret: number | null): Promise<number> => {
     const note = model.notes.get(path);
-    if (!note) return;
-    track(
-      actions
+    if (!note || note.deleted) return Promise.resolve(0);
+    propose({ kind: "photoWorkStarted" });
+    const work = actions
         .attach(file, note, caret ?? note.body.length, now, shrink)
         .then(async (p) => {
           // Store the bytes first. The proposal that follows describes a record
@@ -190,11 +195,107 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
             await actions.storeBlobs(db, [
               { path: p.path, body: p.base64, encoding: "base64" },
             ]);
+            media.forget([p.path]);
           }
           return p;
         })
-        .then(propose),
-    );
+        .then(p => {
+          propose(p.kind === "failed" ? { kind: "photoFailed", error: p.error } : p);
+          return p.kind === "attached" ? p.ref.length : 0;
+        })
+        .catch((cause: unknown) => {
+          propose({ kind: "photoFailed", error: { kind: "imageUnreadable", cause: String(cause) } });
+          return 0;
+        }).finally(() => { if (!disposed) propose({ kind: "photoWorkFinished" }); });
+    track(work);
+    return work;
+  };
+
+  const addPhoto = (camera: boolean): void => {
+    if (model.mode !== "notes" || model.openPath === null) return;
+    // Capture the destination before leaving for Android's picker/camera.
+    // A sync, navigation, or re-render while it is open must not redirect it.
+    const path = model.openPath;
+    const note = model.notes.get(path);
+    if (!note || note.deleted) return;
+    let caret = model.preview ? note.body.length : cm.caret();
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.multiple = !camera;
+    input.hidden = true;
+    input.setAttribute("data-photo-picker", "");
+    if (camera) input.setAttribute("capture", "environment");
+    input.addEventListener("cancel", () => input.remove(), { once: true });
+    input.addEventListener("change", () => {
+      const files = [...(input.files ?? [])];
+      input.remove();
+      track((async () => {
+        for (const file of files) caret += await attachImage(file, path, caret);
+      })());
+    }, { once: true });
+    root.append(input);
+    input.click();
+  };
+
+  let receivingPhotos = false;
+  let photosChanged = false;
+  const receivePhotos = async (): Promise<void> => {
+    if (!photoShares.supported || !model.hydrated || disposed) return;
+    photosChanged = true;
+    if (receivingPhotos) return;
+    receivingPhotos = true;
+    try {
+      do {
+        photosChanged = false;
+        const batches = await photoShares.pending();
+        for (const batch of batches) {
+          if (disposed) return;
+          let preparing = false;
+          try {
+            if (await photoImportPath(db, batch.id) === null) {
+              preparing = true;
+              propose({ kind: "photoWorkStarted" });
+              const path = photoNotePath(batch, new Set(model.notes.keys()));
+              const prepared = await preparePhotoShare(batch, path, photoShares.read, shrink);
+              if (!prepared.ok) { propose({ kind: "photoShareFailed", id: batch.id, error: prepared.error }); continue; }
+              if (disposed) return;
+              const saved = await importPhotoShare(db, batch.id, prepared.value.note, prepared.value.attachments);
+              media.forget(saved.attachments.map(record => record.path));
+              if (!saved.alreadyImported && !disposed) propose({ kind: "photoShareImported",
+                note: prepared.value.note, attachments: saved.attachments });
+            }
+            // A failed acknowledgment is retried on the next foreground entry.
+            // The durable receipt prevents duplicate or resurrected notes.
+            propose({ kind: "photoShareResolved", id: batch.id });
+            try { await photoShares.acknowledge(batch.id); }
+            catch { /* Only the temporary-copy cleanup remains; the note is safe. */ }
+          } catch (cause) {
+            if (!disposed) propose({ kind: "photoShareFailed", id: batch.id, error: { kind: "photoImportFailed", cause: String(cause) } });
+          } finally {
+            if (preparing && !disposed) propose({ kind: "photoWorkFinished" });
+          }
+        }
+      } while (photosChanged && !disposed);
+    } catch (cause) {
+      if (!disposed) propose({ kind: "photoFailed", error: { kind: "photoImportFailed", cause: String(cause) } });
+    } finally { receivingPhotos = false; }
+  };
+
+  const retryPhotoShare = (): void => {
+    if (disposed || model.photosBusy > 0) return;
+    const id = model.photoShareFailure?.id;
+    if (id !== undefined) propose({ kind: "photoShareResolved", id });
+    track(receivePhotos());
+  };
+  const discardPhotoShare = (id: string): void => {
+    if (disposed || model.photosBusy > 0 || model.photoShareFailure?.id !== id) return;
+    propose({ kind: "photoWorkStarted" });
+    track(photoShares.acknowledge(id).then(() => {
+      if (!disposed) propose({ kind: "photoShareResolved", id });
+    }).catch((cause: unknown) => {
+      if (!disposed) propose({ kind: "photoShareFailed", id, error: { kind: "photoImportFailed", cause: String(cause) } });
+    }).finally(() => { if (!disposed) propose({ kind: "photoWorkFinished" }); }));
   };
 
   const pasteImage = (event: ClipboardEvent, path: string, caret: number | null) => {
@@ -289,6 +390,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         propose,
         now,
         onCapture: capture,
+        onAddPhoto: addPhoto,
+        onRetryPhotoShare: retryPhotoShare,
+        onDiscardPhotoShare: discardPhotoShare,
+        photoCaptureSupported: photoShares.supported,
         onCheckin: checkin,
         onRemind: remind,
         previewCache,
@@ -642,6 +747,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && model.modal.draft.date !== "";
     const rejection = present(model, p);
+    if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed")) track(receivePhotos());
     if (rejection === null && p.kind === "audioReconnect") connectAudio();
     if (rejection === null && p.kind === "audioRequested" && model.audio.snapshot !== null) {
       const snapshot = model.audio.snapshot;
@@ -753,7 +859,18 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   }
   propose({ kind: "audioSupported", supported: audioLibrary.supported });
   if (audioLibrary.supported) connectAudio();
-  const dispose = () => { disposed = true; void audioConnection?.disconnect(); };
+  let stopPhotos: (() => void) | null = null;
+  if (photoShares.supported) track(photoShares.listen(() => { track(receivePhotos()); }).then(stop => {
+    if (disposed) stop(); else stopPhotos = stop;
+  }).catch((cause: unknown) => {
+    if (!disposed) propose({ kind: "photoFailed", error: { kind: "photoImportFailed", cause: String(cause) } });
+  }));
+  const dispose = () => {
+    disposed = true;
+    stopPhotos?.();
+    root.querySelectorAll("[data-photo-picker]").forEach(input => input.remove());
+    void audioConnection?.disconnect();
+  };
   return { model, propose, flush, enterEditor, find, dispose };
 };
 
