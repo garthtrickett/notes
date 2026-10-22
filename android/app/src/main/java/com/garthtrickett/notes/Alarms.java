@@ -474,7 +474,7 @@ final class Alarms {
                     if (!r.optBoolean("alarm")) continue;
                     long at = r.getLong("at");
                     String path = r.getString("path"), title = r.getString("title");
-                    Entry followup = new Entry(AlarmLines.id(path, title), at, title, path, at, false);
+                    Entry followup = new Entry(AlarmLines.linkId(r.getString("taskId")), at, title, path, at, false);
                     add(context, ALARMS, followup);
                     schedule(context, followup);
                 }

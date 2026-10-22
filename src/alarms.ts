@@ -11,9 +11,11 @@
 
 import { flipTask, setReminder, tasksIn } from "./tasks.ts";
 import { activateTask, completionToken } from "./task-links.ts";
+import { reminderId } from "./notify.ts";
 
 export interface AlarmAnswer {
   readonly kind: "done" | "snooze" | "activate";
+  readonly id?: number;
   readonly taskId?: string;
   readonly sourceId?: string;
   readonly sourcePath?: string;
@@ -36,10 +38,11 @@ export const parseAnswers = (raw: unknown): AlarmAnswer[] => {
   const answers: AlarmAnswer[] = [];
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
-    const { kind, path, title, at, snoozeTo, taskId, sourceId, sourcePath, token } = item as Record<string, unknown>;
+    const { kind, path, title, at, snoozeTo, taskId, sourceId, sourcePath, token, id } = item as Record<string, unknown>;
     if (kind !== "done" && kind !== "snooze" && kind !== "activate") continue;
     if (typeof path !== "string" || typeof title !== "string") continue;
     if (typeof at !== "number" || !Number.isFinite(at)) continue;
+    const alarmId = typeof id === "number" && Number.isSafeInteger(id) ? { id } : {};
     if (kind === "activate") {
       if (typeof taskId !== "string" || typeof sourceId !== "string" || typeof sourcePath !== "string" || typeof token !== "string" || !/^[a-zA-Z0-9:._-]{1,128}$/.test(token)) continue;
       answers.push({ kind, path, title, at, snoozeTo: null, taskId, sourceId, sourcePath, token });
@@ -48,8 +51,8 @@ export const parseAnswers = (raw: unknown): AlarmAnswer[] => {
     if (kind === "snooze" && (typeof snoozeTo !== "number" || !Number.isFinite(snoozeTo))) continue;
     if (kind === "done" && (taskId !== undefined || token !== undefined)) {
       if (typeof taskId !== "string" || typeof token !== "string" || !/^[a-zA-Z0-9:._-]{1,128}$/.test(token)) continue;
-      answers.push({ kind, path, title, at, snoozeTo: null, taskId, token });
-    } else answers.push({ kind, path, title, at, snoozeTo: kind === "snooze" ? (snoozeTo as number) : null });
+      answers.push({ kind, path, title, at, snoozeTo: null, taskId, token, ...alarmId });
+    } else answers.push({ kind, path, title, at, snoozeTo: kind === "snooze" ? (snoozeTo as number) : null, ...alarmId });
   }
   return answers;
 };
@@ -84,6 +87,7 @@ export const applyAnswers = (
     }
     const ref = tasksIn(body, answer.path).find(
       (r) => !r.done && r.title === answer.title && r.remindAt === answer.at
+        && (answer.id === undefined || reminderId(r) === answer.id)
         && (answer.taskId === undefined || (r.link?.id === answer.taskId && completionToken(r) === answer.token)),
     );
     if (ref === undefined) continue;

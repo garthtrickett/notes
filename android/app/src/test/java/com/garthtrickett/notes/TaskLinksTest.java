@@ -26,7 +26,7 @@ public class TaskLinksTest {
         return new JSONObject().put("id", "today").put("after", "japanese").put("title", "Today review")
             .put("path", "b.md").put("ready", false).put("alarm", true).put("done", false).put("stamp", 0);
     }
-    private Alarms.Entry parent() { return new Alarms.Entry(AlarmLines.id("a.md", "Japanese"), stamp, "Japanese", "a.md", stamp, true); }
+    private Alarms.Entry parent() { return new Alarms.Entry(AlarmLines.linkId("japanese"), stamp, "Japanese", "a.md", stamp, true); }
     @Before public void setup() {
         context = RuntimeEnvironment.getApplication();
         context.getSharedPreferences("notes.alarms", Context.MODE_PRIVATE).edit().clear().commit();
@@ -64,7 +64,7 @@ public class TaskLinksTest {
         Alarms.links(context, new JSONArray().put(source()).put(child()).put(next));
         Alarms.answer(context, parent(), "done", stamp);
         long at = (stamp / 60_000 + 1) * 60_000;
-        Alarms.Entry today = new Alarms.Entry(AlarmLines.id("b.md", "Today review"), at, "Today review", "b.md", at, false);
+        Alarms.Entry today = new Alarms.Entry(AlarmLines.linkId("today"), at, "Today review", "b.md", at, false);
         Alarms.answer(context, today, "done", at + 5_000);
         JSONArray answers = Alarms.take(context);
         assertEquals(4, answers.length());
@@ -129,5 +129,17 @@ public class TaskLinksTest {
         Alarms.acknowledge(context, new JSONArray().put(last.getJSONObject(0).getString("receipt")));
         Alarms.answer(context, new Alarms.Entry(parent().id, tomorrow, "Japanese", "a.md", tomorrow, true), "done", tomorrow);
         assertEquals(2, Alarms.take(context).length());
+    }
+
+    @Test public void equallyNamedStepsKeepDistinctAlarmIdentities() throws Exception {
+        JSONObject a = source().put("path", "same.md").put("title", "Review");
+        JSONObject b = child().put("path", "same.md").put("title", "Review").put("ready", true)
+            .put("seen", "at:" + stamp).put("stamp", stamp);
+        JSONObject c = child().put("id", "third").put("after", "today").put("title", "Next");
+        TaskLinks.Advanced result = TaskLinks.complete(new JSONArray().put(a).put(b).put(c), AlarmLines.linkId("today"), "same.md", "Review", stamp, stamp);
+        assertEquals(1, result.releases.length());
+        assertEquals("third", result.releases.getJSONObject(0).getString("taskId"));
+        assertFalse(result.nodes.getJSONObject(0).has("completed"));
+        assertNotEquals(AlarmLines.linkId("japanese"), AlarmLines.linkId("today"));
     }
 }

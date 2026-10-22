@@ -48,7 +48,7 @@ final class TaskLinks {
         for (int i = 0; i < result.nodes.length(); i++) {
             JSONObject n = result.nodes.getJSONObject(i);
             if (path.equals(n.optString("path")) && title.equals(n.optString("title"))
-                && AlarmLines.id(path, title) == alarmId && n.optLong("stamp") == stamp) {
+                && AlarmLines.linkId(n.optString("id")) == alarmId && n.optLong("stamp") == stamp) {
                 if (source != null) return result;
                 source = n;
             }

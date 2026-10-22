@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { advanceTaskLinks, completionToken, dependencyProblem, guardedTasks, linkTask, nativeTaskLinks, taskChoice, taskRefs } from "./task-links.ts";
 import { tasksIn, flipTask, rollRepeats, setReminder } from "./tasks.ts";
 import { taskWaiting, withTaskLink } from "./task-meta.ts";
-import { alarmsWanted, reminderSetKey } from "./notify.ts";
+import { alarmsWanted, reminderId, reminderSetKey } from "./notify.ts";
 import { applyAnswers, parseAnswers } from "./alarms.ts";
 
 const now = new Date(2026, 9, 23, 8, 10).getTime();
@@ -14,6 +14,15 @@ const update = (notes: ReturnType<typeof note>[], edits: ReadonlyMap<string, str
 const refs = (body: string) => tasksIn(body, "a.md");
 
 describe("after completing another task", () => {
+  it("keeps equally named steps' alarms distinct and applies Done to the correct identity", () => {
+    const body = meta("- [ ] Review @2026-10-24 08:00!", { id: "one" }) + meta("- [ ] Review @2026-10-24 08:00!", { id: "two" });
+    const all = refs(body), ids = all.map(reminderId);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(reminderId({ ...all[0]!, path: "renamed.md", title: "Renamed task" })).toBe(ids[0]!);
+    const answer = parseAnswers([{ kind: "done", path: "a.md", title: "Review", at: all[1]!.remindAt, id: ids[1] }]);
+    const result = applyAnswers(() => body, answer).get("a.md")!;
+    expect(refs(result).map(r => r.done)).toEqual([false, true]);
+  });
   it("links by durable identity, preserves prose, and does not schedule or allow a waiting tick", () => {
     const body = "Words\n- [ ] Japanese\n- [ ] Today review\n";
     const tasks = refs(body), ids = ["japanese", "today"];

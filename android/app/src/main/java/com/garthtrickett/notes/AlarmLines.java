@@ -79,6 +79,7 @@ final class AlarmLines {
             if (!task.matches()) continue;
             if (!" ".equals(task.group(1))) continue;
             String raw = task.group(2);
+            String linkedId = null;
             Matcher metadata = META.matcher(raw);
             if (metadata.find()) {
                 try {
@@ -90,6 +91,7 @@ final class AlarmLines {
                     for (String key : new String[]{"seen", "completed"}) if (link.has(key) && (!(link.opt(key) instanceof String) || !link.getString(key).matches("[a-zA-Z0-9:._-]{1,128}"))) malformed = true;
                     if (link.has("round") && (!(link.opt("round") instanceof Number) || link.optDouble("round") < 0 || link.optDouble("round") != Math.floor(link.optDouble("round")) || link.optDouble("round") > 9007199254740991d)) malformed = true;
                     if (malformed) continue;
+                    linkedId = link.getString("id");
                     if (link.has("after") && !link.optBoolean("ready")) continue;
                 } catch (JSONException invalid) { continue; }
                 raw = raw.substring(0, metadata.start());
@@ -101,7 +103,7 @@ final class AlarmLines {
             if (at == null || at <= now) continue;
             String title = (raw.substring(0, stamp.start()) + raw.substring(stamp.end()))
                 .replaceAll("\\s{2,}", " ").trim();
-            found.add(new Found(id(path, title), at, title, path, stamp.group(7) != null));
+            found.add(new Found(linkedId == null ? id(path, title) : linkId(linkedId), at, title, path, stamp.group(7) != null));
         }
         return found;
     }
@@ -137,4 +139,6 @@ final class AlarmLines {
         }
         return (int) (TASK_ID_FLOOR + (Math.abs((long) h) % (TASK_ID_CEILING - TASK_ID_FLOOR)));
     }
+
+    static int linkId(String taskId) { return id("", "notes-task:" + taskId); }
 }

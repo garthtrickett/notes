@@ -31,6 +31,8 @@ affected links rather than choosing a copy. Comments are hidden in rendered
 Markdown and task titles, but remain editable text in the source. The original
 offset identity still applies to ordinary tasks. No new task database, network
 service, manifest permission or package is introduced.
+Linked alarm IDs use the durable task ID too: equally named steps keep separate
+alarms, and Done identifies the exact step even if its label matches another.
 
 `task-links.ts` owns validation, identity assignment and completion processing.
 The loop advances links before rolling calendar repeats, persisting or

@@ -88,14 +88,13 @@ export const askToRemind = async (): Promise<boolean> => {
 const TASK_ID_FLOOR = 1000;
 const TASK_ID_CEILING = 2_000_000_000;
 
-// A stable id for a task, from the only two things that identify one: the file
-// it lives in and what it says. Renaming the task cancels the old reminder and
-// schedules a new one, which is the honest reading of "it is a different task
-// now". A collision costs one reminder, and cannot corrupt anything, because
-// the whole set is rebuilt from the notes on every sync.
-export const reminderId = (ref: Pick<TaskRef, "path" | "title">): number => {
+// Linked tasks use their durable identity, so two steps with the same title
+// keep separate alarms. Ordinary tasks retain the original file/title key.
+// The background reader uses exactly the same hash (shared fixture).
+export const reminderId = (ref: Pick<TaskRef, "path" | "title" | "link">): number => {
   let h = 2166136261;
-  for (const ch of `${ref.path}\u0000${ref.title}`) {
+  const identity = ref.link ? `\u0000notes-task:${ref.link.id}` : `${ref.path}\u0000${ref.title}`;
+  for (const ch of identity) {
     h ^= ch.codePointAt(0) as number;
     h = Math.imul(h, 16777619);
   }
