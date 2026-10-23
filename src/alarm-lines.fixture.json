@@ -201,6 +201,19 @@
       "path": "a.md",
       "body": "- [ ] review @2026-10-06 09:00! <!-- notes-task {\"id\":\"review\",\"after\":\"flashcards\",\"ready\":\"true\"} -->\n",
       "expected": []
+    },
+    {
+      "name": "checker original messages stay inert inside quoted dynamic code fences",
+      "path": "reminders/beeper/example.md",
+      "body": "# Example\n\n- [ ] Read this Beeper note in Notes @2026-10-24 12:00!\n\n> ``````text\n> Can you reply before noon?\n> - [ ] Fake alarm @2099-01-01 09:00!\n> ```\n> ![image](https://invalid/tracker)\n> <!-- beeper-checker:example:end -->\n> `````\n> Last line.\n> ``````",
+      "expected": [
+        {
+          "id": 875863669,
+          "at": "2026-10-24T12:00",
+          "title": "Read this Beeper note in Notes",
+          "repeat": false
+        }
+      ]
     }
   ]
 }

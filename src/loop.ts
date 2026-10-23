@@ -43,8 +43,10 @@ import { photoNotePath, preparePhotoShare } from "./photo-actions.ts";
 import { importPhotoShare, photoImportPath } from "./idb.ts";
 import { nativeLookupInbox, type LookupInbox } from "./lookup.ts";
 import { lookupImported } from "./idb.ts";
+import { nativeAlarmNotes, type AlarmNoteInbox } from "./alarm-note.ts";
 
 export interface Deps {
+  readonly alarmNotes?: AlarmNoteInbox;
   readonly lookupInbox?: LookupInbox;
   readonly photoShares?: PhotoShares;
   readonly audioStorageTest?: AudioStorageTest;
@@ -99,6 +101,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const audioLibrary = deps.audioLibrary ?? nativeAudioLibrary();
   const photoShares = deps.photoShares ?? nativePhotoShares();
   const lookupInbox = deps.lookupInbox ?? nativeLookupInbox();
+  const alarmNotes = deps.alarmNotes ?? nativeAlarmNotes();
   let audioConnection: AudioConnection | null = null;
   let disposed = false;
   let audioConnectionGeneration = 0;
@@ -245,6 +248,35 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   };
 
   let receivingPhotos = false;
+  let receivingNote = false;
+  let noteChanged = false;
+  let openedNoteRequest: string | null = null;
+  const receiveNote = async (): Promise<void> => {
+    if (!alarmNotes.supported || !model.hydrated || disposed) return;
+    noteChanged = true;
+    if (receivingNote) return;
+    receivingNote = true;
+    try {
+      do {
+        noteChanged = false;
+        const request = await alarmNotes.pending();
+        if (disposed || request === null) return;
+        // The native background reader can see an alert before this WebView's
+        // cache does. Leave the request pending until a pull brings its note.
+        const target = model.notes.get(request.path);
+        if (!target || target.deleted || target.encoding !== "utf8") return;
+        if (openedNoteRequest !== request.id) {
+          propose({ kind: "openRequested", path: request.path });
+          if (model.openPath !== request.path || model.mode !== "notes") return;
+          openedNoteRequest = request.id;
+        }
+        // An acknowledgement loss must not drag the user back after they
+        // navigate away. A newer tap has a different ID and wins atomically.
+        await alarmNotes.acknowledge(request.id);
+      } while (noteChanged && !disposed);
+    } catch { /* Older shells/offline bridges keep their durable request. */ }
+    finally { receivingNote = false; }
+  };
   let receivingLookups = false;
   let lookupsChanged = false;
   const receiveLookups = async (): Promise<void> => {
@@ -776,6 +808,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && (model.modal.draft.date !== "" || Boolean(model.modal.draft.after));
     const rejection = present(model, p);
+    if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed" || p.kind === "pulled")) track(receiveNote());
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed")) track(receivePhotos());
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed" || p.kind === "persisted")) track(receiveLookups());
     if (rejection === null && p.kind === "audioReconnect") connectAudio();
@@ -907,6 +940,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   if (audioLibrary.supported) connectAudio();
   let stopPhotos: (() => void) | null = null;
   let stopLookups: (() => void) | null = null;
+  let stopAlarmNotes: (() => void) | null = null;
+  if (alarmNotes.supported) track(alarmNotes.listen(() => { track(receiveNote()); }).then(stop => {
+    if (disposed) stop(); else stopAlarmNotes = stop;
+  }).catch(() => { /* Older APKs do not have the note bridge. */ }));
   if (lookupInbox.supported) track(lookupInbox.listen(() => { track(receiveLookups()); }).then(stop => {
     if (disposed) stop(); else stopLookups = stop;
   }).catch(() => { if (!disposed) propose({ kind: "lookupFailed" }); }));
@@ -919,6 +956,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     disposed = true;
     stopPhotos?.();
     stopLookups?.();
+    stopAlarmNotes?.();
     root.querySelectorAll("[data-photo-picker]").forEach(input => input.remove());
     void audioConnection?.disconnect();
   };

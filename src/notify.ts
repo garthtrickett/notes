@@ -360,10 +360,12 @@ interface AlarmNative {
   watch(options: { owner: string; repo: string; branch: string; token: string }): Promise<void>;
   take(): Promise<{ answers: unknown }>;
   acknowledge(options: { receipts: string[] }): Promise<void>;
-  addListener(event: "answered", listener: () => void): Promise<unknown>;
+  pendingNote(): Promise<{ request?: { id?: unknown; path?: unknown } }>;
+  acknowledgeNote(options: { id: string }): Promise<void>;
+  addListener(event: "answered" | "noteRequested", listener: () => void): Promise<{ remove(): Promise<void> }>;
 }
 
-const alarmPlugin = registerPlugin<AlarmNative>("Alarm");
+export const alarmPlugin = registerPlugin<AlarmNative>("Alarm");
 
 // Says what went wrong as well as how many were set. The first clock version
 // caught the plugin's rejection and said nothing, so an alarm that never

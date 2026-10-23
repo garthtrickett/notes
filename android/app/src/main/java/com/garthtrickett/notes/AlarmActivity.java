@@ -14,7 +14,7 @@ import android.widget.TextView;
 import java.lang.ref.WeakReference;
 import java.util.Date;
 
-// The ringing screen: the time, the task, and two buttons. It makes no sound
+// The ringing screen: the time, the task, Done, Snooze and Open note. It makes no sound
 // of its own — the notification that raised it does the ringing, so the alarm
 // still rings when Android shows a heads-up instead of this screen.
 public class AlarmActivity extends Activity {
@@ -134,6 +134,12 @@ public class AlarmActivity extends Activity {
         row.addView(button("Snooze 10", Color.rgb(60, 70, 85), () -> answer("snooze")), half());
         row.addView(button("Done", Color.rgb(30, 130, 80), () -> answer("done")), half());
         root.addView(row, rowParams);
+        LinearLayout.LayoutParams openParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(72));
+        openParams.topMargin = dp(16);
+        root.addView(button("Open note", Color.rgb(50, 85, 130), () -> {
+            if (entry != null) startActivity(AlarmNote.intent(this, entry));
+        }), openParams);
         return root;
     }
 }

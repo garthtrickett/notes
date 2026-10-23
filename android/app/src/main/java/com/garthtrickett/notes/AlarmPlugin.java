@@ -115,4 +115,21 @@ public class AlarmPlugin extends Plugin {
         AlarmPlugin plugin = live;
         if (plugin != null) plugin.notifyListeners("answered", new JSObject());
     }
+
+    @Override protected void handleOnResume() { announceNote(); }
+
+    @PluginMethod public void pendingNote(PluginCall call) {
+        try { call.resolve(new JSObject().put("request", AlarmNote.pending(getContext()))); }
+        catch (RuntimeException failed) { call.reject("Could not read the requested note."); }
+    }
+
+    @PluginMethod public void acknowledgeNote(PluginCall call) {
+        try { AlarmNote.acknowledge(getContext(), call.getString("id")); call.resolve(); }
+        catch (RuntimeException failed) { call.reject("Could not acknowledge the requested note."); }
+    }
+
+    static void announceNote() {
+        AlarmPlugin plugin = live;
+        if (plugin != null) plugin.notifyListeners("noteRequested", new JSObject());
+    }
 }
