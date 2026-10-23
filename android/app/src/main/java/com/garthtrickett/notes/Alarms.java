@@ -391,6 +391,8 @@ final class Alarms {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
         PendingIntent show = PendingIntent.getActivity(
             context, e.id, screen, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent note = PendingIntent.getActivity(context, e.id, AlarmNote.intent(context, e),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification n = new NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(e.title.isEmpty() ? "Notes alarm" : e.title)
@@ -408,6 +410,7 @@ final class Alarms {
             .setVibrate(BUZZ)
             .addAction(0, "Done", answering(context, e, ACTION_DONE))
             .addAction(0, "Snooze 10", answering(context, e, ACTION_SNOOZE))
+            .addAction(0, "Open note", note)
             .build();
         n.flags |= Notification.FLAG_INSISTENT;
         try {

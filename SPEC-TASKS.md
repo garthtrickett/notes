@@ -1,5 +1,28 @@
 # Tasks aggregate — spec
 
+## Open an alarm's note (October 2026)
+
+Android's ringing notification and full-screen alarm both offer **Open note**
+alongside Done and Snooze 10. It opens the note containing that task in Notes,
+silencing only that ringing alarm. It does not complete, snooze or edit the
+task, and does not release a dependent task. Private note contents stay inside
+the ordinary app behind the device lock; the alarm does not display the body.
+
+The explicit, immutable activity intent targets the existing MainActivity.
+Cold launches and warm intents persist one pending destination until the web
+app has hydrated and the note body is available. A note first discovered by the
+background reader may still need a vault pull in the WebView. Offline requests
+wait; a newer tap supersedes an older one, and acknowledgement of the older tap
+cannot remove the newer request. Retry of a lost acknowledgement within the
+same app session does not repeatedly pull the user away from another note.
+Opening an alarm note retains edits already made in other notes. No external
+source app is opened and no new Android permission is required.
+
+Host tests cover both native entry paths, notification PendingIntent identity,
+stopping one of two ringing alarms without an answer, full-screen button taps,
+acknowledgement races, delayed vault pulls and preservation of other edits.
+Physical phone notification/lock-screen qualification remains separate.
+
 ## After completing another task (October 2026)
 
 Tasks → New task → **After completing** selects one unfinished predecessor
