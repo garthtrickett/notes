@@ -6,6 +6,10 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.util.Log;
 import android.widget.RemoteViews;
 import android.widget.Toast;
 
@@ -43,6 +47,7 @@ public class UrgeWidget extends AppWidgetProvider {
             refresh(context);
         } else if (Intent.ACTION_DATE_CHANGED.equals(action) || Intent.ACTION_TIME_CHANGED.equals(action)
                 || Intent.ACTION_TIMEZONE_CHANGED.equals(action)
+                || Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             refresh(context);
         } else {
@@ -50,39 +55,75 @@ public class UrgeWidget extends AppWidgetProvider {
         }
     }
 
-    private static void refresh(Context context) {
-        AppWidgetManager manager = AppWidgetManager.getInstance(context);
-        int[] ids = manager.getAppWidgetIds(new ComponentName(context, UrgeWidget.class));
-        new UrgeWidget().onUpdate(context, manager, ids);
+    static void refresh(Context context) {
+        try {
+            AppWidgetManager manager = AppWidgetManager.getInstance(context);
+            int[] ids = manager.getAppWidgetIds(new ComponentName(context, UrgeWidget.class));
+            new UrgeWidget().onUpdate(context, manager, ids);
+        } catch (RuntimeException refused) {
+            // Widget service recovery is optional; it must not prevent Notes
+            // opening. Keep the failure available in local Android diagnostics.
+            Log.w("UrgeWidget", "Could not refresh home-screen widgets", refused);
+        }
+    }
+
+    @Override public void onAppWidgetOptionsChanged(Context context, AppWidgetManager manager,
+            int id, Bundle options) {
+        onUpdate(context, manager, new int[] {id});
     }
 
     @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
+        for (int id : ids) {
+            try {
+                manager.updateAppWidget(id, views(context, id));
+            } catch (RuntimeException refused) {
+                // A broken or removed instance must not block the other copies.
+                Log.w("UrgeWidget", "Could not update a home-screen widget", refused);
+            }
+        }
+    }
+
+    // A complete snapshot, including every action, so a launcher can rebuild
+    // from an error placeholder or after losing its previous view hierarchy.
+    static RemoteViews views(Context context, int id) {
         int count = UrgeCounter.today(context, System.currentTimeMillis());
         boolean eating = UrgeCounter.isEating(context);
-        for (int id : ids) {
-            RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.urge_widget);
-            views.setTextViewText(R.id.urge_count, count == 0
-                ? context.getString(R.string.urge_widget_no_count)
-                : context.getResources().getQuantityString(R.plurals.urge_widget_count, count, count));
-            views.setTextViewText(R.id.urge_eating, context.getString(eating
-                ? R.string.urge_widget_eating_on : R.string.urge_widget_eating_off));
-            views.setContentDescription(R.id.urge_eating, context.getString(eating
-                ? R.string.urge_widget_eating_finish : R.string.urge_widget_eating_start));
-            views.setInt(R.id.urge_eating, "setBackgroundResource", eating
-                ? R.drawable.urge_widget_eating_on : R.drawable.urge_widget_eating_off);
-            views.setTextColor(R.id.urge_eating, android.graphics.Color.parseColor(eating ? "#FFFFFF" : "#193B32"));
-            views.setOnClickPendingIntent(R.id.urge_eating, click(context, id, TOGGLE_EATING));
-            views.setBoolean(R.id.urge_undo, "setEnabled", count > 0);
-            views.setOnClickPendingIntent(R.id.urge_resist, click(context, id, RESIST));
-            // Direct activity PendingIntent: Android 12+ forbids launching UI
-            // through a broadcast trampoline. Keep the existing Notes task alone.
-            Intent capture = new Intent(context, LookupActivity.class)
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            views.setOnClickPendingIntent(R.id.urge_lookup, PendingIntent.getActivity(context, id, capture,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
-            views.setOnClickPendingIntent(R.id.urge_undo, click(context, id, UNDO));
-            manager.updateAppWidget(id, views);
+        RemoteViews views;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                int version = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode;
+                // Public API 31: an explicit root ID participates in the
+                // launcher's recycling check. Change it between APKs so an
+                // old resource hierarchy is not reused after an upgrade.
+                int rootId = Math.max(1, version & 0x00ffffff);
+                views = new RemoteViews(context.getPackageName(), R.layout.urge_widget, rootId);
+            } catch (PackageManager.NameNotFoundException missing) {
+                throw new IllegalStateException("Notes package is unavailable", missing);
+            }
+        } else {
+            views = new RemoteViews(context.getPackageName(), R.layout.urge_widget);
         }
+        views.setTextViewText(R.id.urge_count, count == 0
+            ? context.getString(R.string.urge_widget_no_count)
+            : context.getResources().getQuantityString(R.plurals.urge_widget_count, count, count));
+        views.setTextViewText(R.id.urge_eating, context.getString(eating
+            ? R.string.urge_widget_eating_on : R.string.urge_widget_eating_off));
+        views.setContentDescription(R.id.urge_eating, context.getString(eating
+            ? R.string.urge_widget_eating_finish : R.string.urge_widget_eating_start));
+        views.setInt(R.id.urge_eating, "setBackgroundResource", eating
+            ? R.drawable.urge_widget_eating_on : R.drawable.urge_widget_eating_off);
+        views.setTextColor(R.id.urge_eating, android.graphics.Color.parseColor(eating ? "#FFFFFF" : "#193B32"));
+        views.setOnClickPendingIntent(R.id.urge_eating, click(context, id, TOGGLE_EATING));
+        views.setBoolean(R.id.urge_undo, "setEnabled", count > 0);
+        views.setOnClickPendingIntent(R.id.urge_resist, click(context, id, RESIST));
+        // Direct activity PendingIntent: Android 12+ forbids launching UI
+        // through a broadcast trampoline. Keep the existing Notes task alone.
+        Intent capture = new Intent(context, LookupActivity.class)
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        views.setOnClickPendingIntent(R.id.urge_lookup, PendingIntent.getActivity(context, id, capture,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+        views.setOnClickPendingIntent(R.id.urge_undo, click(context, id, UNDO));
+        return views;
     }
 
     private static PendingIntent click(Context context, int id, String action) {
