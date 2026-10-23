@@ -33,7 +33,7 @@ import { linkTask } from "./task-links.ts";
 import { withTaskLink } from "./task-meta.ts";
 import { taskMarkdown, type TaskDraft } from "./task-draft.ts";
 import { tasksIn } from "./tasks.ts";
-import { appendLookup, type LookupCapture } from "./lookup-capture.ts";
+import { appendWidgetCapture, type LookupCapture } from "./lookup-capture.ts";
 
 // What is stored on this device. The record *is* the outbox entry: `pending`
 // lives here rather than in a separate queue, so there is no index that can fall
@@ -1059,7 +1059,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "lookupFailed":
-      m.error = "Could not add your saved questions. They are still on this phone; reopen Notes to retry.";
+      m.error = "Could not add your saved captures. They are still on this phone; reopen Notes to retry.";
       return null;
 
     case "lookupCaptured": {
@@ -1072,10 +1072,10 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       }
       const path = `dump/${p.capture.day}.md`;
       const existing = m.notes.get(path);
-      if (existing?.deleted) return reject("Restore that day's dump to receive its saved questions.");
+      if (existing?.deleted) return reject("Restore that day's dump to receive its saved captures.");
       m.notes.set(path, {
         ...(existing ?? { path, baseSha: null, encoding: "utf8" as const, deleted: false }),
-        body: appendLookup(existing?.body ?? "", p.capture), dirty: true, pending: true,
+        body: appendWidgetCapture(existing?.body ?? "", p.capture), dirty: true, pending: true,
         lookupCaptures: [...(existing?.lookupCaptures ?? []), p.capture.id],
       });
       m.persistBlocked = false;

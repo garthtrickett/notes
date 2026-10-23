@@ -46,20 +46,20 @@
         android:orientation="horizontal"
         android:baselineAligned="false">
     <Button
-        android:id="@+id/urge_resist"
+        android:id="@+id/urge_lookup"
         android:layout_width="0dp"
         android:layout_weight="1"
         android:layout_height="64dp"
         android:minHeight="48dp"
         android:paddingHorizontal="6dp"
         android:paddingVertical="4dp"
-        android:background="@drawable/urge_widget_button"
-        android:text="@string/urge_widget_resist"
+        android:background="@drawable/urge_widget_eating_off"
+        android:text="@string/urge_widget_lookup"
         android:textAllCaps="false"
         android:textSize="14sp"
-        android:textColor="#FFFFFF" />
+        android:textColor="#193B32" />
     <Button
-        android:id="@+id/urge_lookup"
+        android:id="@+id/urge_jot"
         android:layout_width="0dp"
         android:layout_weight="1"
         android:layout_height="64dp"
@@ -68,7 +68,7 @@
         android:paddingHorizontal="6dp"
         android:paddingVertical="4dp"
         android:background="@drawable/urge_widget_eating_off"
-        android:text="@string/urge_widget_lookup"
+        android:text="@string/urge_widget_jot"
         android:textAllCaps="false"
         android:textSize="14sp"
         android:textColor="#193B32" />
@@ -79,14 +79,22 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical">
-        <TextView
-            android:id="@+id/urge_count"
+        <Button
+            android:id="@+id/urge_resist"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
-            android:text="@string/urge_widget_no_count"
-            android:textSize="12sp"
-            android:textColor="#36584E" />
+            android:minHeight="48dp"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:background="@drawable/urge_widget_button"
+            android:text="@string/urge_widget_resist"
+            android:contentDescription="@string/urge_widget_resist_description"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textAllCaps="false"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF" />
         <Button
             android:id="@+id/urge_undo"
             android:layout_width="wrap_content"

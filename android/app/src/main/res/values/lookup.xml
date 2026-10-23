@@ -10,4 +10,9 @@
     <string name="lookup_save">Save</string>
     <string name="lookup_saved">Saved for later. Find it in your daily dump when you open Notes.</string>
     <string name="lookup_failed">Could not save. Your question is still here—try again.</string>
+    <string name="jot_title">Note down</string>
+    <string name="jot_prompt">Jot it down. Back to your day.</string>
+    <string name="jot_hint">What do you want to remember?</string>
+    <string name="jot_saved">Saved on this phone. Added to Jotted Down when you open Notes.</string>
+    <string name="jot_failed">Could not save. Your note is still here—try again.</string>
 </resources>

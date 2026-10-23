@@ -67,6 +67,48 @@ public class LookupTest {
         assertThrows(Exception.class, () -> inbox.save(ID, "x".repeat(2001), 0));
         assertEquals(0, inbox.pending().length());
     }
+    @Test public void jotKindSurvivesReopenAndCannotBeReusedAsALookup() throws Exception {
+        LookupInbox inbox = new LookupInbox(context);
+        inbox.save(ID, "Remember my ID", 0, true);
+        inbox.save(ID, "Remember my ID", 0, true);
+        var entry = new LookupInbox(context.createPackageContext(context.getPackageName(), 0)).pending().getJSONObject(0);
+        assertEquals("jot", entry.getString("kind"));
+        assertThrows(Exception.class, () -> inbox.save(ID, "Remember my ID", 0));
+        inbox.acknowledge(ID);
+        inbox.save(ID, "A legacy question", 0);
+        assertFalse(inbox.pending().getJSONObject(0).has("kind"));
+    }
+    @Test public void widgetCaptureButtonsKeepDistinctImmutableDestinations() {
+        var widgets = Shadows.shadowOf(AppWidgetManager.getInstance(context));
+        widgets.setAlwaysRecreateViewsDuringUpdate(true);
+        int id = widgets.createWidgets(UrgeWidget.class, R.layout.urge_widget, 1)[0];
+        for (int target : new int[] { R.id.urge_lookup, R.id.urge_jot, R.id.urge_lookup }) {
+            assertTrue(widgets.getViewFor(id).findViewById(target).performClick());
+            Intent intent = Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity();
+            assertEquals(new ComponentName(context, target == R.id.urge_jot ? JotActivity.class : LookupActivity.class), intent.getComponent());
+            var pending = android.app.PendingIntent.getActivity(context, id, intent,
+                android.app.PendingIntent.FLAG_NO_CREATE | android.app.PendingIntent.FLAG_IMMUTABLE);
+            assertNotNull(pending);
+            assertTrue(pending.isImmutable());
+        }
+    }
+    @Test public void jotComposerKeepsItsDestinationAndDraftThroughRotationThenSavesOnce() throws Exception {
+        var controller = Robolectric.buildActivity(JotActivity.class).setup();
+        assertEquals("Note down", controller.get().getTitle());
+        ((EditText) controller.get().findViewById(R.id.lookup_question)).setText("Remember the appointment address");
+        controller.recreate();
+        assertEquals("Note down", controller.get().getTitle());
+        assertEquals("Remember the appointment address", ((EditText) controller.get().findViewById(R.id.lookup_question)).getText().toString());
+        controller.get().findViewById(R.id.lookup_save).performClick();
+        drain();
+        var entries = new LookupInbox(context).pending();
+        assertEquals(1, entries.length());
+        assertEquals("jot", entries.getJSONObject(0).getString("kind"));
+        assertEquals("Remember the appointment address", entries.getJSONObject(0).getString("text"));
+        assertTrue(controller.get().isFinishing());
+        assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
+        controller.pause().stop().destroy();
+    }
     @Test public void directWidgetPendingIntentOpensOnlyPrivateComposerAndPreservesCounters() throws Exception {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         var widgets = Shadows.shadowOf(manager);

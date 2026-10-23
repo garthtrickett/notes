@@ -103,9 +103,12 @@ public class UrgeWidget extends AppWidgetProvider {
         } else {
             views = new RemoteViews(context.getPackageName(), R.layout.urge_widget);
         }
-        views.setTextViewText(R.id.urge_count, count == 0
-            ? context.getString(R.string.urge_widget_no_count)
-            : context.getResources().getQuantityString(R.plurals.urge_widget_count, count, count));
+        views.setTextViewText(R.id.urge_resist, count == 0
+            ? context.getString(R.string.urge_widget_resist)
+            : context.getString(R.string.urge_widget_resist_count, count));
+        views.setContentDescription(R.id.urge_resist, context.getString(R.string.urge_widget_resist_description)
+            + ". " + (count == 0 ? context.getString(R.string.urge_widget_no_count)
+            : context.getResources().getQuantityString(R.plurals.urge_widget_count, count, count)));
         views.setTextViewText(R.id.urge_eating, context.getString(eating
             ? R.string.urge_widget_eating_on : R.string.urge_widget_eating_off));
         views.setContentDescription(R.id.urge_eating, context.getString(eating
@@ -121,6 +124,10 @@ public class UrgeWidget extends AppWidgetProvider {
         Intent capture = new Intent(context, LookupActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         views.setOnClickPendingIntent(R.id.urge_lookup, PendingIntent.getActivity(context, id, capture,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+        Intent jot = new Intent(context, JotActivity.class)
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        views.setOnClickPendingIntent(R.id.urge_jot, PendingIntent.getActivity(context, id, jot,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         views.setOnClickPendingIntent(R.id.urge_undo, click(context, id, UNDO));
         return views;

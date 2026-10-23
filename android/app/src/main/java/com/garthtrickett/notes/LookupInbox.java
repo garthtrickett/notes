@@ -31,12 +31,17 @@ final class LookupInbox {
     }
 
     void save(String id, String text, long at) throws Exception {
+        save(id, text, at, false);
+    }
+
+    void save(String id, String text, long at, boolean jot) throws Exception {
         checkId(id);
         text = text.trim();
         if (text.isEmpty() || text.length() > MAX_TEXT) throw new IllegalArgumentException("Invalid question");
         String saved = prefs.getString(id, null);
         if (saved != null) {
-            if (!new JSONObject(saved).getString("text").equals(text))
+            JSONObject old = new JSONObject(saved);
+            if (!old.getString("text").equals(text) || !old.optString("kind", "lookup").equals(jot ? "jot" : "lookup"))
                 throw new IOException("Capture ID already used");
             return;
         }
@@ -47,6 +52,7 @@ final class LookupInbox {
             .put("day", local.minusHours(4).toLocalDate().toString())
             .put("time", local.format(DateTimeFormatter.ofPattern("HH:mm")))
             .put("at", at);
+        if (jot) capture.put("kind", "jot"); // Missing kind keeps older lookup captures compatible.
         if (!prefs.edit().putString(id, capture.toString()).commit())
             throw new IOException("Could not save capture");
     }
