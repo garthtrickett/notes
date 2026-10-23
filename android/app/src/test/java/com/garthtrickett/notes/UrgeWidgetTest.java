@@ -39,6 +39,9 @@ public class UrgeWidgetTest {
         context.getSharedPreferences("urge-widget", Context.MODE_PRIVATE).edit().clear().commit();
         manager = AppWidgetManager.getInstance(context);
         widgets = Shadows.shadowOf(manager);
+        // This shadow checks layout ID only, ignoring API 31's explicit root
+        // ID. Real framework reuse/replacement is covered by WidgetRecoveryTest.
+        widgets.setAlwaysRecreateViewsDuringUpdate(true);
         // Robolectric does not dispatch these manifest receiver broadcasts by
         // itself. Register the declared class so actual RemoteViews clicks
         // exercise the PendingIntent and receiver, rather than calling it here.

@@ -14,4 +14,12 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LookupPlugin.class);
         super.onCreate(savedInstanceState);
     }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // A launcher error view cannot receive the widget's own buttons.
+        // Opening Notes offers an independent route to publish a fresh view.
+        UrgeWidget.refresh(getApplicationContext());
+    }
 }

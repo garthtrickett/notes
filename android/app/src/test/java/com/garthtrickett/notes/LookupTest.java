@@ -70,6 +70,9 @@ public class LookupTest {
     @Test public void directWidgetPendingIntentOpensOnlyPrivateComposerAndPreservesCounters() throws Exception {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         var widgets = Shadows.shadowOf(manager);
+        // Shadow recycling omits root IDs; see WidgetRecoveryTest for the
+        // actual framework's reuse/replacement behavior.
+        widgets.setAlwaysRecreateViewsDuringUpdate(true);
         int[] ids = widgets.createWidgets(UrgeWidget.class, R.layout.urge_widget, 1);
         UrgeCounter.toggleEating(context);
         UrgeCounter.adjust(context, System.currentTimeMillis(), 1);
