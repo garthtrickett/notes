@@ -17,6 +17,8 @@ cannot remove the newer request. Retry of a lost acknowledgement within the
 same app session does not repeatedly pull the user away from another note.
 Opening an alarm note retains edits already made in other notes. No external
 source app is opened and no new Android permission is required.
+Plain-text fenced quotations wrap to the available width in preview, so long
+message/email paragraphs remain readable on a phone.
 
 Host tests cover both native entry paths, notification PendingIntent identity,
 stopping one of two ringing alarms without an answer, full-screen button taps,
