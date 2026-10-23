@@ -16,6 +16,12 @@ const bridge = (overrides: Partial<AudioLibraryBridge> = {}): AudioLibraryBridge
   audioCommand: async () => ({ failure: null, snapshot }), ...overrides,
 });
 describe("audio library command boundary", () => {
+  it("opens the native delivery screen without copying secrets or media through JavaScript", async () => {
+    let received: unknown;
+    const library = audioLibrary(true, bridge({ audioCommand: async args => { received = args; return { failure: null, snapshot }; } }));
+    expect((await library.execute({ action: "openDelivery" }, snapshot)).ok).toBe(true);
+    expect(received).toEqual({ action: "openDelivery", epoch: snapshot.epoch, rootGeneration: snapshot.rootGeneration });
+  });
   it("sends native capabilities and scope without granting authority to display paths", async () => {
     let received: unknown;
     const library = audioLibrary(true, bridge({ audioCommand: async args => { received = args; return { failure: null, snapshot }; } }));

@@ -69,6 +69,9 @@ repositories {
 }
 
 dependencies {
+    implementation 'com.hierynomus:sshj:0.41.0'
+    // Avoid selecting Android's reduced BC provider for SSH cryptography.
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
     def media3Version = '1.11.1'
     implementation "androidx.media3:media3-exoplayer:$media3Version"
     implementation "androidx.media3:media3-session:$media3Version"

@@ -9,7 +9,7 @@ export interface DeleteConfirmation {
   readonly token: string; readonly title: string; readonly path: string; readonly sizeBytes: number;
 }
 export type AudioCommand =
-  | { readonly action: "refresh" | "chooseFolder" | "pause" | "reopen" | "restore" }
+  | { readonly action: "refresh" | "chooseFolder" | "pause" | "reopen" | "restore" | "openDelivery" }
   | { readonly action: "play" | "done" | "unplayed" | "prepareDelete"; readonly target: AudioTarget }
   | { readonly action: "seek"; readonly id: string; readonly positionMs: number }
   | { readonly action: "confirmDelete" | "cancelDelete"; readonly token: string }
