@@ -59,7 +59,8 @@ export const audioView = (audio: AudioModel, propose: Propose): TemplateResult =
   const pending = (s?.history ?? []).filter(item => item.deletion === "INTENT");
   return html`<section class="audio-library" aria-label="Audio library">
     <header class="audio-heading"><div><h1>Audio</h1><p>Downloaded recordings, at your own pace.</p></div>
-      <button ?disabled=${busy || s === null} @click=${() => request(propose, { action: "refresh" })}>Refresh</button></header>
+      <div class="audio-actions"><button ?disabled=${busy || s === null} @click=${() => request(propose, { action: "openDelivery" })}>Fetch media</button>
+      <button ?disabled=${busy || s === null} @click=${() => request(propose, { action: "refresh" })}>Refresh</button></div></header>
     ${failure ? html`<div class="audio-error" role="alert"><p>${failure.message}</p>
       ${s === null ? html`<button @click=${() => propose({ kind: "audioReconnect" })}>Reconnect audio</button>` : html`<button ?disabled=${busy} @click=${() => request(propose, { action: "reopen" })}>Reopen audio state</button>`}</div>` : nothing}
     ${s?.warning ? html`<p class="audio-notice">${s.warning}</p>` : nothing}

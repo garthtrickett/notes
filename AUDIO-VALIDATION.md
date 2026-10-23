@@ -353,3 +353,21 @@ These are host checks; a new phone notification-shade observation is not implied
 
 Follow-up validation: **95 Android tests** and **869 web tests** pass; TypeScript,
 production web build and release APK assembly pass.
+
+
+## Native SFTP delivery addition — 24 October 2026
+
+The historical audio player/storage qualification above remains unchanged.
+`PLAN-MEDIA-DELIVERY.md` adds a separate native download screen behind Audio →
+Fetch media. It reuses the selected local folder, refreshes the existing library
+when a file is saved and never starts playback. Opus/M4B playback retains its
+existing qualification; other delivered formats use an external installed
+player and have no new codec claim.
+
+Native host coverage adds manifest/path bounds, transactional resume and
+receipt recovery, failed checkpoints/hashes, no restore after a delivered file
+is deleted, SAF low-space/conflict/cancellation/grant cases, persisted automatic
+job scheduling and an isolated SSH crypto provider. Production Java transport
+was exercised against the restricted SFTP jail. This does not prove physical
+Pixel 7a/Android 17 downloading, background scheduling or interruption behaviour.
+Those checks remain pending the installed release.

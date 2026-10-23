@@ -81,6 +81,7 @@ public class AudioPlugin extends Plugin {
         if (call == null) return;
         if (destroyed) { call.reject("The audio connection has closed."); return; }
         if (chosen.getResultCode() != Activity.RESULT_OK || chosen.getData() == null || chosen.getData().getData() == null) { result(call, null); return; }
+        if (DeliveryRunner.running()) { result(call, new AudioProblem(AudioProblem.Kind.STORAGE, "Pause media downloads before changing folders.")); return; }
         int flags = chosen.getData().getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         runtime().library.bind(chosen.getData().getData(), flags, reply(call));
     }
@@ -103,6 +104,7 @@ public class AudioPlugin extends Plugin {
             scope(call);
             String action = call.getString("action", ""); AudioRuntime r = runtime();
             switch (action) {
+                case "openDelivery": getActivity().startActivity(new Intent(getActivity(), DeliveryActivity.class)); result(call, null); return;
                 case "play": r.play(target(call), reply(call)); return;
                 case "done": r.mark(target(call), AudioListening.Mark.DONE, reply(call)); return;
                 case "unplayed": r.mark(target(call), AudioListening.Mark.UNPLAYED, reply(call)); return;

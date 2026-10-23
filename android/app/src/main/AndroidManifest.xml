@@ -57,6 +57,11 @@
         <activity android:name=".AudioPlaybackTestActivity" android:exported="false"
             android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar" />
 
+        <activity android:name=".DeliveryActivity" android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+        <service android:name=".DeliveryJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
+        <service android:name=".DeliveryService" android:exported="false" android:foregroundServiceType="dataSync" />
+
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
 
         <receiver android:name=".UrgeWidget" android:exported="false"
@@ -150,6 +155,8 @@
          (VaultWatch). Missing, JobScheduler throws, and Capacitor turns any
          exception in a plugin method into a crash — the app died on launch. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <uses-permission android:name="com.beeper.android.permission.READ_PERMISSION" />
     <uses-permission android:name="com.beeper.android.permission.SEND_PERMISSION" />
