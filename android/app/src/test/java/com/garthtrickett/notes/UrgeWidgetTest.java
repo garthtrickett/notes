@@ -95,7 +95,8 @@ public class UrgeWidgetTest {
         assertEquals(1, UrgeCounter.today(context, System.currentTimeMillis()));
         for (int id : ids) {
             View view = widgets.getViewFor(id);
-            assertEquals("1 pause today", ((TextView) view.findViewById(R.id.urge_count)).getText().toString());
+            assertEquals("✓ Resisted · 1", ((TextView) view.findViewById(R.id.urge_resist)).getText().toString());
+            assertTrue(view.findViewById(R.id.urge_resist).getContentDescription().toString().contains("1 pause today"));
             assertTrue(view.findViewById(R.id.urge_undo).isEnabled());
         }
         assertNull(Shadows.shadowOf(RuntimeEnvironment.getApplication()).getNextStartedActivity());
@@ -199,6 +200,8 @@ public class UrgeWidgetTest {
         assertTrue(view.findViewById(R.id.urge_eating).getHeight() >= Math.round(48 * density));
         assertTrue(view.findViewById(R.id.urge_resist).getHeight() >= Math.round(48 * density));
         assertTrue(view.findViewById(R.id.urge_lookup).getHeight() >= Math.round(48 * density));
+        assertTrue(view.findViewById(R.id.urge_jot).getHeight() >= Math.round(48 * density));
+        assertTrue(view.findViewById(R.id.urge_jot).getWidth() >= Math.round(48 * density));
         assertTrue(view.findViewById(R.id.urge_undo).getHeight() >= Math.round(48 * density));
     }
 

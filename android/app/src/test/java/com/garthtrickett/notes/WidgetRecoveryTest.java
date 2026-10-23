@@ -79,11 +79,12 @@ public class WidgetRecoveryTest {
     }
 
     private void assertState(View view) {
-        assertEquals("1 pause today", ((TextView) view.findViewById(R.id.urge_count)).getText().toString());
+        assertEquals("✓ Resisted · 1", ((TextView) view.findViewById(R.id.urge_resist)).getText().toString());
         assertEquals(context.getString(R.string.urge_widget_eating_on),
             ((TextView) view.findViewById(R.id.urge_eating)).getText().toString());
         assertTrue(view.findViewById(R.id.urge_undo).isEnabled());
         assertTrue(view.findViewById(R.id.urge_lookup).hasOnClickListeners());
+        assertTrue(view.findViewById(R.id.urge_jot).hasOnClickListeners());
         assertTrue(view.findViewById(R.id.urge_resist).hasOnClickListeners());
         assertTrue(view.findViewById(R.id.urge_eating).hasOnClickListeners());
     }

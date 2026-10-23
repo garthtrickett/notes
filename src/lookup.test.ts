@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { appendLookup, parseLookupCaptures, type LookupCapture } from "./lookup-capture.ts";
+import { appendLookup, appendWidgetCapture, parseLookupCaptures, type LookupCapture } from "./lookup-capture.ts";
 import { nativeLookupInbox, type LookupInbox } from "./lookup.ts";
 import { boot, type Loop } from "./loop.ts";
 import { deleteMany, getAll, getBlob, lookupImported, openDb, putMany, photoImportPath, LOOKUP_IMPORTS_STORE } from "./idb.ts";
@@ -8,6 +8,38 @@ import { appendEntry } from "./dump.ts";
 
 const capture: LookupCapture = { id: "12345678-1234-4123-8123-123456789abc", day: "2026-10-23", time: "03:15", text: "Why is the sky blue?" };
 const path = "dump/2026-10-23.md";
+const jot: LookupCapture = { ...capture, id: "aaaaaaaa-1234-4123-8123-123456789abc", kind: "jot", text: "Remember to pack my ID" };
+describe("Jotted Down capture", () => {
+  it("reuses Jotted Down separately from Lookup in either section order", () => {
+    for (const base of [appendLookup("", capture), "10:00 A thought\n\n## Jotted Down\n\n- Existing jot\n\n## Lookup\n\n- Existing question\n"]) {
+      const next = appendWidgetCapture(base, jot);
+      const again = appendWidgetCapture(next, { ...jot, text: "A second thought" });
+      expect(again.match(/^## Jotted Down$/gm)).toHaveLength(1);
+      expect(again.match(/^## Lookup$/gm)).toHaveLength(1);
+      expect(again).toContain("- 03:15 Remember to pack my ID");
+      expect(again).toContain("A second thought");
+      const section = again.slice(again.indexOf("## Jotted Down"));
+      expect(section.indexOf(jot.text)).toBeGreaterThan(0);
+      if (section.includes("## Lookup")) expect(section.indexOf(jot.text)).toBeLessThan(section.indexOf("## Lookup"));
+    }
+  });
+  it("keeps ordinary captures outside either widget section and ignores fenced headings", () => {
+    for (const base of [appendWidgetCapture("", jot), appendLookup(appendWidgetCapture("", jot), capture), appendWidgetCapture(appendLookup("", capture), jot)]) {
+      expect(appendEntry(base, "An ordinary capture", Date.parse("2026-10-23T12:00:00"))).toStartWith("12:00 An ordinary capture\n\n## ");
+    }
+    const fenced = "```md\n## Jotted Down\n```\n\n## Other\nKeep this\n";
+    const next = appendWidgetCapture(fenced, jot);
+    expect(next).toStartWith(fenced.trimEnd());
+    expect(next).toEndWith("## Jotted Down\n\n- 03:15 Remember to pack my ID\n");
+    expect(appendWidgetCapture("An unfinished block\n```\n", jot)).toStartWith("An unfinished block\n\n## Jotted Down");
+  });
+  it("preserves the new kind through parsing while old captures stay Lookup and unknown kinds are rejected", () => {
+    expect(parseLookupCaptures({ captures: [capture, jot] })).toEqual([capture, jot]);
+    expect(parseLookupCaptures({ captures: [{ ...capture, kind: "lookup" }] })).toEqual([capture]);
+    expect(() => parseLookupCaptures({ captures: [{ ...capture, kind: "elsewhere" }] })).toThrow();
+    expect(appendWidgetCapture("", capture)).toBe(appendLookup("", capture));
+  });
+});
 describe("Lookup capture", () => {
   it("adds a section to an empty day and reuses it for later questions", () => {
     const first = appendLookup("", capture);
@@ -92,6 +124,41 @@ describe("durable widget delivery", () => {
     expect(loop.model.notes.get(path)?.dirty).toBe(false);
     expect(loop.model.notes.get(path)?.pending).toBe(true);
     expect(source.acks()).toBe(1);
+  });
+  it("imports mixed jots and questions into their capture day, with durable independent acknowledgments", async () => {
+    let waiting: readonly LookupCapture[] = [capture, jot];
+    const source: LookupInbox = { supported: true, pending: async () => waiting,
+      listen: async () => () => {}, acknowledge: async id => {
+        expect(await lookupImported(db, id)).toBe(true);
+        const saved = (await getAll(db)).find(n => n.path === path)!;
+        expect(saved.body).toContain(id === jot.id ? jot.text : capture.text);
+        waiting = waiting.filter(c => c.id !== id);
+      } };
+    const loop = await start(source);
+    expect(loop.model.notes.get(path)?.body).toContain("## Jotted Down");
+    expect(loop.model.notes.get(path)?.body).toContain("## Lookup");
+    expect(loop.model.notes.has("dump/2026-10-25.md")).toBe(false);
+    expect(waiting).toHaveLength(0);
+    loop.propose({ kind: "resumed" }); await loop.flush();
+    expect(loop.model.notes.get(path)?.body.match(/Remember to pack my ID/g)).toHaveLength(1);
+  });
+  it("retries a jot after a lost acknowledgement without duplicating or stealing the current draft", async () => {
+    let waiting = true;
+    let failAck = true;
+    const source: LookupInbox = { supported: true, pending: async () => waiting ? [jot] : [],
+      listen: async () => () => {}, acknowledge: async id => {
+        if (failAck) throw new Error("Bridge lost");
+        expect(await lookupImported(db, id)).toBe(true); waiting = false;
+      } };
+    const loop = await start(source);
+    loop.propose({ kind: "created", path: "my-draft.md" });
+    loop.propose({ kind: "edited", path: "my-draft.md", body: "My newest draft" });
+    failAck = false;
+    loop.propose({ kind: "resumed" }); await loop.flush();
+    expect(loop.model.openPath).toBe("my-draft.md");
+    expect(loop.model.notes.get("my-draft.md")?.body).toBe("My newest draft");
+    expect(loop.model.notes.get(path)?.body.match(/Remember to pack my ID/g)).toHaveLength(1);
+    expect(waiting).toBe(false);
   });
   it("a warm capture preserves other drafts and subsequent typing while save is in flight", async () => {
     const source = inbox(); source.set([]);

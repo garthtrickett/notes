@@ -20,6 +20,8 @@ import java.util.UUID;
 /** A separate, private dialog task: Save/Cancel returns to the launcher, never
  * opens the vault or disturbs a draft or audio in the existing Notes task. */
 public class LookupActivity extends Activity {
+    private boolean jot;
+    protected boolean jottedDown() { return false; }
     private String id;
     private EditText question;
     private Button save;
@@ -28,24 +30,25 @@ public class LookupActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         id = state == null ? UUID.randomUUID().toString() : state.getString("capture-id");
-        setTitle(R.string.lookup_title);
+        jot = jottedDown();
+        setTitle(jot ? R.string.jot_title : R.string.lookup_title);
         int pad = Math.round(20 * getResources().getDisplayMetrics().density);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(pad, pad / 2, pad, pad);
         TextView title = new TextView(this);
-        title.setText(R.string.lookup_title);
+        title.setText(jot ? R.string.jot_title : R.string.lookup_title);
         title.setTextSize(22);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setPadding(0, 0, 0, pad / 2);
         content.addView(title);
         TextView prompt = new TextView(this);
-        prompt.setText(R.string.lookup_prompt);
+        prompt.setText(jot ? R.string.jot_prompt : R.string.lookup_prompt);
         prompt.setTextSize(16);
         content.addView(prompt);
         question = new EditText(this);
         question.setId(R.id.lookup_question);
-        question.setHint(R.string.lookup_hint);
+        question.setHint(jot ? R.string.jot_hint : R.string.lookup_hint);
         question.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         question.setMinLines(2);
         question.setMaxLines(5);
@@ -92,10 +95,10 @@ public class LookupActivity extends Activity {
             long at = System.currentTimeMillis();
             LookupInbox.worker.execute(() -> {
                 try {
-                    new LookupInbox(getApplicationContext()).save(id, text, at);
+                    new LookupInbox(getApplicationContext()).save(id, text, at, jot);
                     runOnUiThread(() -> {
                         if (isDestroyed() || isFinishing()) return;
-                        Toast.makeText(this, R.string.lookup_saved, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, jot ? R.string.jot_saved : R.string.lookup_saved, Toast.LENGTH_SHORT).show();
                         finish();
                     });
                 } catch (Exception failed) {
@@ -103,7 +106,7 @@ public class LookupActivity extends Activity {
                         if (isDestroyed()) return;
                         saving = false; question.setEnabled(true); cancel.setEnabled(true);
                         save.setEnabled(!question.getText().toString().trim().isEmpty());
-                        error.setText(R.string.lookup_failed);
+                        error.setText(jot ? R.string.jot_failed : R.string.lookup_failed);
                     });
                 }
             });
