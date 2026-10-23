@@ -470,6 +470,9 @@ not about wherever you are. */
   overflow-x: auto;
 }
 .preview pre code { background: none; padding: 0; }
+/* Quoted plain-text messages should read like prose on a phone. Keep code
+   in programming-language fences on its existing horizontal-scroll path. */
+.preview pre code.language-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .preview blockquote {
   margin: 1em 0;
   padding-left: 12px;
