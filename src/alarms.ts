@@ -9,7 +9,7 @@
 // Nothing is stored beside the note here either. Done is a tick and Snooze is
 // a new stamp, both ordinary edits that sync like any other.
 
-import { flipTask, setReminder, tasksIn } from "./tasks.ts";
+import { completeRepeat, reopenRepeat, scheduledTask, setReminder, tasksIn } from "./tasks.ts";
 import { activateTask, completionToken } from "./task-links.ts";
 import { reminderId } from "./notify.ts";
 
@@ -28,6 +28,7 @@ export interface AlarmAnswer {
   // Where Snooze moved it to. Chosen by the phone, not here, because the phone
   // has already scheduled the snoozed alarm for exactly that minute.
   readonly snoozeTo: number | null;
+  readonly answeredAt?: number;
 }
 
 // The bridge hands over whatever was in SharedPreferences. Anything malformed
@@ -38,10 +39,12 @@ export const parseAnswers = (raw: unknown): AlarmAnswer[] => {
   const answers: AlarmAnswer[] = [];
   for (const item of raw) {
     if (typeof item !== "object" || item === null) continue;
-    const { kind, path, title, at, snoozeTo, taskId, sourceId, sourcePath, token, id } = item as Record<string, unknown>;
+    const { kind, path, title, at, snoozeTo, taskId, sourceId, sourcePath, token, id, answeredAt } = item as Record<string, unknown>;
     if (kind !== "done" && kind !== "snooze" && kind !== "activate") continue;
     if (typeof path !== "string" || typeof title !== "string") continue;
     if (typeof at !== "number" || !Number.isFinite(at)) continue;
+    if (answeredAt !== undefined && (typeof answeredAt !== "number" || !Number.isFinite(answeredAt))) continue;
+    const clock = typeof answeredAt === "number" ? { answeredAt } : {};
     const alarmId = typeof id === "number" && Number.isSafeInteger(id) ? { id } : {};
     if (kind === "activate") {
       if (typeof taskId !== "string" || typeof sourceId !== "string" || typeof sourcePath !== "string" || typeof token !== "string" || !/^[a-zA-Z0-9:._-]{1,128}$/.test(token)) continue;
@@ -51,8 +54,8 @@ export const parseAnswers = (raw: unknown): AlarmAnswer[] => {
     if (kind === "snooze" && (typeof snoozeTo !== "number" || !Number.isFinite(snoozeTo))) continue;
     if (kind === "done" && (taskId !== undefined || token !== undefined)) {
       if (typeof taskId !== "string" || typeof token !== "string" || !/^[a-zA-Z0-9:._-]{1,128}$/.test(token)) continue;
-      answers.push({ kind, path, title, at, snoozeTo: null, taskId, token, ...alarmId });
-    } else answers.push({ kind, path, title, at, snoozeTo: kind === "snooze" ? (snoozeTo as number) : null, ...alarmId });
+      answers.push({ kind, path, title, at, snoozeTo: null, taskId, token, ...alarmId, ...clock });
+    } else answers.push({ kind, path, title, at, snoozeTo: kind === "snooze" ? (snoozeTo as number) : null, ...alarmId, ...clock });
   }
   return answers;
 };
@@ -85,21 +88,24 @@ export const applyAnswers = (
       if (next !== body) changed.set(answer.path, next);
       continue;
     }
-    const ref = tasksIn(body, answer.path).find(
-      (r) => !r.done && r.title === answer.title && r.remindAt === answer.at
+    const ref = tasksIn(body, answer.path).find((actual) => {
+      const r = scheduledTask(actual);
+      return !r.done && r.title === answer.title && r.remindAt === answer.at
         && (answer.id === undefined || reminderId(r) === answer.id)
-        && (answer.taskId === undefined || (r.link?.id === answer.taskId && completionToken(r) === answer.token)),
-    );
+        && (answer.taskId === undefined || (r.link?.id === answer.taskId && completionToken(r) === answer.token));
+    });
     if (ref === undefined) continue;
     // A repeating task keeps its stamp through a snooze. Moving it would move
     // every later occurrence too — snooze the 05:30 surf once and it is 05:40
     // every day after. The phone holds that snooze itself instead.
     if (answer.kind === "snooze" && ref.repeat !== null) continue;
     // Done on a repeating task is a tick like any other; the loop reopens it
-    // at its next time, the same as a tick from anywhere else.
+    // at the next scheduled day, the same as a tick from anywhere else.
+    const currentBody = ref.done ? reopenRepeat(body, ref, answer.at) : body;
+    const current = tasksIn(currentBody, answer.path).find(r => r.from === ref.from)!;
     const next = answer.kind === "done"
-      ? flipTask(body, ref)
-      : setReminder(body, ref, answer.snoozeTo, true);
+      ? completeRepeat(currentBody, current, answer.answeredAt ?? answer.at)
+      : setReminder(currentBody, current, answer.snoozeTo, true);
     if (next !== body) changed.set(answer.path, next);
   }
   return changed;

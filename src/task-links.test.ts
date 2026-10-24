@@ -47,8 +47,11 @@ describe("after completing another task", () => {
     expect(alarmsWanted(tasks, now)).toMatchObject([{ title: "Today review", at: now + 60_000 }]);
     expect(advanceTaskLinks(after, now).size).toBe(0);
     const rolled = rollRepeats(after[0]!.body, "a.md", now);
-    expect(refs(rolled)[0]?.remindAt).toBe(new Date(2026, 9, 24, 8).getTime());
+    expect(refs(rolled)[0]?.done).toBe(true);
+    expect(refs(rolled)[0]?.nextRepeatAt).toBe(new Date(2026, 9, 24, 8).getTime());
     expect(refs(rolled)[0]?.link?.id).toBe("japanese");
+    expect(nativeTaskLinks(refs(rolled))[0]).toMatchObject({id:"japanese",done:false,stamp:new Date(2026,9,24,8).getTime()});
+    expect(alarmsWanted(refs(rolled),now).some(a=>a.title==="Japanese"&&a.at===new Date(2026,9,24,8).getTime())).toBe(true);
     expect(advanceTaskLinks([note("a.md", rolled)], now).size).toBe(0);
   });
 
@@ -56,6 +59,7 @@ describe("after completing another task", () => {
     const first = update([note("a.md", source.replace("[ ]", "[x]") + follow)], advanceTaskLinks([note("a.md", source.replace("[ ]", "[x]") + follow)], now));
     let body = rollRepeats(first[0]!.body, "a.md", now);
     const childTime = refs(body)[1]!.remindAt;
+    body = rollRepeats(body,"a.md",now+86400_000);
     body = flipTask(body, refs(body)[0]!);
     const second = advanceTaskLinks([note("a.md", body)], now + 86400_000).get("a.md")!;
     expect(refs(second)).toHaveLength(2);
@@ -63,6 +67,7 @@ describe("after completing another task", () => {
     let complete = flipTask(second, refs(second)[1]!);
     complete = advanceTaskLinks([note("a.md", complete)], now + 86400_000).get("a.md") ?? complete;
     complete = rollRepeats(complete, "a.md", now + 86400_000);
+    complete = rollRepeats(complete,"a.md",now+2*86400_000);
     complete = flipTask(complete, refs(complete)[0]!);
     const third = advanceTaskLinks([note("a.md", complete)], now + 2 * 86400_000).get("a.md")!;
     expect(refs(third)[1]?.done).toBe(false);

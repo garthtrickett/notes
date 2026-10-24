@@ -10,7 +10,8 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import type { Note } from "./model.ts";
 import { isArchivePath, isTrashPath } from "./paths.ts";
-import { alarmWanted, nextOccurrence, reminderIn, repeatIn, titleWithout, withReminder } from "./reminders.ts";
+import { alarmWanted, nextOccurrence, reminderIn, repeatIn, titleWithout, withReminder, stampOf } from "./reminders.ts";
+import { readRepeatMeta, withRepeatMeta } from "./repeat-meta.ts";
 import { readTaskLink, taskWaiting, type TaskLink } from "./task-meta.ts";
 
 export interface TaskRef {
@@ -30,6 +31,8 @@ export interface TaskRef {
   readonly alarm: boolean;
   // How often it comes back — "day", "mon,wed,fri" — or null for a one-off.
   readonly repeat: string | null;
+  // Future occurrence already reserved by a completed, still-visible row.
+  readonly nextRepeatAt?: number;
   // Where the title starts in the file, so a reminder can be written back
   // without rescanning. Same bargain as `marker`: good for one paint.
   readonly titleFrom: number;
@@ -59,6 +62,9 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
       if (end === -1) end = body.length;
       const raw = body.slice(marker.to, end);
       const link = readTaskLink(raw);
+      const stamp = reminderIn(raw), repeat = repeatIn(raw), completion = readRepeatMeta(raw);
+      const nextAt = completion ? reminderIn(completion.next) : null;
+      const pending = completion && stamp !== null && completion.stamp === stampOf(stamp) && completion.repeat === repeat && nextAt !== null && nextAt > stamp;
       refs.push({
         path,
         from: node.from,
@@ -67,7 +73,8 @@ export const tasksIn = (body: string, path: string): TaskRef[] => {
         title: titleWithout(raw),
         remindAt: reminderIn(raw),
         alarm: alarmWanted(raw),
-        repeat: repeatIn(raw),
+        repeat,
+        ...(pending ? { nextRepeatAt: nextAt as number } : {}),
         titleFrom: marker.to,
         titleTo: end,
         ...(link === undefined ? (raw.includes("<!-- notes-task") ? { invalidLink: true } : {}) : { link }),
@@ -135,25 +142,47 @@ export const setReminder = (
   return body.slice(0, ref.titleFrom) + lead + next + body.slice(ref.titleTo);
 };
 
-// A repeating task is never left ticked: ticking it means this time is done,
-// so the box reopens and the stamp moves to the next time. Whatever ticked it
-// — the Tasks tab, the alarm's Done, an `x` typed on the laptop — the result
-// is the same, because this reads the text rather than watching the gesture.
-// The alarm follows on its own: the stamp moving is the reminder set changing.
-//
-// Last task first, so a rewrite never moves the offsets of one still to come.
-// A rule that cannot produce a next time leaves its task ticked.
+// Scheduling uses the next occurrence while the completed row stays checked.
+// Both web/native notifications and the dependency graph use this projection.
+export const scheduledTask = (ref: TaskRef): TaskRef => ref.done && ref.nextRepeatAt !== undefined
+  ? { ...ref, done: false, remindAt: ref.nextRepeatAt } : ref;
+
+const replaceRepeat = (body: string, ref: TaskRef, completion: Parameters<typeof withRepeatMeta>[1]): string =>
+  body.slice(0, ref.titleFrom) + withRepeatMeta(body.slice(ref.titleFrom, ref.titleTo), completion) + body.slice(ref.titleTo);
+
+export const completeRepeat = (body: string, ref: TaskRef, completedAt: number): string => {
+  const ticked = ref.done ? body : flipTask(body, ref);
+  if (ref.repeat === null || ref.remindAt === null || ref.link?.after) return ticked;
+  const end = new Date(completedAt); end.setHours(23, 59, 59, 999);
+  const next = nextOccurrence(ref.remindAt, ref.repeat, end.getTime());
+  return next === null ? ticked : replaceRepeat(ticked, ref, {
+    stamp: stampOf(ref.remindAt), repeat: ref.repeat, next: stampOf(next),
+  });
+};
+
+// Used for day rollover and an alarm answer for the reserved next occurrence.
+export const reopenRepeat = (body: string, ref: TaskRef, at: number): string => {
+  const clean = replaceRepeat(body, ref, null);
+  const current = tasksIn(clean, ref.path).find(r => r.from === ref.from);
+  if (!current) return body;
+  return setReminder(current.done ? flipTask(clean, current) : clean, current, at, current.alarm);
+};
+
+// Last offset first. Daily completions stay checked until the next local day;
+// weekly/monthly completions wait for their next scheduled day. Missed dates
+// stay as one overdue occurrence, never a backlog or an immediate reset.
 export const rollRepeats = (body: string, path: string, now: number): string => {
   let next = body;
-  const refs = tasksIn(body, path).filter(
-    (r) => r.done && r.repeat !== null && r.remindAt !== null && !r.link?.after,
-  );
-  for (const ref of refs.reverse()) {
-    const at = nextOccurrence(ref.remindAt as number, ref.repeat as string, now);
-    if (at === null) continue;
-    // The flip is one character for one character, so the title offsets the
-    // reminder write checks are still where the scan found them.
-    next = setReminder(flipTask(next, ref), ref, at, ref.alarm);
+  for (const ref of tasksIn(body, path).reverse()) {
+    if (ref.nextRepeatAt !== undefined && !ref.done) { next = replaceRepeat(next, ref, null); continue; }
+    if (!ref.done || ref.repeat === null || ref.remindAt === null || ref.link?.after) continue;
+    if (ref.nextRepeatAt === undefined) { next = completeRepeat(next, ref, now); continue; }
+    const reopen = new Date(ref.nextRepeatAt); reopen.setHours(0, 0, 0, 0);
+    if (now < reopen.getTime()) continue;
+    // Keep the reserved stamp even after a long absence. A queued native Done
+    // for that occurrence must still match when the WebView returns. There is
+    // still only one row; its next completion skips the missed days.
+    next = reopenRepeat(next, ref, ref.nextRepeatAt);
   }
   return next;
 };

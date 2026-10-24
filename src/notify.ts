@@ -1,3 +1,4 @@
+import { scheduledTask } from "./tasks.ts";
 // The daily check-in nudges, on a native shell. Everything here is behind
 // Capacitor.isNativePlatform(): on the web — PWA included — this module loads
 // but does nothing. A closed tab cannot wake a phone, and there is no web API
@@ -109,7 +110,7 @@ export const dueReminders = (
   refs: readonly TaskRef[],
   now: number,
 ): TaskRef[] =>
-  refs.filter((r) => !taskWaiting(r) && !r.done && r.remindAt !== null && r.remindAt > now);
+  refs.map(scheduledTask).filter((r) => !taskWaiting(r) && !r.done && r.remindAt !== null && r.remindAt > now);
 
 // Which of those Android delivers as a plain notification. A task flagged for
 // an alarm is left to the alarm, which posts its own ringing notification at
@@ -267,7 +268,7 @@ export const onNotificationTap = async (routes: TapRoutes): Promise<void> => {
 // appeared after closing and reopening the app, and the dropdown's "Ring an
 // alarm" never took effect at all without a restart.
 export const reminderSetKey = (refs: readonly TaskRef[]): string =>
-  JSON.stringify(nativeTaskLinks(refs)) + "|" + refs
+  JSON.stringify(nativeTaskLinks(refs)) + "|" + refs.map(scheduledTask)
     .filter((r) => !r.done && r.remindAt !== null)
     .map((r) => `${r.path}\u0000${r.title}\u0000${r.remindAt as number}\u0000${r.alarm ? "alarm" : ""}\u0000${r.repeat ?? ""}`)
     .sort()
@@ -298,7 +299,7 @@ export const alarmsWanted = (
   refs: readonly TaskRef[],
   now: number,
 ): AlarmEntry[] =>
-  refs
+  refs.map(scheduledTask)
     .filter((r) => !taskWaiting(r) && r.alarm && !r.done && r.remindAt !== null && r.remindAt > now)
     .map((r) => ({
       id: reminderId(r),
@@ -318,7 +319,7 @@ export interface AlarmLive {
 }
 
 export const alarmsLive = (refs: readonly TaskRef[]): AlarmLive[] =>
-  refs
+  refs.map(scheduledTask)
     .filter((r) => !taskWaiting(r) && r.alarm && !r.done && r.remindAt !== null)
     .map((r) => ({ id: reminderId(r), stamp: r.remindAt as number }));
 

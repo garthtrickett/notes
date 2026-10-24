@@ -233,6 +233,7 @@ if (config === null) {
   // a branch nobody is looking at, and coming back to it fires focus anyway.
   setInterval(() => {
     if (document.visibilityState !== "visible") return;
+    loop.propose({ kind: "woke" }); // Local day rollover also works offline.
     if (!loop.model.online || loop.model.syncing) return;
     pollHead();
     askForUpdate();

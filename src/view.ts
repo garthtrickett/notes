@@ -599,7 +599,7 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
     <option value="">
       ${ref.remindAt === null
         ? "remind"
-        : `${ref.alarm ? "⏰ " : ""}${ref.repeat === null ? "" : "↻ "}${describeDue(ref.remindAt, at)}`}
+        : `${ref.alarm ? "⏰ " : ""}${ref.repeat === null ? "" : "↻ "}${describeDue(ref.done ? ref.nextRepeatAt ?? ref.remindAt : ref.remindAt, at)}`}
     </option>
     ${CHOICES.map((c) => html`<option value=${c.id}>${c.label}</option>`)}
     ${ref.remindAt === null
@@ -636,7 +636,7 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
     ${ref.link?.after ? html`<button class="remove-dependency" aria-label=${`Remove dependency from ${ref.title}`}
       @click=${() => propose({ kind: "taskLinkRemoved", path: ref.path, id: ref.link!.id })}>Unlink</button>` : nothing}
   </li>`;
-  const openGroups = groups.filter((g) => g.refs.some((r) => !r.done));
+  const openGroups = groups.filter((g) => g.refs.some((r) => !r.done || r.repeat !== null));
   const shown = model.showDone ? groups : openGroups;
   const openTotal = groups.reduce(
     (n, g) => n + g.refs.filter((r) => !r.done && !waiting(r)).length,
@@ -658,10 +658,10 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
       ${shown.length === 0
         ? html`<p class="empty">No open tasks.</p>`
         : shown.map(({ path, refs }) => {
-        const open = refs.filter((r) => !r.done);
-        const shut = model.showDone ? refs.filter((r) => r.done) : [];
+        const open = refs.filter((r) => !r.done || r.repeat !== null);
+        const shut = model.showDone ? refs.filter((r) => r.done && r.repeat === null) : [];
         return html`<section class="taskgroup">
-          <h2>${path} — ${open.length}/${refs.length}</h2>
+          <h2>${path} — ${open.filter(r => !r.done).length}/${refs.length}</h2>
           ${open.length > 0
             ? html`<ul>
                 ${open.map(row)}

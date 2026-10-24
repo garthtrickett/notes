@@ -1,3 +1,4 @@
+import { stripRepeatMeta } from "./repeat-meta.ts";
 import { stripTaskMeta, taskMetaSuffix } from "./task-meta.ts";
 
 // When a task wants to be brought up again.
@@ -65,7 +66,7 @@ export const reminderIn = (title: string): number | null => {
 
 // What the row should read once the machinery is taken out of it.
 export const titleWithout = (title: string): string =>
-  stripTaskMeta(title).replace(PATTERN, "").replace(/\s{2,}/g, " ").trim();
+  stripRepeatMeta(stripTaskMeta(title)).replace(PATTERN, "").replace(/\s{2,}/g, " ").trim();
 
 const two = (n: number): string => String(n).padStart(2, "0");
 

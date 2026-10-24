@@ -1,6 +1,6 @@
 // Task ordering and recurrence live here, not in click handlers. All callers
 // (editor, Tasks, sync, and queued Android answers) use the same Markdown.
-import { tasksIn, type TaskRef } from "./tasks.ts";
+import { tasksIn, scheduledTask, type TaskRef } from "./tasks.ts";
 import { isFiledPath } from "./paths.ts";
 import { withReminder } from "./reminders.ts";
 import { withTaskLink, type TaskLink } from "./task-meta.ts";
@@ -126,5 +126,6 @@ export const activateTask = (body: string, path: string, taskId: string, sourceI
 
 export const nativeTaskLinks = (refs: readonly TaskRef[]) => guardedTasks(refs)
   .filter(r => r.link && !r.invalidLink)
+  .map(scheduledTask)
   .map(r => ({ ...r.link!, title: r.title, path: r.path, done: r.done, stamp: r.remindAt ?? 0, repeat: r.repeat !== null }))
   .sort((a, b) => a.id.localeCompare(b.id));

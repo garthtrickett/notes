@@ -376,12 +376,28 @@ Touched, exhaustively (verified: these are the only sites that switch on
 | `every weekday` | the next Monday–Friday |
 | `every mon,wed,fri` (or `every tuesday`) | the next named day; commas, no spaces |
 
-Ticking a repeating task — in the Tasks tab, in the editor, or with the
-alarm's Done — reopens it at its next time instead of leaving it ticked. A
-task left for days comes back once, at the next time still to come, not as a
-pile of overdue copies. To stop it repeating, delete the `every …`. A repeat
-the app cannot read stays in the line as plain text. The Tasks tab marks
-repeating tasks with ↻.
+Ticking a repeating task — in Tasks, the editor or an alarm's Done — keeps
+its real checkbox checked and its row visible. Daily tasks reopen at local
+midnight on the next day; weekly/monthly/named-day tasks reopen at the start
+of their next scheduled day. Its original time and repeat rule are retained.
+An overdue completion counts for today, so it cannot ring again later the
+same day. Undo removes that completion and restores the current occurrence.
+
+A trailing `<!-- notes-repeat {"stamp":"@2026-10-06 05:30","repeat":"day","next":"@2026-10-07 05:30"} -->`
+reserves the next occurrence while the checkbox remains checked. It travels
+with the note and is hidden from task titles. The original stamp identifies
+today's completion for dependencies; alarms and the native dependency graph
+project the reserved future occurrence. Both Android's closed-app Markdown
+reader and the web reader use that future time without reopening the visible
+row early. Metadata sits before any existing `notes-task` comment.
+
+Rollover retains one reserved overdue occurrence after a long absence so a
+queued native Done still matches it. Its next completion skips missed days;
+there is no duplicate-task backlog. Native answers include their actual press
+time, so an answer replayed days later does not falsely mark the current day
+done. Repeated replays cannot consume the following occurrence. Visible clock
+polls, resume and hydration all reconcile the day boundary, including offline.
+To stop repeating, delete `every …`. Unreadable rules stay as plain text.
 
 **Or use the Tasks tab.** Every row has a dropdown on the right:
 

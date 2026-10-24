@@ -58,6 +58,8 @@ final class AlarmLines {
     private static final Pattern FENCE = Pattern.compile("^ {0,3}(```|~~~)");
     private static final Pattern META = Pattern.compile("\\s*<!-- notes-task (\\{[^\\r\\n]*\\}) -->\\s*$");
 
+    private static final Pattern REPEAT_META = Pattern.compile("\\s*<!-- notes-repeat (\\{[^\\r\\n]*\\}) -->\\s*$");
+
     private static final int DEFAULT_HOUR = 9;
     private static final int TASK_ID_FLOOR = 1000;
     private static final long TASK_ID_CEILING = 2_000_000_000L;
@@ -77,7 +79,6 @@ final class AlarmLines {
             if (fence != null) continue;
             Matcher task = TASK.matcher(line);
             if (!task.matches()) continue;
-            if (!" ".equals(task.group(1))) continue;
             String raw = task.group(2);
             String linkedId = null;
             Matcher metadata = META.matcher(raw);
@@ -96,16 +97,41 @@ final class AlarmLines {
                 } catch (JSONException invalid) { continue; }
                 raw = raw.substring(0, metadata.start());
             } else if (raw.contains("<!-- notes-task")) continue;
+            Matcher completion = REPEAT_META.matcher(raw);
+            String completionJson = null;
+            if (completion.find()) { completionJson = completion.group(1); raw = raw.substring(0, completion.start()); }
             Matcher stamp = STAMP.matcher(raw);
             if (!stamp.find()) continue;
             if (!"!".equals(stamp.group(6))) continue;
             Long at = instant(stamp);
-            if (at == null || at <= now) continue;
+            if (at == null) continue;
+            if (!" ".equals(task.group(1))) {
+                if (completionJson == null || stamp.group(7) == null) continue;
+                try {
+                    JSONObject done = new JSONObject(completionJson);
+                    if (!(done.opt("stamp") instanceof String) || !(done.opt("next") instanceof String) || !(done.opt("repeat") instanceof String)) continue;
+                    if (!done.getString("next").matches("@\\d{4}-\\d{2}-\\d{2}(?: \\d{2}:\\d{2})?")) continue;
+                    Matcher original = STAMP.matcher(done.getString("stamp")), next = STAMP.matcher(done.getString("next"));
+                    if (!done.getString("stamp").equals(stampOf(at)) || !original.matches() || !next.matches() || !at.equals(instant(original)) ||
+                        !stamp.group(7).toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", " ").equals(done.getString("repeat"))) continue;
+                    Long future = instant(next);
+                    if (future == null || future <= at) continue;
+                    at = future;
+                } catch (JSONException invalid) { continue; }
+            }
+            if (at <= now) continue;
             String title = (raw.substring(0, stamp.start()) + raw.substring(stamp.end()))
                 .replaceAll("\\s{2,}", " ").trim();
             found.add(new Found(linkedId == null ? id(path, title) : linkId(linkedId), at, title, path, stamp.group(7) != null));
         }
         return found;
+    }
+
+    private static String stampOf(long at) {
+        Calendar c = Calendar.getInstance(); c.setTimeInMillis(at);
+        String date = String.format(java.util.Locale.ROOT,"@%04d-%02d-%02d",c.get(Calendar.YEAR),c.get(Calendar.MONTH)+1,c.get(Calendar.DAY_OF_MONTH));
+        return c.get(Calendar.HOUR_OF_DAY)==9 && c.get(Calendar.MINUTE)==0 ? date : date +
+            String.format(java.util.Locale.ROOT," %02d:%02d",c.get(Calendar.HOUR_OF_DAY),c.get(Calendar.MINUTE));
     }
 
     // Local time, and an impossible date is no date — the app asks Date what

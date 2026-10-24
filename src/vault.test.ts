@@ -510,7 +510,7 @@ describe("Done and Snooze from the alarm screen", () => {
 });
 
 describe("ticking a repeating task", () => {
-  it("reopens it at its next time instead, as an edit that saves", async () => {
+  it("keeps a completed recurring row checked and visible until next day", async () => {
     clock = new Date("2026-10-06T06:00").getTime();
     const loop = await boot(deps(), root);
     loop.propose({
@@ -521,10 +521,15 @@ describe("ticking a repeating task", () => {
     // Ticked the way the editor does it: an x typed into the box.
     loop.propose({ kind: "edited", path: "d.md", body: "- [x] surf @2026-10-06 05:30! every day\n" });
     await settle(loop);
+    expect(loop.model.notes.get("d.md")?.body).toContain("- [x] surf @2026-10-06 05:30! every day");
+    loop.propose({ kind: "modeChanged", mode: "tasks" }); await settle(loop);
+    const check=root.querySelector<HTMLInputElement>('input[aria-label="Reopen surf"]');
+    expect(check?.checked).toBe(true);
+    clock=new Date("2026-10-07T00:00").getTime();loop.propose({kind:"woke"});await settle(loop);
     expect(loop.model.notes.get("d.md")?.body).toBe("- [ ] surf @2026-10-07 05:30! every day\n");
   });
 
-  it("reopens one that arrives ticked from elsewhere", async () => {
+  it("retains a synced completed weekly occurrence across reloads", async () => {
     clock = new Date("2026-10-06T06:00").getTime();
     const loop = await boot(deps(), root);
     loop.propose({
@@ -532,7 +537,7 @@ describe("ticking a repeating task", () => {
       notes: [note("d.md", { body: "- [x] bins @2026-10-06 every week\n" })],
     });
     await settle(loop);
-    expect(loop.model.notes.get("d.md")?.body).toBe("- [ ] bins @2026-10-13 every week\n");
+    expect(loop.model.notes.get("d.md")?.body).toContain("- [x] bins @2026-10-06 every week");
   });
 
   it("leaves a ticked one in the trash alone", async () => {

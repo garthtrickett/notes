@@ -437,7 +437,8 @@ final class Alarms {
                     .put("id", e.id)
                     .put("path", e.path)
                     .put("title", e.title)
-                    .put("at", e.stamp);
+                    .put("at", e.stamp)
+                    .put("answeredAt", now);
                 if ("snooze".equals(kind)) {
                     // Whole minutes, because the note's stamp is whole minutes.
                     // The app writes exactly this instant back, so the alarm
