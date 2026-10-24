@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { applyAnswers, parseAnswers, type AlarmAnswer } from "./alarms.ts";
+import { rollRepeats, tasksIn } from "./tasks.ts";
 import { reminderIn } from "./reminders.ts";
 
 const at = (stamp: string): number => new Date(stamp).getTime();
@@ -123,6 +124,25 @@ describe("answering a repeating task's alarm", () => {
     expect(applyAnswers(notes, [
       { kind: "snooze", path: "d.md", title: "surf", at: surf, snoozeTo: at("2026-10-06T05:40") },
       { kind: "done", path: "d.md", title: "surf", at: surf, snoozeTo: null },
-    ]).get("d.md")).toBe("- [x] surf @2026-10-06 05:30! every day\n");
+    ]).get("d.md")).toContain("- [x] surf @2026-10-06 05:30! every day <!-- notes-repeat");
+  });
+});
+
+
+describe("completed recurring reminders across native replay", () => {
+  const path="d.md", first=at("2026-10-06T05:30"), second=at("2026-10-07T05:30");
+  const saved=rollRepeats("- [x] surf @2026-10-06 05:30! every day\n",path,first);
+  it("accepts the reserved next alarm's Done while yesterday is still checked", () => {
+    const answer=parseAnswers([{kind:"done",path,title:"surf",at:second,answeredAt:second+60_000}]);
+    const body=applyAnswers(()=>saved,answer).get(path)!;
+    expect(tasksIn(body,path)[0]).toMatchObject({done:true,remindAt:second,nextRepeatAt:at("2026-10-08T05:30")});
+    expect(applyAnswers(()=>body,answer).size).toBe(0);
+  });
+  it("uses the actual completion day when a closed app receives a late answer", () => {
+    const answer=parseAnswers([{kind:"done",path,title:"surf",at:second,answeredAt:second+60_000}]);
+    const reopened=rollRepeats(saved,path,at("2026-10-09T12:00"));
+    const body=applyAnswers(()=>reopened,answer).get(path)!;
+    const current=rollRepeats(body,path,at("2026-10-09T12:00"));
+    expect(tasksIn(current,path)[0]).toMatchObject({done:false,remindAt:at("2026-10-08T05:30")});
   });
 });

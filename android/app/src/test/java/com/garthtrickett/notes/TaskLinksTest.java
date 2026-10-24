@@ -43,6 +43,7 @@ public class TaskLinksTest {
         JSONArray answers = Alarms.take(context);
         assertEquals(3, answers.length()); // done, activation, duplicate done — no duplicate activation
         assertEquals("done", answers.getJSONObject(0).getString("kind"));
+        assertEquals(stamp + 15_000, answers.getJSONObject(0).getLong("answeredAt"));
         assertEquals("activate", answers.getJSONObject(1).getString("kind"));
         assertEquals("at:" + stamp, answers.getJSONObject(1).getString("token"));
         assertEquals(3, Alarms.take(context).length()); // Reading before persistence never consumes.

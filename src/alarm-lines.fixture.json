@@ -214,6 +214,50 @@
           "repeat": false
         }
       ]
+    },
+    {
+      "name": "completed recurring row reserves tomorrow alarm while still checked",
+      "path": "a.md",
+      "body": "- [x] surf @2026-10-05 05:30! every day <!-- notes-repeat {\"stamp\":\"@2026-10-05 05:30\",\"repeat\":\"day\",\"next\":\"@2026-10-06 05:30\"} -->\n",
+      "expected": [
+        {
+          "id": 1812633527,
+          "at": "2026-10-06T05:30",
+          "title": "surf",
+          "repeat": true
+        }
+      ]
+    },
+    {
+      "name": "repeat completion for another stamp cannot schedule an alarm",
+      "path": "a.md",
+      "body": "- [x] surf @2026-10-04 05:30! every day <!-- notes-repeat {\"stamp\":\"@2026-10-05 05:30\",\"repeat\":\"day\",\"next\":\"@2026-10-06 05:30\"} -->\n",
+      "expected": []
+    },
+    {
+      "name": "repeat completion for another rule cannot schedule an alarm",
+      "path": "a.md",
+      "body": "- [x] surf @2026-10-05 05:30! every week <!-- notes-repeat {\"stamp\":\"@2026-10-05 05:30\",\"repeat\":\"day\",\"next\":\"@2026-10-06 05:30\"} -->\n",
+      "expected": []
+    },
+    {
+      "name": "malformed completion cannot turn a checked row into an alarm",
+      "path": "a.md",
+      "body": "- [x] surf @2026-10-05 05:30! every day <!-- notes-repeat {broken} -->\n",
+      "expected": []
+    },
+    {
+      "name": "unchecked task ignores a retained completion when choosing alarm time",
+      "path": "a.md",
+      "body": "- [ ] surf @2026-10-06 05:30! every day <!-- notes-repeat {\"stamp\":\"@2026-10-05 05:30\",\"repeat\":\"day\",\"next\":\"@2026-10-06 05:30\"} -->\n",
+      "expected": [
+        {
+          "id": 1812633527,
+          "at": "2026-10-06T05:30",
+          "title": "surf",
+          "repeat": true
+        }
+      ]
     }
   ]
 }

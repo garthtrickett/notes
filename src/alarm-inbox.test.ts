@@ -30,7 +30,7 @@ it("acknowledges only after both notes and the rolled schedule are actually dura
     calls++;
     expect(receipts).toEqual(["done-receipt", "release-receipt"]);
     const saved = await getAll(db);
-    expect(tasksIn(saved.find(n => n.path === "a.md")!.body, "a.md")[0]?.remindAt).toBe(new Date(2026, 9, 24, 8).getTime());
+    expect(tasksIn(saved.find(n => n.path === "a.md")!.body, "a.md")[0]).toMatchObject({ done: true, nextRepeatAt: new Date(2026, 9, 24, 8).getTime() });
     expect(tasksIn(saved.find(n => n.path === "b.md")!.body, "b.md")[0]?.link?.seen).toBe(`at:${stamp}`);
   })).toBe(true);
   expect(calls).toBe(1);

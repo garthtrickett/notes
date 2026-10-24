@@ -453,55 +453,49 @@ describe("noticing that the reminder set changed", () => {
 
 describe("a repeating task, once ticked", () => {
   const now = new Date("2026-10-06T06:00").getTime();
-
-  it("reopens at its next time, keeping the alarm and the repeat", () => {
+  const tomorrow = new Date("2026-10-07T00:00").getTime();
+  it("stays checked today through repeated passes and a cold parse", () => {
     const body = "- [x] surf @2026-10-06 05:30! every day\n";
-    expect(rollRepeats(body, "d.md", now)).toBe("- [ ] surf @2026-10-07 05:30! every day\n");
+    const saved = rollRepeats(body, "d.md", now);
+    expect(tasksIn(saved, "d.md")[0]).toMatchObject({ done: true, title: "surf", remindAt: now - 30*60_000,
+      nextRepeatAt: new Date("2026-10-07T05:30").getTime(), repeat: "day", alarm: true });
+    expect(rollRepeats(saved, "d.md", now + 12*3600_000)).toBe(saved);
+    expect(rollRepeats(saved, "d.md", tomorrow - 1)).toBe(saved);
   });
-
-  it("leaves an open one alone", () => {
-    const body = "- [ ] surf @2026-10-06 05:30! every day\n";
-    expect(rollRepeats(body, "d.md", now)).toBe(body);
+  it("reopens at midnight of the next scheduled day and keeps its alarm time", () => {
+    const saved = rollRepeats("- [x] surf @2026-10-06 05:30! every day\n", "d.md", now);
+    expect(rollRepeats(saved, "d.md", tomorrow)).toBe("- [ ] surf @2026-10-07 05:30! every day\n");
   });
-
-  it("leaves a ticked one-off ticked", () => {
-    const body = "- [x] surf @2026-10-06 05:30!\n";
-    expect(rollRepeats(body, "d.md", now)).toBe(body);
+  it("overdue completion counts for today even before today's usual alarm time", () => {
+    const saved = rollRepeats("- [x] check messages @2026-10-01 16:30! every day\n", "d.md", now);
+    expect(tasksIn(saved,"d.md")[0]?.nextRepeatAt).toBe(new Date("2026-10-07T16:30").getTime());
   });
-
-  it("rolls several in one file without disturbing each other", () => {
-    // Last first, so the earlier line's rewrite cannot shift the later one.
-    const body = "- [x] surf @2026-10-06 05:30! every day\n- [ ] read\n- [x] bins @2026-10-06 every week\n";
-    expect(rollRepeats(body, "d.md", now)).toBe(
-      "- [ ] surf @2026-10-07 05:30! every day\n- [ ] read\n- [ ] bins @2026-10-13 every week\n",
-    );
+  it("keeps a weekly task checked until next week's scheduled day", () => {
+    const saved = rollRepeats("- [x] bins @2026-10-06 every week\n", "d.md", now);
+    expect(rollRepeats(saved, "d.md", tomorrow)).toBe(saved);
+    expect(rollRepeats(saved, "d.md", new Date("2026-10-13T00:00").getTime())).toBe("- [ ] bins @2026-10-13 every week\n");
   });
-
-  it("rolls a later task correctly when an earlier rewrite changes length", () => {
-    // 09:00 is written back as a bare date, so the first line gets shorter.
-    // Rolled first-to-last, the second line's offsets would be stale and its
-    // rewrite refused; last-to-first never moves an offset still to be used.
-    const body = "- [x] a @2026-10-06 09:00 every day\n- [x] b @2026-10-06 10:00 every week\n";
-    expect(rollRepeats(body, "d.md", now)).toBe(
-      "- [ ] a @2026-10-07 every day\n- [ ] b @2026-10-13 10:00 every week\n",
-    );
+  it("keeps one reserved overdue occurrence so a queued native answer still matches", () => {
+    const saved = rollRepeats("- [x] surf @2026-10-06 05:30! every day\n", "d.md", now);
+    expect(rollRepeats(saved, "d.md", new Date("2026-10-11T20:00").getTime())).toBe("- [ ] surf @2026-10-07 05:30! every day\n");
   });
-
-  it("leaves one ticked whose repeat cannot step", () => {
-    // "0 days" reads as a repeat but has no next time. Reopening it would
-    // leave an open task stuck on a past stamp; ticked is the honest state.
-    const body = "- [x] t @2026-10-06 every 0 days\n";
-    expect(rollRepeats(body, "d.md", now)).toBe(body);
+  it("clears the completion on an explicit undo, allowing a new tick", () => {
+    const saved = rollRepeats("- [x] surf @2026-10-06 05:30! every day\n", "d.md", now);
+    const undone = flipTask(saved,tasksIn(saved,"d.md")[0]!);
+    expect(rollRepeats(undone,"d.md",now)).toBe("- [ ] surf @2026-10-06 05:30! every day\n");
   });
-
-  it("keeps whatever surrounds the task", () => {
-    const body = "# day\n\n  - [x] gym @2026-10-05 07:00 every mon,wed,fri\nmore\n";
-    expect(rollRepeats(body, "d.md", now)).toBe("# day\n\n  - [ ] gym @2026-10-07 07:00 every mon,wed,fri\nmore\n");
+  it("preserves neighbouring prose, indentation, other tasks and invalid rules", () => {
+    const body = "# day\n  - [x] surf @2026-10-06 05:30! every day\n- [ ] read\n- [x] bins @2026-10-06 every week\n- [x] invalid @2026-10-06 every 0 days\nmore\n";
+    const saved = rollRepeats(body,"d.md",now), refs=tasksIn(saved,"d.md");
+    expect(refs.map(r=>r.done)).toEqual([true,false,true,true]);
+    expect(refs.map(r=>r.title)).toEqual(["surf","read","bins","invalid"]);
+    expect(saved.startsWith("# day\n  - [x]")).toBe(true);expect(saved.endsWith("more\n")).toBe(true);
+    const reopened=rollRepeats(saved,"d.md",tomorrow);
+    expect(tasksIn(reopened,"d.md").map(r=>r.done)).toEqual([false,false,true,true]);
   });
-
-  it("carries the repeat on the ref", () => {
-    const [ref] = tasksIn("- [ ] gym @2026-10-05 07:00 every mon,wed,fri\n", "d.md");
-    expect(ref?.repeat).toBe("mon,wed,fri");
+  it("leaves open tasks and completed one-offs alone", () => {
+    for(const body of ["- [ ] surf @2026-10-06 05:30! every day\n","- [x] surf @2026-10-06 05:30!\n"])
+      expect(rollRepeats(body,"d.md",now)).toBe(body);
   });
 });
 

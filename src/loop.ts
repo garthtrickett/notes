@@ -638,14 +638,13 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     );
   };
 
-  // A repeating task that has been ticked — by any route, on any device — is
-  // reopened at its next time. Proposed as an ordinary edit, so it saves,
-  // syncs and reschedules its alarm like a tap; the rewritten line is never
-  // ticked, so the next pass finds nothing and this cannot loop.
+  // A recurring completion reserves its next alarm while staying checked.
+  // The day boundary reopens it. Both transitions are idempotent ordinary
+  // edits and use the same persistence/sync path as a manual tick.
   const napRepeats = (): boolean => {
     if (!model.hydrated) return false;
     for (const group of tasksInVault(model.notes, tasks)) {
-      if (!group.refs.some((r) => r.done && r.repeat !== null)) continue;
+      if (!group.refs.some((r) => (r.done && r.repeat !== null) || r.nextRepeatAt !== undefined)) continue;
       const body = model.notes.get(group.path)?.body;
       if (body === undefined) continue;
       const next = rollRepeats(body, group.path, now());
@@ -661,8 +660,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       const edits = advanceTaskLinks(model.notes.values(), now(), tasksInVault(model.notes, tasks).flatMap(g => g.refs));
       if (edits.size > 0) { propose({ kind: "taskLinksAdvanced", edits }); return; }
     }
-    // Before anything is saved or scheduled, so neither sees a repeating task
-    // ticked for the moment before it reopens.
+    // Persist completion metadata before deriving the future alarm set.
     if (napRepeats()) return;
     napReminders();
     // 0. Whatever the history panel is waiting for. Read-only, independent of

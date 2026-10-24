@@ -69,7 +69,7 @@ describe("task creation dialog", () => {
     const child = tasksIn(loop.model.notes.get("reminders.md")!.body, "reminders.md")[0]!;
     expect(child).toMatchObject({ done: false, alarm: true, link: { ready: true } });
     expect(child.remindAt).toBe(new Date(2026, 9, 17, 9, 1).getTime());
-    expect(tasksIn(loop.model.notes.get("morning.md")!.body, "morning.md")[0]?.remindAt).toBe(new Date(2026, 9, 18, 8).getTime());
+    expect(tasksIn(loop.model.notes.get("morning.md")!.body, "morning.md")[0]).toMatchObject({ done: true, nextRepeatAt: new Date(2026, 9, 18, 8).getTime() });
     const before = (await getAll(db)).map(n => [n.path, n.body]);
     loop.dispose();
     const reloaded = await boot({ db, github: null, shrink: async () => new ArrayBuffer(0), now: () => new Date(2026, 9, 17, 9).getTime(), schedule: (_ms, fire) => void queueMicrotask(fire) }, root);
