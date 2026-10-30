@@ -70,7 +70,7 @@ export const audioView = (audio: AudioModel, propose: Propose): TemplateResult =
       <ul class="audio-list">${pending.map(item => historyView(item, busy, propose))}</ul></div>` : nothing}
     ${s?.operation ? html`<p class="audio-notice" role="status">${s.operation}</p>` : nothing}
     ${s === null ? html`<p class="audio-notice">Connecting to audio…</p>` : !s.rootSelected ? html`
-      <div class="audio-empty"><h2>Your downloads, here.</h2><p>Choose this phone’s phone-media folder to listen to Opus recordings and M4B audiobooks.</p>
+      <div class="audio-empty"><h2>Your downloads, here.</h2><p>Choose this phone’s phone-media folder to listen to Opus, MP3 and M4B recordings.</p>
       <button ?disabled=${busy} @click=${() => request(propose, { action: "chooseFolder" })}>Choose audio folder</button></div>` : html`
       <div class="audio-search">
         <input type="search" aria-label="Search audio" placeholder="Search title, author or filename"
@@ -86,7 +86,7 @@ export const audioView = (audio: AudioModel, propose: Propose): TemplateResult =
         </select></label></div>
       ${rows.length || history.length ? html`<ul class="audio-list">${rows.map(row => rowView(row, busy || pending.some(item => item.currentRoot && item.path === row.path), propose))}${history.map(item => historyView(item, busy, propose))}</ul>` : html`
         <p class="audio-notice" role="status">${terms.length ? "No recordings match your search in this view." : `No ${label(audio.filter).toLowerCase()} recordings here.`}</p>`}
-      <footer class="audio-footer"><span>Opus · M4B · Local files only</span>
+      <footer class="audio-footer"><span>Opus · MP3 · M4B · Local files only</span>
         <button ?disabled=${busy} @click=${() => request(propose, { action: "chooseFolder" })}>Change audio folder</button></footer>`}
   </section>`;
 };

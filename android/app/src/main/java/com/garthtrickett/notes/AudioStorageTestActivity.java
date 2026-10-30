@@ -37,7 +37,7 @@ public class AudioStorageTestActivity extends Activity {
         page.setPadding(pad, pad, pad, pad);
         ScrollView scroll = new ScrollView(this); scroll.addView(page); setContentView(scroll);
         text(page, "Audio storage test", 24);
-        text(page, "Select this phone's phone-media folder. This test lists Opus and M4B files only. " +
+        text(page, "Select this phone's phone-media folder. This test lists Opus, MP3 and M4B files only. " +
             "Deletion is limited to the two disposable notes-audio-storage-test files. Your recordings cannot be deleted here.", 16);
         details = text(page, "Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")", 14);
         try { details.append(" · Notes " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName); }
@@ -150,7 +150,7 @@ public class AudioStorageTestActivity extends Activity {
             binding = listing.root;
             if (binding.isEmpty()) { message.setText("Choose the local phone-media folder to start."); return; }
             message.setText("Local folder access works · " + (listing.writable ? "read/write grant" : "read-only grant") +
-                "\n" + listing.files.size() + " Opus/M4B files. This is a storage test; playback qualification is still pending.");
+                "\n" + listing.files.size() + " Opus/MP3/M4B files. This is a storage test; playback qualification is still pending.");
             rows.removeAllViews();
             if (listing.deletion != null) {
                 String label = "absent".equals(listing.outcome) ? "Verified absent from the phone folder" :

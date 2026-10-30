@@ -25,6 +25,17 @@ public class AudioCatalogTest {
             Arrays.asList(entry("youtube/same.opus", 1), entry("podcasts/same.opus", 1)), ids);
         assertSame(initial.rows.get(0), refreshed.rows.get(0)); assertSame(initial.rows.get(1), refreshed.rows.get(1));
     }
+    @Test public void mp3FallbackTitleRemainsReadableAfterInvalidationAndRefresh() throws Exception {
+        AudioDocuments.Entry document = entry("japanese/lessons/Japanese lesson.MP3", 1);
+        AudioCatalog catalog = listed(document);
+        AudioCatalog.Row row = catalog.rows.get(0);
+        assertEquals("Japanese lesson", row.title);
+        AudioCatalog invalidated = catalog.invalidate(row.id, row.version, ids);
+        assertEquals("Japanese lesson", invalidated.rows.get(0).title);
+        AudioCatalog refreshed = AudioCatalog.listed(invalidated, invalidated.root, 1,
+            Collections.singletonList(document), ids);
+        assertSame(invalidated.rows.get(0), refreshed.rows.get(0));
+    }
     @Test public void staleEpochRootAndCallerInventedVersionsAreRefused() throws Exception {
         AudioCatalog catalog = listed(entry("youtube/a.opus", 1)); AudioCatalog.Row row = catalog.rows.get(0);
         AudioLedger ledger = AudioLedger.empty().bind(AudioLedgerTest.ROOT);

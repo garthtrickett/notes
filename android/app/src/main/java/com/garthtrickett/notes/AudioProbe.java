@@ -49,7 +49,7 @@ final class AudioProbe {
                 String title = text(fields.title);
                 String author = text(fields.artist);
                 if (author == null) author = text(fields.author);
-                return new AudioProbe(title == null ? filename.replaceFirst("(?i)\\.(opus|m4b)$", "") : title, author, durationUs / 1000);
+                return new AudioProbe(title == null ? filename.replaceFirst("(?i)\\.(opus|m4b|mp3)$", "") : title, author, durationUs / 1000);
             } finally {
                 cancellation.setOnCancelListener(null);
                 groups.cancel(true); duration.cancel(true);

@@ -7,7 +7,7 @@ public class AudioPathsTest {
     @Test public void onlyCompletedAudioInSelectedSources() {
         assertTrue(AudioPaths.audio("youtube/日本語 and spaces.opus"));
         assertTrue(AudioPaths.audio("audiobooks/author/title.M4B"));
-        for (String path : new String[] { "video/a.opus", "a.opus", "youtube/a.mp4", "podcasts/a.mp3",
+        for (String path : new String[] { "video/a.opus", "a.opus", "youtube/a.mp4", "podcasts/a.aac",
             "youtube/.a.opus", "youtube/.stversions/a.opus", "youtube/a.sync-conflict-2026.opus",
             "youtube/a.opus.part", "youtube/../a.opus", "youtube//a.opus", "youtube/a\\b.opus",
             "youtube/.syncthing.a.opus.tmp", "youtube/a.opus/" }) {
@@ -29,5 +29,15 @@ public class AudioPathsTest {
             assertFalse(path, AudioPaths.audio(path));
         }
         assertFalse(AudioPaths.specimen("japanese/notes-audio-storage-test.opus"));
+    }
+    @Test public void mp3IsAvailableAcrossSourcesWithTheSamePathGuards() {
+        for (String source : new String[] { "japanese", "youtube", "podcasts", "audiobooks" }) {
+            assertTrue(AudioPaths.audio(source + "/lessons/日本語.MP3"));
+            assertFalse(AudioPaths.audio(source + "/.lesson.mp3"));
+            assertFalse(AudioPaths.audio(source + "/lesson.mp3.part"));
+            assertFalse(AudioPaths.audio(source + "/lesson.sync-conflict-2026.mp3"));
+        }
+        assertFalse(AudioPaths.audio("video/lesson.mp3"));
+        assertFalse(AudioPaths.audio("japanese/../lesson.mp3"));
     }
 }

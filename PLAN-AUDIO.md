@@ -75,9 +75,11 @@ Use a stable title/path sort; downloads must not reorder the list on every paint
 Keep duplicate titles distinct by relative path.
 Metadata extraction uses local files only and never fabricates an author.
 
-Opus and M4B are required because they cover the existing download workflow.
-M4A and MP3 are additional first-release formats only after codec/container
-qualification on the real phone; list the actual supported combinations.
+Opus, MP3 and M4B cover the download workflow, including the existing Japanese
+MP3 recordings. MP3 uses the same Media3 metadata and playback pipeline, with
+ID3 titles when present and the filename otherwise. Keep real-phone playback
+confirmation separate from host extractor tests. M4A remains outside the
+advertised formats until separately qualified.
 Exclude hidden files, `.syncthing.*`, `.stversions`, conflict copies and partial
 extensions before probing.
 Syncthing normally publishes final files by moving completed temporary files

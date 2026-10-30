@@ -106,4 +106,27 @@ public class DeliveryDocumentsTest {
         DeliveryDocuments cancelled=new DeliveryDocuments(context.getContentResolver(),entry.root,()->true);assertThrows(IOException.class,()->cancelled.temporary(entry));
         provider.deny=true;assertThrows(SecurityException.class,()->docs.existing(entry.item));
     }
+    @Test public void savedJapaneseMp3AppearsInAudioOnlyAfterVerifiedPublication() throws Exception {
+        byte[] bytes;
+        try(InputStream source=getClass().getResourceAsStream("/audio/notes-audio-storage-test.mp3")) {
+            assertNotNull(source);bytes=source.readAllBytes();
+        }
+        String path="japanese/lessons/日本語.MP3";
+        String hash=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        entry=new DeliveryState.Entry(new DeliveryItem("a".repeat(32),path,bytes.length,hash),entry.root);
+        partial(bytes);
+        Uri saved=DocumentsContract.buildDocumentUriUsingTree(Uri.parse(entry.root),"root/"+path);
+        Shadows.shadowOf(context.getContentResolver()).registerInputStreamSupplier(saved,()-> {
+            try { return new FileInputStream(new File(provider.base,"root/"+path)); }
+            catch(IOException error) { throw new RuntimeException(error); }
+        });
+        Files.write(new File(provider.base,"root/japanese/lessons/lesson.mp3.part").toPath(),bytes);
+        Files.writeString(new File(provider.base,"root/japanese/lessons/transcript.md").toPath(),"Lesson notes");
+        AudioDocuments library=AudioDocuments.library(context.getContentResolver(),entry.root,null);
+        assertTrue(library.list().isEmpty());
+        docs.commit(entry);
+        java.util.List<AudioDocuments.Entry> listed=library.list();
+        assertEquals(1,listed.size());assertEquals(path,listed.get(0).path);
+        assertEquals(bytes.length,listed.get(0).size);
+    }
 }

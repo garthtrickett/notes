@@ -39,6 +39,14 @@ public class AudioProbeTest {
     }
     @Test public void oggOpusHasAnAudioTrackAndDuration() throws Exception { probeTone("opus"); }
     @Test public void mp4AacM4bHasAnAudioTrackAndDuration() throws Exception { probeTone("m4b"); }
+    @Test public void mp3HasAnAudioTrackDurationAndId3Title() throws Exception { probeTone("mp3"); }
+    @Test public void malformedMp3IsNotOfferedAsPlayable() throws Exception {
+        File invalid = new File(directory.getRoot(), "invalid.mp3");
+        Files.write(invalid.toPath(), new byte[]{1,2,3,4});
+        AudioProblem failure = assertThrows(AudioProblem.class, () -> AudioProbe.read(
+            RuntimeEnvironment.getApplication(), Uri.fromFile(invalid), invalid.getName(), new CancellationSignal()));
+        assertEquals(AudioProblem.Kind.UNSUPPORTED, failure.kind);
+    }
     @Test public void cancelledPreparationDoesNotOpenTheFile() throws Exception {
         CancellationSignal cancelled = new CancellationSignal(); cancelled.cancel();
         try {

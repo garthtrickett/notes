@@ -371,3 +371,17 @@ job scheduling and an isolated SSH crypto provider. Production Java transport
 was exercised against the restricted SFTP jail. This does not prove physical
 Pixel 7a/Android 17 downloading, background scheduling or interruption behaviour.
 Those checks remain pending the installed release.
+
+## Japanese MP3 recordings — 30 October 2026
+
+The user's existing Japanese recordings are MP3 files. The Audio library now
+accepts completed `.mp3` files alongside `.opus` and `.m4b` in its four approved
+sources, including nested `japanese/` folders. Filename fallback titles strip
+the MP3 extension; embedded ID3 titles use the existing Media3 metadata path.
+
+Host coverage uses a synthetic MP3 fixture with real audio, duration and ID3
+metadata, rejects malformed MP3 data, and exercises verified SAF publication
+into `japanese/` followed by Audio discovery. Hidden partial downloads remain
+absent from the library. Existing playback, progress and Done controls apply.
+Actual MP3 playback on the Pixel 7a remains a separate phone check; these host
+extractor tests do not establish audible output or lock-screen behaviour.
