@@ -37,7 +37,7 @@ public class AudioPlaybackTestActivity extends Activity {
         int pad = (int) (16 * getResources().getDisplayMetrics().density); page.setPadding(pad, pad, pad, pad);
         ScrollView scroll = new ScrollView(this); scroll.addView(page); setContentView(scroll);
         text(page, "Audio playback test", 24);
-        text(page, "Choose an Opus or M4B recording from the selected phone folder. Playback belongs to Notes' native service and can continue when you leave this screen. Bookmarks and marks stay on this phone.", 16);
+        text(page, "Choose an Opus, MP3 or M4B recording from the selected phone folder. Playback belongs to Notes' native service and can continue when you leave this screen. Bookmarks and marks stay on this phone.", 16);
         state = text(page, "Loading saved audio state…", 16);
         recordings = new Spinner(this); page.addView(recordings);
         button(page, "Refresh local recordings", runtime::refresh, false);

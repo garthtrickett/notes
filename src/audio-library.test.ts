@@ -117,12 +117,13 @@ describe("Audio library search", () => {
     const row = snapshot.rows[0]!;
     emit({ ...snapshot, revision: 10, history: [], player: null, rows: [
       { ...row, item: "japanese-lesson", version: "lesson-v1", durableId: null, listening: null,
-        title: "Japanese dialogue", path: "japanese/lessons/Yuki.opus" },
+        title: "Japanese dialogue", path: "japanese/lessons/Yuki.mp3" },
       { ...row, item: "lecture", version: "lecture-v1", durableId: null, listening: null,
         title: "A lecture", path: "youtube/lecture.opus" },
     ] }); await loop.flush();
     const titles = () => [...root.querySelectorAll(".audio-row h2")].map(h => h.textContent);
     expect(titles()).toEqual(["Japanese dialogue", "A lecture"]);
+    expect(root.querySelector(".audio-footer")?.textContent).toContain("MP3");
     const source = root.querySelector<HTMLSelectElement>(".audio-filters select")!;
     expect(source.querySelector('option[value="japanese"]')?.textContent).toBe("Japanese");
     source.value = "japanese"; source.dispatchEvent(new Event("change", { bubbles: true })); await loop.flush();

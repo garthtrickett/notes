@@ -113,6 +113,6 @@ public class DeliveryActivity extends Activity {
             String path=entry.item.path.toLowerCase(java.util.Locale.ROOT);
             String mime=path.matches(".*\\.(mp4|mkv|webm)$")?"video/*":path.endsWith(".srt")||path.endsWith(".txt")||path.endsWith(".vtt")?"text/plain":"audio/*";
             startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
-        } catch(Exception error) { status.setText("This download is unavailable, or no installed player can open it. Opus and M4B recordings also appear in Audio."); }
+        } catch(Exception error) { status.setText("This download is unavailable, or no installed player can open it. Opus, MP3 and M4B recordings also appear in Audio."); }
     }
 }

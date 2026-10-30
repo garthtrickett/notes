@@ -21,8 +21,7 @@ final class AudioPaths {
         if (parts.length < 2 || !source(parts[0])) return false;
         for (String part : parts) if (!segment(part)) return false;
         String lower = path.toLowerCase(Locale.ROOT);
-        // More formats are advertised only after actual-phone qualification.
-        return lower.endsWith(".opus") || lower.endsWith(".m4b");
+        return lower.endsWith(".opus") || lower.endsWith(".m4b") || lower.endsWith(".mp3");
     }
 
     static boolean specimen(String path) {

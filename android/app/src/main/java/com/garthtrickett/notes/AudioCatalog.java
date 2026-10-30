@@ -60,7 +60,7 @@ final class AudioCatalog {
     AudioCatalog invalidate(String id, String expectedVersion, Supplier<String> ids) {
         List<Row> next = new ArrayList<>();
         for (Row row : rows) next.add(row.id.equals(id) && row.version.equals(expectedVersion) ?
-            new Row(row.id, ids.get(), row.document, row.document.name.replaceFirst("(?i)\\.(opus|m4b)$", ""), null, -1, null, null) : row);
+            new Row(row.id, ids.get(), row.document, row.document.name.replaceFirst("(?i)\\.(opus|m4b|mp3)$", ""), null, -1, null, null) : row);
         return new AudioCatalog(root, rootGeneration, next);
     }
     AudioCatalog metadata(String id, String version, AudioProbe probe, String error) {
@@ -98,7 +98,7 @@ final class AudioCatalog {
             Row known = byPath.get(document.path);
             if (known != null && !known.document.sameMetadata(document)) known = null;
             rows.add(known != null ? known : new Row(ids.get(), ids.get(), document,
-                document.name.replaceFirst("(?i)\\.(opus|m4b)$", ""), null, -1, null, null));
+                document.name.replaceFirst("(?i)\\.(opus|m4b|mp3)$", ""), null, -1, null, null));
         }
         return new AudioCatalog(root, generation, rows);
     }
