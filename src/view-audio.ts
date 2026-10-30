@@ -82,7 +82,7 @@ export const audioView = (audio: AudioModel, propose: Propose): TemplateResult =
         <button aria-pressed=${audio.filter === filter} class=${audio.filter === filter ? "on" : ""}
           @click=${() => propose({ kind: "audioFilter", filter })}>${label(filter)}</button>`)}</div>
         <label>Source <select .value=${live(audio.source)} @change=${(event: Event) => propose({ kind: "audioFilter", source: (event.target as HTMLSelectElement).value })}>
-          <option value="all">All sources</option><option value="youtube">YouTube</option><option value="podcasts">Podcasts</option><option value="audiobooks">Audiobooks</option>
+          <option value="all">All sources</option><option value="youtube">YouTube</option><option value="podcasts">Podcasts</option><option value="audiobooks">Audiobooks</option><option value="japanese">Japanese</option>
         </select></label></div>
       ${rows.length || history.length ? html`<ul class="audio-list">${rows.map(row => rowView(row, busy || pending.some(item => item.currentRoot && item.path === row.path), propose))}${history.map(item => historyView(item, busy, propose))}</ul>` : html`
         <p class="audio-notice" role="status">${terms.length ? "No recordings match your search in this view." : `No ${label(audio.filter).toLowerCase()} recordings here.`}</p>`}

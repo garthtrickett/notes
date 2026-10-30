@@ -111,6 +111,26 @@ describe("production Audio SAM flow", () => {
 });
 
 describe("Audio library search", () => {
+  it("shows Japanese downloads in All sources and filters and plays them from the Japanese source", async () => {
+    const { root, loop, emit, commands } = await setup();
+    loop.propose({ kind: "modeChanged", mode: "audio" }); await loop.flush();
+    const row = snapshot.rows[0]!;
+    emit({ ...snapshot, revision: 10, history: [], player: null, rows: [
+      { ...row, item: "japanese-lesson", version: "lesson-v1", durableId: null, listening: null,
+        title: "Japanese dialogue", path: "japanese/lessons/Yuki.opus" },
+      { ...row, item: "lecture", version: "lecture-v1", durableId: null, listening: null,
+        title: "A lecture", path: "youtube/lecture.opus" },
+    ] }); await loop.flush();
+    const titles = () => [...root.querySelectorAll(".audio-row h2")].map(h => h.textContent);
+    expect(titles()).toEqual(["Japanese dialogue", "A lecture"]);
+    const source = root.querySelector<HTMLSelectElement>(".audio-filters select")!;
+    expect(source.querySelector('option[value="japanese"]')?.textContent).toBe("Japanese");
+    source.value = "japanese"; source.dispatchEvent(new Event("change", { bubbles: true })); await loop.flush();
+    expect(titles()).toEqual(["Japanese dialogue"]);
+    [...root.querySelectorAll<HTMLButtonElement>(".audio-row button")].find(b => b.textContent === "Play")!.click();
+    await loop.flush();
+    expect(commands.at(-1)).toEqual({ action: "play", target: { item: "japanese-lesson", version: "lesson-v1" } });
+  });
   it("searches title, author and filename while retaining the selected filters", async () => {
     const { root, loop, emit, commands } = await setup();
     loop.propose({ kind: "modeChanged", mode: "audio" }); await loop.flush();

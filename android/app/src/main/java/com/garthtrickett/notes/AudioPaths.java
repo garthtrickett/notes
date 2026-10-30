@@ -13,7 +13,7 @@ final class AudioPaths {
     }
 
     static boolean source(String name) {
-        return "youtube".equals(name) || "podcasts".equals(name) || "audiobooks".equals(name);
+        return "youtube".equals(name) || "podcasts".equals(name) || "audiobooks".equals(name) || "japanese".equals(name);
     }
 
     static boolean audio(String path) {

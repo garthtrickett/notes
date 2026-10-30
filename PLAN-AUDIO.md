@@ -63,7 +63,9 @@ The app repository and the private notes vault remain separate.
 Add one **Audio** mode and one folder-selection action in its empty state.
 On Android, select the local `phone-media` folder through the system picker.
 Remember the granted content URI, not an assumed `/storage/...` path.
-Only enumerate audio beneath `youtube/`, `podcasts/` and `audiobooks/`.
+Only enumerate audio beneath `youtube/`, `podcasts/`, `audiobooks/` and `japanese/`.
+Japanese recordings appear in All sources and in a **Japanese** source filter,
+including nested folders, with the same playback, progress and Done controls.
 Do not touch `video/`, recordings elsewhere on the phone, or Syncthing internals.
 
 Show **Unplayed / In progress / Done** with an optional source filter.
