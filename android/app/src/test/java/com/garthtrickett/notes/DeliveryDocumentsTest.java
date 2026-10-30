@@ -121,7 +121,8 @@ public class DeliveryDocumentsTest {
             catch(IOException error) { throw new RuntimeException(error); }
         });
         Files.write(new File(provider.base,"root/japanese/lessons/lesson.mp3.part").toPath(),bytes);
-        Files.writeString(new File(provider.base,"root/japanese/lessons/transcript.md").toPath(),"Lesson notes");
+        Files.write(new File(provider.base,"root/japanese/lessons/transcript.md").toPath(),
+            "Lesson notes".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         AudioDocuments library=AudioDocuments.library(context.getContentResolver(),entry.root,null);
         assertTrue(library.list().isEmpty());
         docs.commit(entry);
