@@ -22,7 +22,7 @@ import {
   type Proposal,
 } from "./model.ts";
 import { canInstall, downloadUpdate, installUpdate, openInstallSettings } from "./update.ts";
-import { composeDump, dumpEdits, dumpPathOf, dumpSpotAt, isDumpPath } from "./dump.ts";
+import { composeDump, dumpEdits, dumpPathOf, dumpSections, dumpSpotAt, isDumpPath } from "./dump.ts";
 import * as actions from "./actions.ts";
 import type { Github } from "./github.ts";
 import { createPreviewCache, localImage, view } from "./view.ts";
@@ -441,7 +441,12 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     return `${key}|${media.size()}`;
   };
 
+  // A search navigation is a one-shot editor position, not stored note state.
+  // Resolve it after composing the current dump, so edits and incoming days
+  // cannot leave an offset pointing into a different day.
+  let dumpJump: { path: string; query: string } | null = null;
   const paint = () => {
+    if (model.mode !== "dump") dumpJump = null;
     render(
       view(model, {
         audioStorageTestSupported: audioStorageTest.supported,
@@ -531,6 +536,17 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
         if (dumpEdits(cm.doc(), days).length > 0) cm.setDoc(body);
       } else if (cm.doc() !== body) {
         cm.setDoc(body);
+      }
+
+      if (dumpJump !== null && days !== null) {
+        const jump = dumpJump;
+        dumpJump = null;
+        const section = dumpSections(days).find(day => day.path === jump.path);
+        if (section) {
+          const text = cm.doc().slice(section.from, section.to);
+          const match = jump.query === "" ? -1 : text.toLowerCase().indexOf(jump.query);
+          cm.focusAt(match < 0 ? section.start : section.from + match);
+        }
       }
 
       const images = imageKey();
@@ -806,6 +822,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && (model.modal.draft.date !== "" || Boolean(model.modal.draft.after));
     const rejection = present(model, p);
+    if (rejection === null && p.kind === "dumpOpened") dumpJump = { path: p.path, query: model.query.trim().toLowerCase() };
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed" || p.kind === "pulled")) track(receiveNote());
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed")) track(receivePhotos());
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed" || p.kind === "persisted")) track(receiveLookups());

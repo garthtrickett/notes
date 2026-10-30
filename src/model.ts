@@ -237,6 +237,7 @@ export type Proposal = AudioProposal
   | { readonly kind: "photoShareImported"; readonly note: NoteRecord; readonly attachments: readonly NoteRecord[] }
   | { readonly kind: "hydrated"; readonly notes: readonly Note[] }
   | { readonly kind: "opened"; readonly path: string }
+  | { readonly kind: "dumpOpened"; readonly path: string }
   | { readonly kind: "created"; readonly path: string }
   | { readonly kind: "taskDraftChanged"; readonly patch: Partial<TaskDraft> }
   | { readonly kind: "taskAdded" }
@@ -623,6 +624,17 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // answer than an error about a file the tap did not mention.
       if (!target || !isOpenable(target)) return null;
       return present(m, { kind: "opened", path: p.path });
+    }
+
+    case "dumpOpened": {
+      const target = m.notes.get(p.path);
+      if (!target || target.deleted || target.encoding !== "utf8" || !isDumpPath(p.path) || target.body.trim() === "") {
+        return reject(`Cannot open ${p.path}: it is not a dump day.`);
+      }
+      m.mode = "dump";
+      m.error = null;
+      m.numberScope = null;
+      return null;
     }
 
     case "opened": {

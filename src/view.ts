@@ -801,7 +801,10 @@ const historyBox = (model: Model, propose: Propose) => {
 // An empty query lists everything rather than nothing, so `o` then Enter is
 // useful without typing.
 const paletteResults = (model: Model): Note[] => {
-  const notes = openable(model).sort((a, b) => a.path.localeCompare(b.path));
+  const notes = [
+    ...openable(model).sort((a, b) => a.path.localeCompare(b.path)),
+    ...dumpDays(model),
+  ];
   return (model.query.trim() === "" ? notes : searchNotes(notes, model.query)).slice(
     0,
     50,
@@ -813,7 +816,7 @@ const openPalette = (model: Model, propose: Propose) => {
   const selected = Math.min(model.paletteIndex, Math.max(0, results.length - 1));
   const go = (path: string | undefined) => {
     if (path === undefined) return;
-    propose({ kind: "opened", path });
+    propose({ kind: isDumpPath(path) ? "dumpOpened" : "opened", path });
     propose({ kind: "modalClosed" });
   };
 
@@ -830,7 +833,7 @@ const openPalette = (model: Model, propose: Propose) => {
     >
       <input
         id="modal-input"
-        placeholder="Find a note"
+        placeholder="Search notes and Dump"
         autocomplete="off"
         .value=${model.query}
         @input=${(e: Event) =>
