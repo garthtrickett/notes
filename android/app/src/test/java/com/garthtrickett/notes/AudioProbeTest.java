@@ -6,6 +6,7 @@ import android.os.CancellationSignal;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
+import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -22,6 +23,18 @@ import org.robolectric.annotation.LooperMode;
 @LooperMode(LooperMode.Mode.INSTRUMENTATION_TEST)
 public class AudioProbeTest {
     @Rule public TemporaryFolder directory = new TemporaryFolder();
+    @After public void awaitRetrieverRelease() throws Exception {
+        // Media3 closes its shared HandlerThread asynchronously. Let that
+        // release finish before Robolectric resets this test's loopers;
+        // otherwise the next test can inherit a stopped worker with a live
+        // reference count and queue forever behind it.
+        for (Thread thread : Thread.getAllStackTraces().keySet()) {
+            if (thread.getName().equals("Inspector:MetadataRetriever")) {
+                thread.join(5000);
+                assertFalse("Media3 metadata worker must release before sandbox reset", thread.isAlive());
+            }
+        }
+    }
     private File fixture(String extension) throws Exception {
         String name = "notes-audio-storage-test." + extension;
         File target = new File(directory.getRoot(), name);
