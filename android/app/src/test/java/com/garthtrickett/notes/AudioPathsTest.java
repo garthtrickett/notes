@@ -20,4 +20,14 @@ public class AudioPathsTest {
         assertFalse(AudioPaths.specimen("youtube/real-recording.opus"));
         assertFalse(AudioPaths.specimen("youtube/sub/notes-audio-storage-test.opus"));
     }
+    @Test public void japaneseIncludesNestedAudioButRejectsPartialsAndOtherFiles() {
+        assertTrue(AudioPaths.audio("japanese/日本語.opus"));
+        assertTrue(AudioPaths.audio("japanese/dialogue/Yuki and Shide.M4B"));
+        for (String path : new String[] { "japanese/.lesson.opus", "japanese/lesson.opus.part",
+            "japanese/lesson.sync-conflict-2026.opus", "japanese/../lesson.opus", "japanese/lesson.mp4",
+            "japanese/transcript.md", "other/lesson.opus" }) {
+            assertFalse(path, AudioPaths.audio(path));
+        }
+        assertFalse(AudioPaths.specimen("japanese/notes-audio-storage-test.opus"));
+    }
 }
