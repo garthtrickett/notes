@@ -23,8 +23,11 @@
         android:textSize="13sp"
         android:textColor="#36584E" />
 
+    <!-- Launchers inflate this layout off the UI thread. Disable the default
+         state animator before Button construction, including disabled Undo. -->
     <Button
         android:id="@+id/urge_eating"
+        android:stateListAnimator="@null"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -47,6 +50,7 @@
         android:baselineAligned="false">
     <Button
         android:id="@+id/urge_lookup"
+        android:stateListAnimator="@null"
         android:layout_width="0dp"
         android:layout_weight="1"
         android:layout_height="60dp"
@@ -60,6 +64,7 @@
         android:textColor="#193B32" />
     <Button
         android:id="@+id/urge_jot"
+        android:stateListAnimator="@null"
         android:layout_width="0dp"
         android:layout_weight="1"
         android:layout_height="60dp"
@@ -82,6 +87,7 @@
         android:gravity="center_vertical">
         <Button
             android:id="@+id/urge_resist"
+            android:stateListAnimator="@null"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
@@ -98,6 +104,7 @@
             android:textColor="#FFFFFF" />
         <Button
             android:id="@+id/urge_undo"
+            android:stateListAnimator="@null"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="48dp"
