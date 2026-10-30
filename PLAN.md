@@ -460,7 +460,12 @@ touches dozens of files.**
 ## 4.4 Search
 
 `Array.filter` over path and body, case-insensitive, as the decisions doc says.
-Results replace the tree while the box has text. No index, no dependency.
+The search palette includes ordinary notes and nonempty daily Dump entries;
+Archive, Trash and attachments stay excluded. Notes come first, followed by
+Dump days newest first, with the existing 50-result limit. Selecting a Dump
+result opens the combined Dump editor at the matching text, or the day's
+heading for a filename/date match. This navigation preserves note edits and
+does not move the caret again on later repaints. No index, no dependency.
 
 ## 4.5 Tests
 

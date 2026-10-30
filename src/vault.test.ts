@@ -6,6 +6,7 @@ import { dumpEdits, dumpPathOf } from "./dump.ts";
 import { captureProposals, checkinProposals } from "./actions.ts";
 import { doneIn, SLOTS, type CheckinSlot } from "./checkins.ts";
 import { routeTap } from "./notify.ts";
+import { EditorView } from "@codemirror/view";
 
 let db: IDBDatabase | undefined;
 let root: HTMLElement;
@@ -835,6 +836,9 @@ describe("the open palette", () => {
         note("inbox/alpha.md", { body: "milk" }),
         note("reference/beta.md", { body: "grammar" }),
         note("dump/2026-09-06.md", { body: "09:00 thought" }),
+        note("dump/2026-09-05.md", { body: "10:00 older thought" }),
+        note(".archive/old.md", { body: "thought" }),
+        note(".trash/old.md", { body: "thought" }),
         note("attachments/x.webp", { body: "AAAA", encoding: "base64" }),
       ],
     });
@@ -848,8 +852,7 @@ describe("the open palette", () => {
 
   it("lists every note with an empty query, so Enter works without typing", async () => {
     await withNotes();
-    // Attachments and dump days are not notes, and the palette opens notes.
-    expect(rows()).toEqual(["inbox/alpha.md", "reference/beta.md"]);
+    expect(rows()).toEqual(["inbox/alpha.md", "reference/beta.md", "dump/2026-09-06.md", "dump/2026-09-05.md"]);
   });
 
   it("filters as you type", async () => {
@@ -857,6 +860,45 @@ describe("the open palette", () => {
     loop.propose({ kind: "searched", query: "grammar" });
     await settle(loop);
     expect(rows()).toEqual(["reference/beta.md"]);
+  });
+
+  it("finds Dump contents and opens the matching day without losing note edits", async () => {
+    const loop = await withNotes();
+    loop.propose({ kind: "opened", path: "inbox/alpha.md" });
+    loop.propose({ kind: "edited", path: "inbox/alpha.md", body: "milk and bread" });
+    loop.propose({ kind: "searched", query: "OLDER THOUGHT" });
+    await settle(loop);
+    expect(rows()).toEqual(["dump/2026-09-05.md"]);
+    root.querySelector<HTMLButtonElement>(".palette .results .row")!.click();
+    await settle(loop);
+    expect(loop.model.mode).toBe("dump");
+    expect(loop.model.modal).toBeNull();
+    expect(loop.model.notes.get("inbox/alpha.md")?.body).toBe("milk and bread");
+    const editor = EditorView.findFromDOM(root.querySelector<HTMLElement>(".cm-editor")!)!;
+    const position = editor.state.selection.main.head;
+    expect(editor.state.doc.toString().slice(position, position + 13)).toBe("older thought");
+    // Later repainting must preserve the user's caret rather than jump again.
+    editor.dispatch({ selection: { anchor: 0 } });
+    loop.propose({ kind: "woke" });
+    await settle(loop);
+    expect(editor.state.selection.main.head).toBe(0);
+    editor.dispatch({ changes: { from: position, insert: "new " } });
+    await settle(loop);
+    expect(loop.model.notes.get("dump/2026-09-05.md")?.body).toContain("new older thought");
+    expect(loop.model.notes.get("dump/2026-09-06.md")?.body).toBe("09:00 thought");
+  });
+
+  it("finds a Dump day by date and opens its heading with Enter", async () => {
+    const loop = await withNotes();
+    loop.propose({ kind: "searched", query: "2026-09-05" });
+    await settle(loop);
+    expect(rows()).toEqual(["dump/2026-09-05.md"]);
+    root.querySelector(".palette")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle(loop);
+    const editor = EditorView.findFromDOM(root.querySelector<HTMLElement>(".cm-editor")!)!;
+    expect(editor.state.doc.toString().slice(editor.state.selection.main.head)).toStartWith("# 2026-09-05");
+    expect(loop.model.mode).toBe("dump");
+    expect(loop.model.modal).toBeNull();
   });
 
   it("opens the selected note and closes", async () => {

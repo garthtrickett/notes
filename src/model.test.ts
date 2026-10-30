@@ -106,6 +106,23 @@ describe("present — accepting", () => {
     expect(m.mode).toBe("dump");
   });
 
+  it("opens a real Dump day in the Dump view while retaining the previous note", () => {
+    const m = hydrated(note("a.md"), note("dump/2026-09-05.md", "A thought"));
+    const previous = m.openPath;
+    expect(present(m, { kind: "dumpOpened", path: "dump/2026-09-05.md" })).toBeNull();
+    expect(m.mode).toBe("dump");
+    expect(m.openPath).toBe(previous);
+  });
+
+  it("refuses missing, empty, deleted and ordinary notes as Dump targets", () => {
+    const m = hydrated(note("a.md"), note("dump/2026-09-05.md", "   "),
+      note("dump/2026-09-04.md", "Deleted", false, { deleted: true }));
+    for (const path of ["a.md", "dump/2026-09-05.md", "dump/2026-09-04.md", "dump/2026-09-03.md"]) {
+      expect(present(m, { kind: "dumpOpened", path })).not.toBeNull();
+      expect(m.mode).toBe("notes");
+    }
+  });
+
   it("never opens a tombstone", () => {
     const m = hydrated(note("a.md"), note("b.md"));
     present(m, { kind: "deleted", path: "a.md" });
