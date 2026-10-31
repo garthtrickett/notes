@@ -3,14 +3,23 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="10dp"
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
     android:background="@drawable/urge_widget_background">
 
+    <LinearLayout
+        android:id="@+id/urge_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:orientation="vertical">
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/urge_widget_name"
-        android:textSize="20sp"
+        android:textSize="14sp"
         android:textStyle="bold"
         android:textColor="#193B32"
         android:fontFamily="sans-serif" />
@@ -18,10 +27,22 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="0dp"
         android:text="@string/urge_widget_inbox"
-        android:textSize="13sp"
+        android:textSize="11sp"
         android:textColor="#36584E" />
+
+    <TextView
+        android:id="@+id/urge_sync"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="0dp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="Open Notes to check sync"
+        android:textSize="11sp"
+        android:textColor="#496359" />
+    </LinearLayout>
 
     <!-- Launchers inflate this layout off the UI thread. Disable the default
          state animator before Button construction, including disabled Undo. -->

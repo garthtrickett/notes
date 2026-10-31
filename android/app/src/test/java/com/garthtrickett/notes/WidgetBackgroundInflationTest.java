@@ -81,6 +81,8 @@ public class WidgetBackgroundInflationTest {
                 assertEquals(undoEnabled, root.findViewById(R.id.urge_undo).isEnabled());
                 assertTrue(root.findViewById(R.id.urge_lookup).hasOnClickListeners());
                 assertTrue(root.findViewById(R.id.urge_jot).hasOnClickListeners());
+                assertTrue(root.findViewById(R.id.urge_header).hasOnClickListeners());
+                assertNotNull(root.findViewById(R.id.urge_sync));
             });
         }
     }

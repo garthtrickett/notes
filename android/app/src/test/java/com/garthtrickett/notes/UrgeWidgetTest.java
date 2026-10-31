@@ -183,6 +183,8 @@ public class UrgeWidgetTest {
         eatingButton.setText(eating ? R.string.urge_widget_eating_on : R.string.urge_widget_eating_off);
         eatingButton.setTextColor(android.graphics.Color.parseColor(eating ? "#FFFFFF" : "#193B32"));
         eatingButton.setBackgroundResource(eating ? R.drawable.urge_widget_eating_on : R.drawable.urge_widget_eating_off);
+        ((TextView) view.findViewById(R.id.urge_sync)).setText(eating
+            ? "Last synced · 30/10/26 23:55" : "Open Notes to check sync");
         host.addView(view, new FrameLayout.LayoutParams(width, height));
         host.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));

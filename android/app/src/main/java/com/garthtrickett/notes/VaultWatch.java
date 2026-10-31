@@ -158,6 +158,8 @@ public class VaultWatch extends JobService {
         }
 
         Map<String, List<Alarms.Entry>> read = new LinkedHashMap<>();
+        if (!changed.isEmpty() || !gone.isEmpty())
+            WidgetSyncStatus.remoteChanged(context, owner + "/" + repo + "@" + branch, now);
         int budget = BUDGET;
         boolean finished = true;
         for (Map.Entry<String, String> c : changed.entrySet()) {

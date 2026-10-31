@@ -6,6 +6,7 @@ import { err, ok } from "./result.ts";
 import type { Github, SyncError } from "./github.ts";
 import { conflictPath, pull } from "./actions.ts";
 import type { Note } from "./model.ts";
+import type { WidgetSyncSnapshot } from "./widget-sync.ts";
 
 // A GitHub that lives in a Map. Everything about sync is then testable with no
 // network and no timing.
@@ -176,6 +177,47 @@ afterEach(() => {
 });
 
 describe("pull", () => {
+  it("a stalled widget bridge cannot hold the note durability barrier or uploads", async () => {
+    remote.put("a.md", "Original");
+    const loop = await boot({ ...deps(), widgetSync: () => new Promise<void>(() => {}) }, root);
+    await settle(loop);
+    loop.propose({ kind: "edited", path: "a.md", body: "Saved despite widget" });
+    await quiet(loop);
+    expect(await loop.whenSaved()).toBe(true);
+    expect((await getAll(db as IDBDatabase))[0]?.pending).toBe(false);
+    expect((await remote.github.current("a.md", "utf8"))).toEqual(ok({ body: "Saved despite widget", sha: "sha-2" }));
+  });
+
+  it("does not report green while the first remote pull is still in flight", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const reports: WidgetSyncSnapshot[] = [];
+    const loop = await boot({ ...deps(), github: { ...remote.github, manifest: async () => { await gate; return ok([]); } },
+      widgetSync: async value => { reports.push(value); } }, root);
+    await Promise.resolve();
+    expect(reports.some(value => value.state === "synced")).toBe(false);
+    release(); await settle(loop);
+    expect(reports.at(-1)).toEqual({ state: "synced", checkedAt: clock, pulledAt: clock });
+  });
+
+  it("reports widget sync only after pull/save, then pending/offline until new edits upload", async () => {
+    remote.put("a.md", "Remote note");
+    const reports: WidgetSyncSnapshot[] = [];
+    const loop = await boot({ ...deps(), widgetSync: async value => { reports.push(value); } }, root);
+    await settle(loop);
+    expect(reports.at(-1)).toEqual({ state: "synced", checkedAt: clock, pulledAt: clock });
+    loop.propose({ kind: "online", online: false });
+    loop.propose({ kind: "edited", path: "a.md", body: "Local edit" });
+    await settle(loop);
+    expect(reports.at(-1)?.state).toBe("offline");
+    clock += 10_000;
+    loop.propose({ kind: "online", online: true });
+    await quiet(loop);
+    expect(reports.at(-1)).toEqual({ state: "synced", checkedAt: clock, pulledAt: 1_700_000_000_000 });
+    expect((await getAll(db as IDBDatabase))[0]?.pending).toBe(false);
+    expect(reports.every(value => !JSON.stringify(value).includes("Local edit"))).toBe(true);
+  });
+
   it("brings down notes that only exist remotely", async () => {
     remote.put("inbox/a.md", "from github");
     const loop = await boot(deps(), root);
