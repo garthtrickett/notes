@@ -44,6 +44,13 @@ final class PhotoInbox {
         return new File(root, id);
     }
 
+    boolean hasPending() {
+        File[] dirs = root.listFiles();
+        if (dirs == null) return false;
+        for (File dir : dirs) if (dir.isDirectory()) return true;
+        return false;
+    }
+
     @SuppressWarnings("deprecation")
     static List<Uri> sources(Intent intent) throws IOException {
         String action = intent.getAction();
@@ -147,6 +154,7 @@ final class PhotoInbox {
                 out.getFD().sync();
                 ready.finishWrite(out);
             } catch (Exception error) { ready.failWrite(out); throw error; }
+            UrgeWidget.refresh(context);
             return value;
         } catch (Exception error) {
             remove(dir);
@@ -180,6 +188,7 @@ final class PhotoInbox {
         File dir = directory(id);
         // Idempotent, including a lost bridge reply after deletion completed.
         if (dir.exists()) remove(dir);
+        UrgeWidget.refresh(context);
     }
 
     private static void remove(File file) throws IOException {

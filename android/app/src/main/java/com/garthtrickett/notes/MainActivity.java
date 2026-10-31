@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AudioPlugin.class);
         registerPlugin(PhotoPlugin.class);
         registerPlugin(LookupPlugin.class);
+        registerPlugin(WidgetPlugin.class);
         super.onCreate(savedInstanceState);
         AlarmNote.accept(this, getIntent());
         try { DeliveryJobs.periodic(this); } catch (java.io.IOException ignored) { /* Fetch media reports scheduling failures. */ }

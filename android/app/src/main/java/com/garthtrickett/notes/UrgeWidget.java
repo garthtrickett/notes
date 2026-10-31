@@ -103,6 +103,14 @@ public class UrgeWidget extends AppWidgetProvider {
         } else {
             views = new RemoteViews(context.getPackageName(), R.layout.urge_widget);
         }
+        WidgetSyncStatus.Display sync = WidgetSyncStatus.display(context, System.currentTimeMillis());
+        views.setTextViewText(R.id.urge_sync, sync.text);
+        views.setTextColor(R.id.urge_sync, sync.color);
+        views.setContentDescription(R.id.urge_header, context.getString(R.string.urge_widget_name) + ". " + context.getString(R.string.urge_widget_inbox) + ". " + sync.text + ". Open Notes to check sync.");
+        Intent openNotes = new Intent(context, MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        views.setOnClickPendingIntent(R.id.urge_header, PendingIntent.getActivity(context, id, openNotes,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         views.setTextViewText(R.id.urge_resist, count == 0
             ? context.getString(R.string.urge_widget_resist)
             : context.getString(R.string.urge_widget_resist_count, count));

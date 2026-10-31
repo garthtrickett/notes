@@ -20,10 +20,14 @@ final class LookupInbox {
     static final ExecutorService worker = Executors.newSingleThreadExecutor();
     static final int MAX_TEXT = 2000;
     private final SharedPreferences prefs;
+    private final Context context;
 
     LookupInbox(Context context) {
+        this.context = context.getApplicationContext();
         prefs = context.getSharedPreferences("lookup-inbox", Context.MODE_PRIVATE);
     }
+
+    boolean hasPending() { return !prefs.getAll().isEmpty(); }
 
     private static void checkId(String id) {
         if (id == null || !UUID.fromString(id).toString().equals(id))
@@ -55,6 +59,7 @@ final class LookupInbox {
         if (jot) capture.put("kind", "jot"); // Missing kind keeps older lookup captures compatible.
         if (!prefs.edit().putString(id, capture.toString()).commit())
             throw new IOException("Could not save capture");
+        UrgeWidget.refresh(context);
     }
 
     JSONArray pending() throws Exception {
@@ -72,5 +77,6 @@ final class LookupInbox {
     void acknowledge(String id) throws Exception {
         checkId(id);
         if (!prefs.edit().remove(id).commit()) throw new IOException("Could not finish capture");
+        UrgeWidget.refresh(context);
     }
 }

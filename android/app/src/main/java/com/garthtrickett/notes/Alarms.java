@@ -223,6 +223,10 @@ final class Alarms {
     // Reading is not acknowledgement: a killed WebView must not lose a Done
     // between the bridge reply and IndexedDB commit. Legacy queued presses get
     // receipt IDs here, before the app sees them.
+    static boolean hasPendingAnswers(Context context) {
+        synchronized (LOCK) { return readArray(context, ANSWERS).length() > 0; }
+    }
+
     static JSONArray take(Context context) {
         synchronized (LOCK) {
             JSONArray stored = readArray(context, ANSWERS), answers = new JSONArray();
@@ -260,6 +264,7 @@ final class Alarms {
                 write(context, SNOOZES, held);
             }
         }
+        UrgeWidget.refresh(context);
     }
 
     // After a reboot, an app update, or exact alarms being allowed: AlarmManager
@@ -487,6 +492,7 @@ final class Alarms {
             }
         }
         AlarmActivity.close(e.id);
+        UrgeWidget.refresh(context);
         AlarmPlugin.announce();
     }
 

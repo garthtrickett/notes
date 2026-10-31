@@ -44,8 +44,10 @@ import { importPhotoShare, photoImportPath } from "./idb.ts";
 import { nativeLookupInbox, type LookupInbox } from "./lookup.ts";
 import { lookupImported } from "./idb.ts";
 import { nativeAlarmNotes, type AlarmNoteInbox } from "./alarm-note.ts";
+import { nativeWidgetSyncReporter, widgetSyncSnapshot, type WidgetSyncReporter } from "./widget-sync.ts";
 
 export interface Deps {
+  readonly widgetSync?: WidgetSyncReporter;
   readonly alarmNotes?: AlarmNoteInbox;
   readonly lookupInbox?: LookupInbox;
   readonly photoShares?: PhotoShares;
@@ -115,6 +117,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // A change of note, or of preview, replaces the editor's contents wholesale.
   // Anything else is a change dispatched into the state that is already there.
   let lastEditorKey: string | null = null;
+  const reportWidgetSync = deps.widgetSync ?? nativeWidgetSyncReporter(deps.config ?? null);
+  let checkedAt: number | null = null;
+  let pulledAt: number | null = null;
   let lastModal: string | null = null;
   let lastAudioConfirmation: string | null = null;
   let lastPaletteIndex: number | null = null;
@@ -821,7 +826,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       }
     }
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && (model.modal.draft.date !== "" || Boolean(model.modal.draft.after));
+    const previousHead = model.remoteHead;
     const rejection = present(model, p);
+    if (rejection === null && p.kind === "pulled" && p.remaining === 0) {
+      pulledAt = checkedAt = now();
+    } else if (rejection === null && pulledAt !== null &&
+        (p.kind === "pushed" || p.kind === "removed" || (p.kind === "headSeen" && p.head === previousHead))) {
+      checkedAt = now();
+    }
     if (rejection === null && p.kind === "dumpOpened") dumpJump = { path: p.path, query: model.query.trim().toLowerCase() };
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed" || p.kind === "pulled")) track(receiveNote());
     if (rejection === null && (p.kind === "hydrated" || p.kind === "resumed")) track(receivePhotos());
@@ -891,6 +903,9 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     }
     scheduleRender();
     nap();
+    // A launcher indicator is outside the note durability barrier: even a
+    // native reply that never arrives must not delay inbox acknowledgements.
+    void reportWidgetSync(widgetSyncSnapshot(model, checkedAt, github !== null, pulledAt)).catch(() => {});
   }
 
   // A test affordance. It settles the loop: an action's proposal can start

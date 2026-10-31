@@ -11,6 +11,7 @@ import { acknowledgeAlarmAnswers, onAlarmAnswered, onNotificationTap, syncChecki
 import { receiveAlarmAnswers } from "./alarm-inbox.ts";
 import { checkForUpdate, updateCheckDue } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
+import { nativeWidgetSyncReporter } from "./widget-sync.ts";
 
 // Half a minute: fast enough that the other screen feels live, slow enough that
 // 120 requests an hour is nothing against GitHub's 5000 and nothing against a
@@ -49,6 +50,7 @@ if (!root) throw new Error("#app is missing from index.html");
 const config = loadConfig(localStorage);
 
 if (config === null) {
+  void nativeWidgetSyncReporter(null)({ state: "unknown", checkedAt: null, pulledAt: null });
   render(
     settingsView((next) => {
       saveConfig(localStorage, next);
