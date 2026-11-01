@@ -500,6 +500,10 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
       root.querySelector(".results .row.open")?.scrollIntoView({ block: "nearest" });
     }
 
+    if (model.modal?.kind === "newNote") {
+      root.querySelector(".folder-suggestions [aria-selected=true]")?.scrollIntoView?.({ block: "nearest" });
+    }
+
     // The path box is uncontrolled while it has focus, so lit will not rewrite
     // what was typed into it. Once focus leaves, it has to agree with the note
     // that is actually open — otherwise a refused rename leaves it naming a

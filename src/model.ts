@@ -8,6 +8,7 @@
 // model would cost one per keystroke for no benefit, since there is exactly one
 // writer.
 
+import { emptyNotePath, folderCompletions, type NotePathDraft } from "./folder-completion.ts";
 import { emptyAudio, isAudioProposal, presentAudio, type AudioModel, type AudioProposal } from "./audio-model.ts";
 import type { Revision, SyncError } from "./github.ts";
 import { resolveLink, rewriteLinks } from "./links.ts";
@@ -91,7 +92,7 @@ export type Modal =
   | { readonly kind: "newTask"; readonly draft: TaskDraft }
   | { readonly kind: "capture" }
   | { readonly kind: "history" }
-  | { readonly kind: "newNote" }
+  | { readonly kind: "newNote"; readonly draft?: NotePathDraft }
   | { readonly kind: "open" }
   | { readonly kind: "confirmDelete"; readonly path: string; readonly folder: boolean };
 export type Encoding = "utf8" | "base64";
@@ -239,6 +240,9 @@ export type Proposal = AudioProposal
   | { readonly kind: "opened"; readonly path: string }
   | { readonly kind: "dumpOpened"; readonly path: string }
   | { readonly kind: "created"; readonly path: string }
+  | { readonly kind: "notePathChanged"; readonly path: string }
+  | { readonly kind: "noteFolderMoved"; readonly delta: number }
+  | { readonly kind: "noteFolderCompleted"; readonly path: string }
   | { readonly kind: "taskDraftChanged"; readonly patch: Partial<TaskDraft> }
   | { readonly kind: "taskAdded" }
   | { readonly kind: "taskLinksAdvanced"; readonly edits: ReadonlyMap<string, string> }
@@ -1183,6 +1187,26 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       return asking.folder
         ? present(m, { kind: "folderDeleted", path: asking.path })
         : present(m, { kind: "deleted", path: asking.path });
+    }
+
+    case "notePathChanged": {
+      if (m.modal?.kind !== "newNote") return reject("No new-note dialog is open.");
+      m.modal = { kind: "newNote", draft: { path: p.path, index: 0 } };
+      return null;
+    }
+    case "noteFolderMoved":
+    case "noteFolderCompleted": {
+      if (m.modal?.kind !== "newNote") return reject("No new-note dialog is open.");
+      const draft = m.modal.draft ?? emptyNotePath;
+      const choices = folderCompletions(openable(m).map(n => n.path), draft.path);
+      if (p.kind === "noteFolderMoved") {
+        const index = Math.max(0, Math.min(choices.length - 1, draft.index + p.delta));
+        m.modal = { kind: "newNote", draft: { ...draft, index } };
+      } else {
+        if (!choices.includes(p.path)) return reject("That folder is no longer a suggestion.");
+        m.modal = { kind: "newNote", draft: { path: p.path, index: 0 } };
+      }
+      return null;
     }
 
     case "modalOpened": {

@@ -1536,3 +1536,25 @@ Local persistence still precedes all remote work. The status message describes
 an unreachable GitHub connection and automatic retries rather than claiming the
 device itself is offline. Android's separate background alarm watcher and native
 media delivery keep their existing behaviour.
+
+
+## New-note folder completion
+
+The New note dialog derives existing folders from the same openable notes as
+the note tree, excluding filed notes, deleted records, Dump days and attachments.
+Suggestions match the current path segment without regard to case and preserve
+the actual folder spelling. They show one level at a time, include a trailing
+slash, and never create a note when accepted.
+
+Tab accepts the highlighted suggestion; Up/Down changes the selection. Tapping
+a suggestion fills it and keeps focus in the path field. Shift+Tab, composition,
+mid-field editing, and Tab without a suggestion retain their normal behaviour.
+Enter or Create submits the typed note path; a trailing slash asks for a note
+name rather than creating an unintended sibling file. New folders remain free
+text. Draft and selection live only in the dialog and survive sync repaints.
+
+The suggestions use a labelled combobox/listbox with an active descendant,
+44px minimum touch rows and a bounded scroll area. Options do not enter the
+Tab order. The modal focus trap honours handled completion events and excludes
+negative tab indices. No network lookup, dependency or Android permission is
+needed for completion.

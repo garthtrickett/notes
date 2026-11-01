@@ -170,14 +170,14 @@ if (config === null) {
   // shortcuts are already refused while a modal is open; this is the same rule
   // for focus, which needs the DOM and so cannot live in keys.ts.
   addEventListener("keydown", (event: KeyboardEvent) => {
-    if (event.key !== "Tab" || loop.model.modal === null) return;
+    if (event.defaultPrevented || event.key !== "Tab" || loop.model.modal === null) return;
     const dialog = document.querySelector<HTMLElement>("[role=dialog]");
     if (dialog === null) return;
     const focusable = [
       ...dialog.querySelectorAll<HTMLElement>(
         'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
       ),
-    ].filter((el) => el.offsetParent !== null);
+    ].filter((el) => el.offsetParent !== null && el.tabIndex >= 0);
     if (focusable.length === 0) return;
     const first = focusable[0] as HTMLElement;
     const last = focusable[focusable.length - 1] as HTMLElement;
