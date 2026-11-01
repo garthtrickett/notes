@@ -11,6 +11,7 @@
 // every other piece of state. This file has none of its own.
 
 import { html, nothing, type TemplateResult } from "lit-html";
+import { newNoteForm } from "./view-new-note.ts";
 import { live } from "lit-html/directives/live.js";
 import { ARCHIVE, TRASH, dropTarget } from "./paths.ts";
 import {
@@ -681,9 +682,8 @@ const tasksView = (model: Model, ctx: ViewCtx, now: () => number) => {
   `;
 };
 
-// Capture and new-note are the same shape — one field, submit — so they share a
-// box told what it is. The open palette is not that shape and does not share it:
-// it filters as you type and has a selection.
+// Quick capture is a plain text field. New-note path completion and the open
+// palette have their own selection behaviour and forms.
 const modalBox = (
   propose: Propose,
   placeholder: string,
@@ -881,9 +881,7 @@ const modal = (
       : model.modal.kind === "capture"
       ? modalBox(propose, "What's on your mind?", "Quick capture", "Add", onCapture)
       : model.modal.kind === "newNote"
-        ? modalBox(propose, "inbox/new-note.md", "New note", "Create", (path) =>
-            propose({ kind: "created", path }),
-          )
+        ? newNoteForm(model, propose)
         : model.modal.kind === "confirmDelete"
           ? confirmBox(propose, model.modal.path, model.modal.folder)
           : model.modal.kind === "history"
