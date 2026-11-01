@@ -448,7 +448,7 @@ const syncMessage = (model: Model): string | null => {
   }
   switch (e.kind) {
     case "offline":
-      return "Offline — your edits are saved here and will sync later.";
+      return "Cannot reach GitHub — your edits are saved here. Retrying automatically.";
     case "conflict":
       return "That note changed on GitHub; your version was kept alongside it.";
     case "auth":

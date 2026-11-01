@@ -213,7 +213,8 @@ describe("pull", () => {
     clock += 10_000;
     loop.propose({ kind: "online", online: true });
     await quiet(loop);
-    expect(reports.at(-1)).toEqual({ state: "synced", checkedAt: clock, pulledAt: 1_700_000_000_000 });
+    // Reconnection now checks the whole vault after uploading the local edit.
+    expect(reports.at(-1)).toEqual({ state: "synced", checkedAt: clock, pulledAt: clock });
     expect((await getAll(db as IDBDatabase))[0]?.pending).toBe(false);
     expect(reports.every(value => !JSON.stringify(value).includes("Local edit"))).toBe(true);
   });
@@ -706,6 +707,72 @@ describe("conflict naming", () => {
 });
 
 describe("failure handling", () => {
+  it("retries an initial unreachable pull without a browser online event", async () => {
+    remote.put("from-laptop.md", "Remote note");
+    remote.fail({ kind: "offline" });
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    expect(loop.model.syncError?.kind).toBe("offline");
+    expect(loop.model.retryAt).toBeGreaterThan(clock);
+    const attempts = remote.calls.filter(c => c === "manifest").length;
+
+    remote.fail(null);
+    clock = loop.model.retryAt;
+    for (const fire of scheduled.splice(0)) fire();
+    await settle(loop);
+
+    expect(remote.calls.filter(c => c === "manifest").length).toBeGreaterThan(attempts);
+    expect(loop.model.notes.get("from-laptop.md")?.body).toBe("Remote note");
+    expect(loop.model.syncError).toBeNull();
+    expect(loop.model.retryAt).toBe(0);
+  });
+
+  it("retries a saved edit after a transient network failure without restarting", async () => {
+    remote.put("a.md", "Before");
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    remote.fail({ kind: "offline" });
+    loop.propose({ kind: "edited", path: "a.md", body: "Keep this edit" });
+    await quiet(loop);
+    expect(loop.model.notes.get("a.md")?.pending).toBe(true);
+    expect((await getAll(db as IDBDatabase)).find(n => n.path === "a.md")?.body).toBe("Keep this edit");
+
+    remote.fail(null);
+    clock = loop.model.retryAt;
+    for (const fire of scheduled.splice(0)) fire();
+    await settle(loop);
+    expect(remote.files.get("a.md")?.body).toBe("Keep this edit");
+    expect(loop.model.notes.get("a.md")?.pending).toBe(false);
+    expect(loop.model.syncError).toBeNull();
+  });
+
+  it("retries a failed pull after an HTTP error as well as a network error", async () => {
+    remote.put("new.md", "Arrived remotely");
+    remote.fail({ kind: "github", status: 503 });
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    remote.fail(null);
+    clock = loop.model.retryAt;
+    for (const fire of scheduled.splice(0)) fire();
+    await settle(loop);
+    expect(loop.model.notes.get("new.md")?.body).toBe("Arrived remotely");
+  });
+
+  it("still pauses network work when the browser actually reports offline", async () => {
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    loop.propose({ kind: "online", online: false });
+    const attempts = remote.calls.length;
+    loop.propose({ kind: "created", path: "offline.md" });
+    loop.propose({ kind: "edited", path: "offline.md", body: "Saved here" });
+    await quiet(loop);
+    expect(remote.calls.length).toBe(attempts);
+    expect((await getAll(db as IDBDatabase)).find(n => n.path === "offline.md")?.body).toBe("Saved here");
+    loop.propose({ kind: "online", online: true });
+    await settle(loop);
+    expect(remote.files.get("offline.md")?.body).toBe("Saved here");
+  });
+
   it("keeps the note pending when offline and does not touch the body", async () => {
     remote.fail({ kind: "offline" });
     const loop = await boot(deps(), root);
@@ -760,6 +827,7 @@ describe("failure handling", () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "created", path: "a.md" });
     await settle(loop);
+    loop.propose({ kind: "online", online: false });
     expect(loop.model.online).toBe(false);
 
     remote.fail(null);
@@ -768,6 +836,48 @@ describe("failure handling", () => {
 
     expect(loop.model.retryAt).toBe(0);
     expect(remote.files.has("a.md")).toBe(true);
+  });
+
+  it("returning to the app retries a transient failure immediately", async () => {
+    remote.fail({ kind: "offline" });
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    remote.put("returned.md", "No restart needed");
+    remote.fail(null);
+    loop.propose({ kind: "resumed" });
+    await settle(loop);
+    expect(loop.model.notes.get("returned.md")?.body).toBe("No restart needed");
+    expect(loop.model.syncError).toBeNull();
+  });
+
+  it("repeated network failures back off without disabling later retries", async () => {
+    remote.fail({ kind: "offline" });
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    const attempts = remote.calls.filter(c => c === "manifest").length;
+    const delay = loop.model.retryDelay;
+    clock = loop.model.retryAt;
+    for (const fire of scheduled.splice(0)) fire();
+    await settle(loop);
+    expect(loop.model.online).toBe(true);
+    expect(remote.calls.filter(c => c === "manifest").length).toBe(attempts + 1);
+    expect(loop.model.retryDelay).toBe(delay * 2);
+    expect(loop.model.retryAt).toBeGreaterThan(clock);
+  });
+
+  it("foreground and connectivity recovery preserve GitHub's retry-after deadline", async () => {
+    remote.fail({ kind: "rateLimited", retryAfterMs: 120_000 });
+    const loop = await boot(deps(), root);
+    await settle(loop);
+    const retryAt = loop.model.retryAt;
+    const attempts = remote.calls.length;
+    loop.propose({ kind: "online", online: false });
+    loop.propose({ kind: "online", online: true });
+    loop.propose({ kind: "resumed" });
+    await settle(loop);
+    expect(loop.model.retryAt).toBe(retryAt);
+    expect(remote.calls.length).toBe(attempts);
+    expect(loop.model.syncError?.kind).toBe("rateLimited");
   });
 
   it("saves locally even when GitHub is unreachable", async () => {
