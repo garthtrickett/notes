@@ -1053,6 +1053,12 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // The window came back. Clearing the watermark is the whole mechanism;
       // nap() notices and pulls.
       if (!m.syncing) m.lastSyncedAt = null;
+      // Foregrounding is a chance to recover a transient transport failure.
+      // Keep GitHub's explicit rate-limit deadline and other errors intact.
+      if (m.syncError?.kind === "offline") {
+        m.retryAt = 0;
+        m.retryDelay = 0;
+      }
       return null;
     }
 
@@ -1353,11 +1359,16 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "online": {
+      const wasOffline = !m.online;
       m.online = p.online;
-      // Coming back is itself the signal to try again, so drop any cooldown.
+      // Connectivity is a browser observation, not the result of one request.
+      // Reconcile remote changes after a real disconnected interval.
       if (p.online) {
-        m.retryAt = 0;
-        m.retryDelay = 0;
+        if (wasOffline) m.lastSyncedAt = null;
+        if (m.syncError?.kind !== "rateLimited") {
+          m.retryAt = 0;
+          m.retryDelay = 0;
+        }
         // And stop saying "offline", which the banner went on doing until some
         // later sync happened to succeed. Only that message: an auth failure is
         // still true whether or not there is a network.
@@ -1494,7 +1505,11 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // have nap pulling again immediately and spinning against whatever just
       // failed.
       m.pullRemaining = 0;
-      if (p.error.kind === "offline") m.online = false;
+      // A failed fetch does not mean the device disconnected. In particular,
+      // Android may never emit another online event after a transient failure.
+      // Keep retrying through the backoff, and retry failed pulls as well as
+      // pending pushes (their pull-start watermark is not a completed sync).
+      m.lastSyncedAt = null;
       return null;
     }
   }

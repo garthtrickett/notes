@@ -149,6 +149,13 @@ if (config === null) {
     loop.propose({ kind: "opened", path });
   });
 
+  // WebViews can miss connectivity events while backgrounded. Re-read the
+  // browser hint when visible; remote reachability is proved by sync itself.
+  const refreshConnectivity = () => {
+    if (navigator.onLine !== loop.model.online) {
+      loop.propose({ kind: "online", online: navigator.onLine });
+    }
+  };
   addEventListener("online", () => loop.propose({ kind: "online", online: true }));
   addEventListener("offline", () =>
     loop.propose({ kind: "online", online: false }),
@@ -235,6 +242,7 @@ if (config === null) {
   // a branch nobody is looking at, and coming back to it fires focus anyway.
   setInterval(() => {
     if (document.visibilityState !== "visible") return;
+    refreshConnectivity();
     loop.propose({ kind: "woke" }); // Local day rollover also works offline.
     if (!loop.model.online || loop.model.syncing) return;
     pollHead();
@@ -242,6 +250,7 @@ if (config === null) {
   }, POLL_MS);
 
   const resumed = () => {
+    refreshConnectivity();
     takeAnswers();
     askForUpdate();
     loop.propose({ kind: "resumed" });

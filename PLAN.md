@@ -1514,3 +1514,25 @@ not here.
 iOS (needs a Mac and $99/yr), the Play Store (an APK over USB is the whole
 distribution for a personal app), exact alarms, and web push (a server,
 subscriptions, and iOS quirks — the backend the design deleted).
+
+
+## Vault sync recovery after a transient connection failure
+
+A failed GitHub request used to set the model's connectivity hint to offline.
+That disabled the retry that had just been scheduled. Android could remain
+connected throughout, so no browser online event arrived to release the latch;
+restarting the app reset it. Failed pulls also retained their start watermark,
+so a retry with no pending upload could skip the pull entirely.
+
+Browser connectivity observations now control the connectivity hint. Transport
+failures keep their error and exponential backoff, invalidate the pull watermark,
+and retry without requiring a new online event. Returning to the foreground
+rechecks the browser hint and retries a transient transport failure immediately.
+The visible periodic check also reconciles a missed connectivity event. A real
+reconnection requests a fresh pull after any pending uploads. GitHub's explicit
+rate-limit deadline survives foreground and connectivity events.
+
+Local persistence still precedes all remote work. The status message describes
+an unreachable GitHub connection and automatic retries rather than claiming the
+device itself is offline. Android's separate background alarm watcher and native
+media delivery keep their existing behaviour.
