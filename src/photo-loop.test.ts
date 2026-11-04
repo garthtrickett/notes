@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import { boot, type Loop } from "./loop.ts";
-import { deleteMany, getAll, getBlob, openDb, photoImportPath } from "./idb.ts";
+import { deleteMany, getAll, getBlob, openDb, photoImportPath, putMany } from "./idb.ts";
 import type { PhotoShare, PhotoShares } from "./photos.ts";
 
 const batch: PhotoShare = { id: "12345678-1234-4123-8123-123456789abc", receivedAt: 1792661000000,
@@ -181,5 +181,38 @@ describe("adding a photo inside a note", () => {
     loop.dispose();
     await start();
     expect(button("Take photo")).toBeUndefined();
+  });
+});
+
+
+describe("images at a Dump day boundary", () => {
+  it("pastes at the end of the visible day after extra blank lines without editing the older day", async () => {
+    const today = "dump/2026-11-04.md", yesterday = "dump/2026-11-03.md";
+    const older = "yesterday must stay here\n";
+    await putMany(db, [
+      { path: today, body: "today\n", baseSha: "today-sha", pending: false, deleted: false, encoding: "utf8" },
+      { path: yesterday, body: older, baseSha: "older-sha", pending: false, deleted: false, encoding: "utf8" },
+    ]);
+    const loop = await start();
+    loop.propose({ kind: "modeChanged", mode: "dump" });
+    await loop.flush();
+    const editor = EditorView.findFromDOM(root.querySelector(".cm-host")!)!;
+    const end = editor.state.doc.toString().indexOf("# 2026-11-03");
+    const extra = "\n".repeat(18);
+    editor.dispatch({ changes: { from: end, insert: extra }, selection: EditorSelection.cursor(end + extra.length - 1) });
+    await loop.flush();
+    expect(editor.state.doc.toString()).toContain(extra);
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    const file = new File(["screen capture"], "screen.png", { type: "image/png" });
+    Object.defineProperty(paste, "clipboardData", { value: { items: [{ kind: "file", type: file.type, getAsFile: () => file }] } });
+    editor.contentDOM.dispatchEvent(paste);
+    await loop.flush();
+    expect(paste.defaultPrevented).toBe(true);
+    expect(loop.model.notes.get(today)?.body).toContain("![](attachments/");
+    expect(loop.model.notes.get(yesterday)?.body).toBe(older);
+    expect(editor.state.doc.toString().match(/^# 2026-11-03$/gm)).toHaveLength(1);
+    const stored = await getAll(db);
+    expect(stored.find(n => n.path === today)?.body).toContain("![](attachments/");
+    expect(stored.find(n => n.path === yesterday)?.body).toBe(older);
   });
 });
