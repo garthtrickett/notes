@@ -89,6 +89,32 @@ export const composeDump = (days: readonly DumpDay[]): string =>
     })
     .join("\n");
 
+// Read structure from the document being edited, including blank lines that
+// composeDump deliberately trims. Both splitting and cursor mapping must use
+// these same headings; model offsets are not editor offsets.
+interface DumpLine {
+  readonly day: string;
+  readonly start: number;
+  readonly text: string | null;
+}
+
+const dumpLines = (doc: string, days: readonly DumpDay[]): DumpLine[] => {
+  const first = days[0];
+  if (first === undefined) return [];
+  const known = new Set(days.map((day) => dayOfPath(day.path)));
+  const lines: DumpLine[] = [];
+  let current = dayOfPath(first.path);
+  let start = 0;
+  for (const line of doc.split("\n")) {
+    const day = HEADING.exec(line)?.[1];
+    const heading = day !== undefined && known.has(day);
+    if (heading) current = day;
+    lines.push({ day: current, start, text: heading ? null : line });
+    start += line.length + 1;
+  }
+  return lines;
+};
+
 // The inverse. Only a heading naming a day that exists is structure; anything
 // else — including a date this vault has no file for — is content of the day
 // above it, and text above every heading belongs to the first day.
@@ -100,10 +126,7 @@ export const splitDump = (
   doc: string,
   days: readonly DumpDay[],
 ): Map<string, string> => {
-  const first = days[0];
-  const known = new Set(days.map((d) => dayOfPath(d.path)));
   const collected = new Map<string, string[]>();
-  let current: string | null = first === undefined ? null : dayOfPath(first.path);
 
   const put = (day: string, line: string | null): void => {
     const lines = collected.get(day) ?? [];
@@ -111,15 +134,7 @@ export const splitDump = (
     collected.set(day, lines);
   };
 
-  for (const line of doc.split("\n")) {
-    const day = HEADING.exec(line)?.[1];
-    if (day !== undefined && known.has(day)) {
-      current = day;
-      put(day, null);
-      continue;
-    }
-    if (current !== null) put(current, line);
-  }
+  for (const line of dumpLines(doc, days)) put(line.day, line.text);
 
   const bodies = new Map<string, string>();
   for (const [day, lines] of collected) bodies.set(day, trimBody(lines.join("\n")));
@@ -194,13 +209,30 @@ export interface DumpSpot {
 export const dumpSpotAt = (
   days: readonly DumpDay[],
   pos: number,
+  doc: string = composeDump(days),
 ): DumpSpot | null => {
-  let found: DumpSection | undefined;
-  for (const section of dumpSections(days)) {
-    if (section.start > pos) break;
-    found = section;
+  const lines = dumpLines(doc, days);
+  let found: DumpLine | undefined;
+  for (const line of lines) {
+    if (line.start > pos) break;
+    found = line;
   }
-  if (found === undefined) return null; // no days, so no spot
-  const within = Math.min(Math.max(pos, found.from), found.to);
-  return { path: found.path, offset: within - found.from + found.leading };
+  if (found === undefined) return null;
+  const day = days.find((day) => dayOfPath(day.path) === found.day);
+  if (day === undefined) return null;
+
+  const content = lines.filter((line) => line.day === found.day && line.text !== null);
+  const raw = content.map((line) => line.text).join("\n");
+  const before = content.filter((line) => line.start < found.start);
+  let within = before.map((line) => line.text).join("\n").length;
+  if (found.text !== null) {
+    if (before.length > 0) within += 1;
+    within += Math.min(pos - found.start, found.text.length);
+  }
+  // dumpEdits trims the editor's leading/trailing whitespace before storing.
+  // Interior whitespace is content, so it still counts towards the caret.
+  const leading = /^\s*\n/.exec(raw)?.[0].length ?? 0;
+  const storedLeading = /^\s*\n/.exec(day.body)?.[0].length ?? 0;
+  const offset = Math.max(0, Math.min(within - leading, trimBody(raw).length));
+  return { path: day.path, offset: offset + storedLeading };
 };

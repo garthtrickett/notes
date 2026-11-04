@@ -262,3 +262,38 @@ describe("dumpSpotAt", () => {
     expect(dumpSpotAt([], 0)).toBeNull();
   });
 });
+
+
+describe("dumpSpotAt in the live editor document", () => {
+  const days = [
+    { path: "dump/2026-11-04.md", body: "today\n" },
+    { path: "dump/2026-11-03.md", body: "older content\n" },
+  ];
+  test("extra blank lines before the older heading still belong to today", () => {
+    const doc = composeDump(days).replace("# 2026-11-03", "\n".repeat(18) + "# 2026-11-03");
+    expect(dumpSpotAt(days, doc.indexOf("# 2026-11-03") - 1, doc))
+      .toEqual({ path: days[0]!.path, offset: 5 });
+    expect(dumpSpotAt(days, doc.indexOf("older") + 6, doc))
+      .toEqual({ path: days[1]!.path, offset: 6 });
+  });
+  test("a heading's actual location wins over its normalized location", () => {
+    const doc = composeDump(days).replace("# 2026-11-03", "\n".repeat(18) + "# 2026-11-03");
+    expect(dumpSpotAt(days, doc.indexOf("# 2026-11-03") + 3, doc))
+      .toEqual({ path: days[1]!.path, offset: 0 });
+  });
+  test("preserves internal whitespace while translating into the stored body", () => {
+    const spaced = [{ path: days[0]!.path, body: "first   second\n\nthird\n" }];
+    const doc = "# 2026-11-04\n\n\n\nfirst   second\n\nthird\n\n";
+    expect(dumpSpotAt(spaced, doc.indexOf("second") - 1, doc))
+      .toEqual({ path: spaced[0]!.path, offset: 7 });
+    expect(dumpSpotAt(spaced, doc.indexOf("third"), doc))
+      .toEqual({ path: spaced[0]!.path, offset: spaced[0]!.body.indexOf("third") });
+  });
+  test("an unknown date heading is text in its containing day, as in splitDump", () => {
+    const body = "today\n# 2000-01-01\nmore\n";
+    const edited = [{ path: days[0]!.path, body }, days[1]!];
+    const doc = composeDump(edited);
+    expect(dumpSpotAt(edited, doc.indexOf("more"), doc))
+      .toEqual({ path: days[0]!.path, offset: body.indexOf("more") });
+  });
+});

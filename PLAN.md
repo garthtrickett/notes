@@ -1558,3 +1558,20 @@ The suggestions use a labelled combobox/listbox with an active descendant,
 Tab order. The modal focus trap honours handled completion events and excludes
 negative tab indices. No network lookup, dependency or Android permission is
 needed for completion.
+
+
+## Dump image placement uses the live editor document (November 2026)
+
+Pasting at the end of a day after adding blank lines could attach the picture
+inside the older day below it. The editor deliberately retains those blank
+lines, while the composed model document trims them; using the composed offsets
+for a live caret crossed the day boundary. Attachment targeting now reads the
+actual editor text and translates the position into the stored day's body.
+Splitting and cursor targeting share the same recognition of existing date
+headings. Ordinary note attachment handling is unchanged.
+
+A real CodeMirror/IndexedDB paste regression reproduces the failure before the
+fix and verifies the image is persisted in the intended day with the older day
+unchanged. Mapping tests cover shifted headings, internal whitespace and unknown
+date headings treated as content. No existing private note is moved or rewritten
+as part of this source fix.

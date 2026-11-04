@@ -379,7 +379,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   // somewhere you are not looking. It is the day under the caret, which needs
   // the document offset turned back into one in that day's file.
   const attachSpot = (caret: number | null): { path: string; offset: number } | null => {
-    if (model.mode === "dump") return dumpSpotAt(dumpDays(model), caret ?? 0);
+    if (model.mode === "dump") return dumpSpotAt(dumpDays(model), caret ?? 0, cm.doc());
     if (model.openPath === null) return null;
     const note = model.notes.get(model.openPath);
     return { path: model.openPath, offset: caret ?? note?.body.length ?? 0 };
