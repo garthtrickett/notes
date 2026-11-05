@@ -1,4 +1,41 @@
-# Native SFTP media delivery
+# Native HTTPS media delivery
+
+## HTTPS transport — 5 November 2026
+
+The user now authorizes HTTPS directly on Contabo, replacing SFTP in Fetch
+media. The existing manifest, immutable IDs, local SAF partials/history,
+SHA-256 verification and receipt reconciler are shared across the migration.
+An update resumes existing SFTP partials through HTTP byte ranges, with the
+same selected folder, Keystore-encrypted password and scheduling settings.
+
+The fixed endpoint is `https://84.247.159.188/notes-media/v1/`. Only the bundled
+private server certificate is trusted for this connection, using platform
+PKIX and hostname verification. Its key remains on Contabo. Credentials never
+follow redirects. No global trust configuration or other app networking is
+changed. Certificate renewal/rotation requires preserving the pinned identity
+or shipping a successor trust anchor before changing the server certificate.
+
+Authenticated GET manifest/payload/ack and POST receipt are the entire API.
+Payload responses must have the expected length and SHA-256 ETag. Resuming
+requires HTTP 206 and the exact Content-Range; a server ignoring Range is
+rejected before appending. Empty/already-complete partials proceed to existing
+local verification. Responses are uncompressed and bounded metadata stays
+native. No media uses Railway, GitHub, JavaScript or an unauthenticated URL.
+
+Only the existing host receipt worker deletes originals after validating the
+phone's stored receipt against the registry and payload. Downloads, aborts,
+HTTP errors and rejected receipts do not authorize cleanup. Repeated/lost
+receipt/ack responses remain idempotent. The old jailed SFTP endpoint stays
+available for older installed versions during rollout; updated Notes uses
+HTTPS without silently falling back to SFTP.
+
+Required checks: real TLS trust/hostname/auth rejection; full/range downloads,
+ignored/invalid range and changed identity; exact payload hash; old partial
+resume; receipt replay and cleanup only after commit; unchanged existing native
+regressions and signed upgrade identity. Device speed, interruption/resume and
+background operation require separate phone evidence after installation.
+
+## Original SFTP implementation (historical)
 
 User authorized native SFTP delivery on 24 October 2026, replacing the proposed
 HTTPS service. One phone, existing Contabo host and jailed SFTP account.

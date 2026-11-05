@@ -53,6 +53,8 @@ android {
     testOptions {
         unitTests.includeAndroidResources = true
         unitTests.all {
+            // Robolectric's Conscrypt TLS peer uses InetAddress on the host JDK.
+            jvmArgs '--add-opens=java.base/java.net=ALL-UNNAMED'
             maxHeapSize = '1024m'
             maxParallelForks = 1
             testLogging {
