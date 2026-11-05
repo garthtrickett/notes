@@ -71,6 +71,7 @@ repositories {
 }
 
 dependencies {
+    implementation 'com.google.firebase:firebase-messaging:26.0.1'
     implementation 'com.hierynomus:sshj:0.41.0'
     // Avoid selecting Android's reduced BC provider for SSH cryptography.
     implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
@@ -102,3 +103,17 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+tasks.register('verifyPushConfiguration') {
+    doLast {
+        def source = file('google-services.json')
+        if (!source.isFile()) throw new GradleException('Firebase app configuration is required for the release APK.')
+        def config = new groovy.json.JsonSlurper().parse(source)
+        def client = config.client.find { it.client_info.android_client_info.package_name == 'com.garthtrickett.notes' }
+        if (config.project_info.project_id != 'notes-512403' || config.project_info.project_number != '103880188180' ||
+            client == null || !client.client_info.mobilesdk_app_id.startsWith('1:103880188180:android:') ||
+            !client.api_key?.any { it.current_key })
+            throw new GradleException('Firebase app configuration does not match the Notes project/package.')
+    }
+}
+tasks.matching { it.name == 'assembleRelease' }.configureEach { dependsOn 'verifyPushConfiguration' }

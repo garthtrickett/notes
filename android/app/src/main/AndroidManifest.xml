@@ -61,6 +61,12 @@
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
         <service android:name=".DeliveryJob" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name=".DeliveryService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".DeliveryMessagingService" android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <service android:name=".DeliveryRegistration" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
 

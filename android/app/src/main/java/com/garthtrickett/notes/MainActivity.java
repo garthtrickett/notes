@@ -17,6 +17,7 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         AlarmNote.accept(this, getIntent());
         try { DeliveryJobs.periodic(this); } catch (java.io.IOException ignored) { /* Fetch media reports scheduling failures. */ }
+        DeliveryPush.configure(this);
     }
 
     @Override protected void onNewIntent(Intent intent) {

@@ -10,7 +10,10 @@ public class DeliveryJob extends JobService {
     private JobParameters active;
     private final Handler main=new Handler(Looper.getMainLooper());
     @Override public boolean onStartJob(JobParameters params) {
+        DeliveryRegistration.retry(this);
         if(DeliveryRunner.running())return false;
+        DeliveryProfile profile=new DeliveryProfile(this);
+        if(params.getJobId()!=DeliveryJobs.MANUAL&&(!profile.configured()||!profile.automatic()))return false;
         active=params;
         boolean manual=params.getJobId()==DeliveryJobs.MANUAL;
         if(manual&&Build.VERSION.SDK_INT>=34)setNotification(params,DeliveryJobs.NOTIFICATION,
@@ -23,6 +26,6 @@ public class DeliveryJob extends JobService {
     }
     @Override public boolean onStopJob(JobParameters params) {
         if(active==params) { active=null;DeliveryRunner.cancel(); }
-        return params.getJobId()==DeliveryJobs.AUTOMATIC;
+        return params.getJobId()!=DeliveryJobs.MANUAL;
     }
 }

@@ -1,5 +1,27 @@
 # Native HTTPS media delivery
 
+## Immediate media-ready wake-up — 5 November 2026
+
+The user wants a download to start when a file is ready, without a tap or
+waiting for the periodic check. Use Firebase project `notes-512403`, sender
+`103880188180`, only to carry a generic media-ready hint. Media, credentials,
+resume and receipt cleanup remain on the existing authenticated Contabo HTTPS
+path. Register the native token through that same authenticated boundary; keep
+server credentials off the phone and all tokens out of logs and JavaScript.
+
+The receiver validates the sender/event and uses the actual received priority.
+A HIGH hint starts a visible bounded data-sync service when the saved network
+policy allows. Other hints or platform/network restrictions use a constrained
+ordinary job. Do not label it user-initiated. Preserve automatic-off, Wi-Fi-only,
+partial files, history, hashes, server originals and the periodic fallback.
+Hints received while busy must not be discarded. No automatic playback.
+
+Immediate is best effort: Android, offline/force-stop, notifications and network
+constraints can delay starts. A signed release requires the chosen Firebase app
+configuration. Live registration, push reception while closed/asleep and actual
+saved receipts require separate phone qualification; prepared code and host
+tests do not establish that behavior.
+
 ## HTTPS transport — 5 November 2026
 
 The user now authorizes HTTPS directly on Contabo, replacing SFTP in Fetch
