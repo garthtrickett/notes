@@ -52,7 +52,7 @@ public class DeliveryActivity extends Activity {
             startActivityForResult(pick,91);
         });
         body.addView(label("Delivery settings",20));
-        body.addView(label("Contabo media account · "+DeliveryProfile.HOST,14));
+        body.addView(label("Secure HTTPS delivery · Contabo",14));
         password=new EditText(this);password.setSingleLine(true);password.setHint("Media password — leave blank to keep saved password");
         password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         password.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);

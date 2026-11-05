@@ -4,7 +4,6 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -13,7 +12,6 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-import net.schmizz.sshj.sftp.RemoteFile;
 
 final class DeliveryRunner {
     interface RunnableCheck { void run() throws Exception; }
@@ -34,7 +32,7 @@ final class DeliveryRunner {
     }
     static void cancel() {
         cancelled=true;
-        // Closing the active SSH socket also wakes a stalled read promptly.
+        // Disconnecting HTTPS also wakes a stalled read promptly.
         DeliveryRemote remote=connection;
         if(remote!=null) FILE_CLOSE.execute(()-> { try { remote.close(); } catch(Exception ignored) {} });
     }
@@ -84,10 +82,7 @@ final class DeliveryRunner {
                 };
                 DeliveryTransfer.run(item.size,new DeliveryTransfer.Remote() {
                     public InputStream open(long offset) throws Exception {
-                        RemoteFile file=remote.open(item);
-                        return new FilterInputStream(file.new ReadAheadRemoteFileInputStream(8,offset)) {
-                            @Override public void close() throws IOException { try { super.close(); } finally { file.close(); } }
-                        };
+                        return remote.open(item,offset);
                     }
                     public boolean acknowledged() throws Exception { return remote.acknowledged(item); }
                     public void receipt() throws Exception { rootCheck.run();remote.receipt(item); }
