@@ -99,7 +99,16 @@ final class DeliveryRemote implements Closeable {
     }
     void receipt(DeliveryItem item) throws Exception {
         byte[] bytes=item.json().put("schema",1).put("status","stored").toString().getBytes(StandardCharsets.UTF_8);
-        HttpsURLConnection connection=request("receipts/"+item.id);
+        post("receipts/"+item.id,bytes);
+    }
+    void registerPush(String token,boolean enabled) throws Exception {
+        if(token==null||!token.matches("[A-Za-z0-9:_.-]{20,2048}"))throw new IOException("Invalid push registration.");
+        byte[] bytes=new JSONObject().put("schema",1).put("token",token).put("enabled",enabled)
+            .toString().getBytes(StandardCharsets.UTF_8);
+        post("push-registration",bytes);
+    }
+    private void post(String path,byte[] bytes) throws IOException {
+        HttpsURLConnection connection=request(path);
         try {
             connection.setRequestMethod("POST");connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type","application/json");

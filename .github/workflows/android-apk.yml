@@ -30,6 +30,13 @@ jobs:
       - run: bun run build
       - run: npx cap sync android
 
+      - name: Restore Firebase app configuration
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        run: |
+          test -n "$FIREBASE_GOOGLE_SERVICES_JSON" || { echo 'Firebase app configuration is missing'; exit 1; }
+          printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
       - name: Restore signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

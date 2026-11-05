@@ -52,6 +52,24 @@ public class DeliveryHttpsTest {
         remote=new DeliveryRemote(endpoint,"test-only",DeliveryTls.factory(certificate));
     }
     @After public void stop() throws Exception { if(remote!=null)remote.close();if(server!=null)server.close(); }
+    @Test public void pushRegistrationUsesPinnedAuthenticatedPostWithoutMediaOrSecretInPayload() throws Exception {
+        AtomicInteger calls=new AtomicInteger();
+        server.createContext("/notes-media/v1/push-registration",exchange-> {
+            assertEquals("POST",exchange.getRequestMethod());
+            assertEquals("Basic "+Base64.getEncoder().encodeToString("media-phone:test-only".getBytes(StandardCharsets.UTF_8)),
+                exchange.getRequestHeaders().getFirst("Authorization"));
+            JSONObject value=new JSONObject(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
+            assertEquals(3,value.length());assertEquals(1,value.getInt("schema"));
+            assertEquals("test-only-token:1234567890",value.getString("token"));
+            assertEquals(calls.getAndIncrement()==0,value.getBoolean("enabled"));
+            respond(exchange,204,new byte[0]);
+        });
+        remote.registerPush("test-only-token:1234567890",true);
+        remote.registerPush("test-only-token:1234567890",false);
+        assertEquals(2,calls.get());
+        assertThrows(Exception.class,()->remote.registerPush("bad\ntoken",true));
+        assertEquals(2,calls.get());
+    }
     private void respond(DeliveryHttpsFixture.Request exchange,int status,byte[] body) throws java.io.IOException {
         exchange.sendResponseHeaders(status,status==204?-1:body.length);
         try(java.io.OutputStream out=exchange.getResponseBody()) { if(status!=204)out.write(body); }

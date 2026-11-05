@@ -49,12 +49,22 @@ final class DeliveryRunner {
                     (failure instanceof IOException?failure.getMessage():"Could not complete media delivery. Retry; server originals are retained."));
             } finally {
                 connection=null;running.set(false);
-                main.post(()-> { for(Observer o:new ArrayList<>(observers))o.changed(status,false);finished.run(); });
+                main.post(()-> {
+                    for(Observer o:new ArrayList<>(observers))o.changed(status,false);
+                    finished.run();
+                    DeliveryJobs.clearReadyNotice(app);
+                    // A file published during the current manifest/download must
+                    // not lose its hint just because the runner was already busy.
+                    DeliveryProfile profile=new DeliveryProfile(app);
+                    if(profile.prefs.getBoolean("pushPending",false))
+                        try { DeliveryJobs.push(app,false); } catch(IOException ignored) { }
+                });
             }
         });
     }
     private static void run(Context context,boolean manual,java.util.function.Consumer<String> progress) throws Exception {
         DeliveryProfile profile=new DeliveryProfile(context);
+        profile.prefs.edit().putBoolean("pushPending",false).commit();
         String root=new AudioSpikeJournal(context.getFilesDir()).root();
         if(root.isEmpty()) throw new IOException("Choose your phone-media folder in Audio first.");
         long deadline=System.nanoTime()+(manual?60L:7L)*60*1000000000;

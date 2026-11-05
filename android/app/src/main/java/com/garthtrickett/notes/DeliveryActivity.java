@@ -17,12 +17,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 
 public class DeliveryActivity extends Activity {
-    private TextView status,folder;
+    private TextView status,folder,pushStatus;
     private EditText password;
     private CheckBox automatic,wifi;
     private Button fetch,save;
     private LinearLayout recent;
     private boolean visible;
+    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener pushChanges=(prefs,key)-> {
+        if("pushStatus".equals(key))runOnUiThread(()-> { if(visible)pushStatus.setText(DeliveryPush.status(this)); });
+    };
     private final DeliveryRunner.Observer observer=(text,running)-> {
         status.setText(text);fetch.setEnabled(!running);save.setEnabled(!running);
         if(!running)loadHistory();
@@ -58,24 +61,32 @@ public class DeliveryActivity extends Activity {
         password.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         body.addView(password);
         DeliveryProfile profile=new DeliveryProfile(this);
-        automatic=new CheckBox(this);automatic.setText("Automatically check about every 15 minutes");automatic.setChecked(profile.automatic());body.addView(automatic);
+        automatic=new CheckBox(this);automatic.setText("Download new media automatically");automatic.setChecked(profile.automatic());body.addView(automatic);
         wifi=new CheckBox(this);wifi.setText("Use unmetered connections only (usually Wi-Fi)");wifi.setChecked(profile.wifiOnly());body.addView(wifi);
         save=button("Save delivery settings",body,v-> {
             String secret=password.getText().toString();boolean auto=automatic.isChecked(),unmetered=wifi.isChecked();
             save.setEnabled(false);
             DeliveryRunner.FILES.execute(()-> {
                 String message;
-                try { new DeliveryProfile(this).save(secret,auto,unmetered);DeliveryJobs.periodic(this);message="Delivery settings saved."; }
+                try { new DeliveryProfile(this).save(secret,auto,unmetered);DeliveryJobs.periodic(this);DeliveryRegistration.settingsChanged(this);DeliveryPush.configure(this);message="Delivery settings saved."; }
                 catch(Exception error) { message=error.getMessage(); }
                 String result=message;
                 runOnUiThread(()-> { save.setEnabled(!DeliveryRunner.running());password.setText("");status.setText(result); });
             });
         });
-        body.addView(label("Android may delay background checks. Fetch now requests an immediate transfer. Downloads never start playback.",14));
+        pushStatus=label(DeliveryPush.status(this),14);body.addView(pushStatus);
+        body.addView(label("The server signals Notes when media is ready. Android or your network setting may delay a start; a check about every 15 minutes is the fallback. Downloads never start playback.",14));
         body.addView(label("Recent deliveries",20));recent=new LinearLayout(this);recent.setOrientation(LinearLayout.VERTICAL);body.addView(recent);
     }
-    @Override protected void onStart() { super.onStart();visible=true;DeliveryRunner.observe(observer); }
-    @Override protected void onStop() { visible=false;DeliveryRunner.forget(observer);super.onStop(); }
+    @Override protected void onStart() {
+        super.onStart();visible=true;DeliveryRunner.observe(observer);
+        new DeliveryProfile(this).prefs.registerOnSharedPreferenceChangeListener(pushChanges);
+        pushStatus.setText(DeliveryPush.status(this));DeliveryPush.configure(this);
+    }
+    @Override protected void onStop() {
+        visible=false;new DeliveryProfile(this).prefs.unregisterOnSharedPreferenceChangeListener(pushChanges);
+        DeliveryRunner.forget(observer);super.onStop();
+    }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request!=91||result!=RESULT_OK||data==null||data.getData()==null)return;
