@@ -13,6 +13,7 @@ import { acknowledgeAlarmAnswers, onAlarmAnswered, onNotificationTap, syncChecki
 import { receiveAlarmAnswers } from "./alarm-inbox.ts";
 import { checkForUpdate, updateCheckDue } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
+import { emptyLocation, loadLocation, parseLocation, saveLocation, type ViewLocation } from "./view-location.ts";
 import { nativeWidgetSyncReporter } from "./widget-sync.ts";
 
 // Half a minute: fast enough that the other screen feels live, slow enough that
@@ -74,8 +75,7 @@ if (config === null) {
   );
   paintSetup();
 } else {
-  // Read before the loop starts, because hydrating picks a note of its own and
-  // the first paint writes that choice straight into the address bar.
+  // Read the explicit URL and this tab's preference before any startup paint.
   const wanted = pathFromUrl(location.pathname);
 
   // The loop reports where it is; how that meets the History API is decided
@@ -83,12 +83,11 @@ if (config === null) {
   //
   let booted = false;
   let fromPop = false;
-  const navigate = (url: string, title: string): void => {
+  const navigate = (url: string, title: string, view: ViewLocation): void => {
     document.title = title;
-    const method = historyMethod(url, { booted, fromPop });
+    const method = url === location.pathname ? "replaceState" : historyMethod(url, { booted, fromPop });
     fromPop = false;
-    if (url === location.pathname) return;
-    history[method](null, "", url);
+    history[method]({ ...history.state, notesView: view }, "", url);
   };
 
   const github = createGithub(config);
@@ -97,6 +96,8 @@ if (config === null) {
     {
       theme,
       onThemeChanged: changeTheme,
+      initialView: loadLocation(sessionStorage, localStorage, config) ?? emptyLocation,
+      onViewChanged: (view) => saveLocation(sessionStorage, localStorage, config, view),
       db: await openDb(),
       shrink: canvasShrinker,
       github,
@@ -155,15 +156,18 @@ if (config === null) {
   };
   askForUpdate();
 
-  // Back and forward. The model decides whether the path names something
-  // openable — it is the only thing that knows — and a path that names nothing
-  // is left alone rather than corrected, so the button still works.
-  addEventListener("popstate", () => {
+  // Back and forward restore both note links and the specific view at the root.
+  // A missing note can wait for sync without selecting an unrelated note.
+  addEventListener("popstate", (event: PopStateEvent) => {
     const path = pathFromUrl(location.pathname);
-    if (path === null || path === loop.model.openPath) return;
-    if (!loop.model.notes.has(path)) return;
+    const saved = parseLocation(event.state?.notesView);
+    const view: ViewLocation = path === null ? (saved ?? emptyLocation)
+      : { mode: "notes", openPath: path, preview: saved?.preview ?? false };
     fromPop = true;
-    loop.propose({ kind: "opened", path });
+    loop.propose({ kind: "viewRestored", location: view });
+    // An identical/unsupported history view may not need another paint callback.
+    // Never let its Back flag affect a later, unrelated navigation.
+    queueMicrotask(() => { fromPop = false; });
   });
 
   // WebViews can miss connectivity events while backgrounded. Re-read the

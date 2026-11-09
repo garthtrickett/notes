@@ -14,6 +14,7 @@
 
 import { render } from "lit-html";
 import type { Theme } from "./theme.ts";
+import { emptyLocation, locationKey, type ViewLocation } from "./view-location.ts";
 import {
   createModel,
   dumpDays,
@@ -48,6 +49,8 @@ import { nativeAlarmNotes, type AlarmNoteInbox } from "./alarm-note.ts";
 import { nativeWidgetSyncReporter, widgetSyncSnapshot, type WidgetSyncReporter } from "./widget-sync.ts";
 
 export interface Deps {
+  readonly initialView?: ViewLocation;
+  readonly onViewChanged?: (location: ViewLocation) => void;
   readonly theme?: Theme;
   readonly onThemeChanged?: (theme: Theme) => void;
   readonly widgetSync?: WidgetSyncReporter;
@@ -72,7 +75,7 @@ export interface Deps {
   // Where the app now is. The loop says it; whether that becomes a new history
   // entry or replaces the current one is not a decision it can make, so it
   // does not try to.
-  readonly navigate?: (url: string, title: string) => void;
+  readonly navigate?: (url: string, title: string, location: ViewLocation) => void;
 }
 
 export interface Loop {
@@ -127,7 +130,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let lastModal: string | null = null;
   let lastAudioConfirmation: string | null = null;
   let lastPaletteIndex: number | null = null;
-  let lastUrl: string | null = null;
+  let lastLocation: string | null = null;
   const previewCache = createPreviewCache();
   // File bodies scan identically every paint, so the task list keeps a
   // per-path memo beside the preview cache.
@@ -583,10 +586,14 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     if (redoButton !== null) redoButton.disabled = !editing || !cm.canRedo();
 
     // Last, because everything above can still change which note is open.
-    const url = urlFor(model);
-    if (url !== lastUrl) {
-      lastUrl = url;
-      deps.navigate?.(url, titleFor(model));
+    const location: ViewLocation = model.pendingView ?? {
+      mode: model.mode, openPath: model.openPath, preview: model.preview,
+    };
+    const key = locationKey(location);
+    if (model.hydrated && key !== lastLocation) {
+      lastLocation = key;
+      deps.onViewChanged?.(location);
+      deps.navigate?.(urlFor(location), titleFor(location), location);
     }
   };
 
@@ -1008,15 +1015,12 @@ export const boot = async (
   want: string | null = null,
 ): Promise<Loop> => {
   const loop = createLoop(deps, root);
+  // Decide before hydration can paint: a root reload restores this tab, while
+  // an explicit note URL takes precedence over the last saved view.
+  loop.propose({ kind: "viewRestored", location: want === null
+    ? (deps.initialView ?? emptyLocation)
+    : { mode: "notes", openPath: want, preview: deps.initialView?.mode === "notes" &&
+        deps.initialView.openPath === want ? deps.initialView.preview : false } });
   loop.propose(await actions.hydrate(deps.db));
-  // A cold load on a link to a particular note. Hydrating has just picked a
-  // note of its own; this is the one that was actually asked for.
-  //
-  // Only if it is here. On a device that has not synced yet the note genuinely
-  // does not exist, and an error toast for following your own bookmark reads
-  // as the app being broken rather than as the vault being empty.
-  if (want !== null && loop.model.notes.has(want)) {
-    loop.propose({ kind: "opened", path: want });
-  }
   return loop;
 };

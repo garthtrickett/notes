@@ -95,6 +95,7 @@ describe("moving a note", () => {
   it("creates the new path and tombstones the old one", () => {
     const m = createModel();
     present(m, { kind: "hydrated", notes: [note("inbox/a.md", { body: "keep" })] });
+    present(m, { kind: "opened", path: "inbox/a.md" });
     present(m, { kind: "moved", from: "inbox/a.md", to: "reference/a.md" });
 
     expect(m.notes.get("reference/a.md")?.body).toBe("keep");
@@ -573,6 +574,7 @@ describe("Ctrl+F", () => {
   it("opens the editor's find when a note is in the editor", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", { body: "find me" })] });
+    loop.propose({ kind: "opened", path: "a.md" });
     await settle(loop);
     expect(loop.find()).toBe(true);
     expect(root.querySelector(".cm-search")).not.toBeNull();
@@ -583,6 +585,7 @@ describe("Ctrl+F", () => {
     // works there and should not be taken away.
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", { body: "find me" })] });
+    loop.propose({ kind: "opened", path: "a.md" });
     await settle(loop);
     loop.propose({ kind: "previewToggled" });
     await settle(loop);
@@ -671,20 +674,20 @@ describe("tapping a notification", () => {
       kind: "hydrated",
       notes: [note("a.md", { body: "first" }), note("b.md", { body: "second" })],
     });
-    // Not firstVisiblePath, which is where every other boot lands.
+    // The notification selects its requested note after hydration.
     expect(m.openPath).toBe("b.md");
     expect(m.mode).toBe("notes");
     expect(m.openRequest).toBeNull();
   });
 
-  it("lands on the default note when the tap names one that is gone", () => {
+  it("opens no unrelated note when the tap names one that is gone", () => {
     // A reminder outlives the task it was set on: ticked, renamed, deleted on
     // another device. An error about a file the tap did not mention is worse
     // than simply opening the app.
     const m = createModel();
     present(m, { kind: "openRequested", path: "vanished.md" });
     present(m, { kind: "hydrated", notes: [note("a.md", { body: "first" })] });
-    expect(m.openPath).toBe("a.md");
+    expect(m.openPath).toBeNull();
     expect(m.error).toBeNull();
     // Spent, not retried against every later pull.
     expect(m.openRequest).toBeNull();
@@ -757,6 +760,7 @@ describe("quick capture from anywhere", () => {
   it("opens over the notes view and captures to today's dump", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
+    loop.propose({ kind: "opened", path: "inbox/a.md" });
     await settle(loop);
     expect(root.querySelector("#modal-input")).toBeNull();
 
@@ -811,6 +815,7 @@ describe("creating something you cannot open", () => {
   it("does not follow you to a dump file", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("inbox/a.md")] });
+    loop.propose({ kind: "opened", path: "inbox/a.md" });
     await settle(loop);
 
     loop.propose({ kind: "created", path: "dump/2026-09-06.md" });

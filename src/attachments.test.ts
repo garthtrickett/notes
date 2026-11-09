@@ -403,15 +403,18 @@ describe("what the editor is allowed to open", () => {
     expect(m.openPath).toBeNull();
   });
 
-  it("skips past an attachment to a real note", () => {
+  it("opens a real note only when requested", () => {
     const m = createModel();
     present(m, { kind: "hydrated", notes: [attachment, note("inbox/a.md", "text")] });
+    expect(m.openPath).toBeNull();
+    present(m, { kind: "opened", path: "inbox/a.md" });
     expect(m.openPath).toBe("inbox/a.md");
   });
 
   it("refuses to open an attachment on request", () => {
     const m = createModel();
     present(m, { kind: "hydrated", notes: [attachment, note("inbox/a.md")] });
+    present(m, { kind: "opened", path: "inbox/a.md" });
     present(m, { kind: "opened", path: attachment.path });
     expect(m.openPath).toBe("inbox/a.md");
   });

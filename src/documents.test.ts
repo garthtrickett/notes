@@ -65,6 +65,7 @@ describe("rename — the gate", () => {
       ],
     });
 
+    present(m, { kind: "opened", path: "reference/grammar.md" });
     present(m, {
       kind: "renamed",
       from: "reference/grammar.md",
@@ -265,6 +266,7 @@ describe("preview and search in the app", () => {
   it("toggles between the editor and rendered markdown", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", "# Heading")] });
+    loop.propose({ kind: "opened", path: "a.md" });
     await settle(loop);
     expect(root.querySelector("#editor-host")).not.toBeNull();
     expect(root.querySelector(".preview h1")).toBeNull();
@@ -280,6 +282,7 @@ describe("preview and search in the app", () => {
     // and refilled — otherwise toggling preview silently blanks the note.
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", "important text")] });
+    loop.propose({ kind: "opened", path: "a.md" });
     await settle(loop);
     loop.propose({ kind: "previewToggled" });
     await settle(loop);
@@ -347,6 +350,7 @@ describe("the preview does not thrash the DOM", () => {
       kind: "hydrated",
       notes: [note("a.md", "# Title\n\nSome text with [[b]].\n"), note("b.md", "")],
     });
+    loop.propose({ kind: "opened", path: "a.md" });
     loop.propose({ kind: "previewToggled" });
     await settle(loop);
     return loop;
@@ -384,6 +388,7 @@ describe("the preview does not thrash the DOM", () => {
   it("rebuilds when a link's target appears, since it should stop looking broken", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", "see [[ghost]]")] });
+    loop.propose({ kind: "opened", path: "a.md" });
     loop.propose({ kind: "previewToggled" });
     await settle(loop);
     expect(root.querySelector("a.unresolved")).not.toBeNull();
@@ -411,6 +416,7 @@ describe("the preview does not thrash the DOM", () => {
   it("offers to create a note that does not exist yet", async () => {
     const loop = await boot(deps(), root);
     loop.propose({ kind: "hydrated", notes: [note("a.md", "see [[ghost]]")] });
+    loop.propose({ kind: "opened", path: "a.md" });
     loop.propose({ kind: "previewToggled" });
     await settle(loop);
 

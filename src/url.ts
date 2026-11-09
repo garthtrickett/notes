@@ -1,8 +1,8 @@
 // The address bar and the tab title as a view of the model, like any other.
 //
 // Only the notes mode has a note open — the dump, archive and trash views
-// render something else entirely — so all of those are the root. A URL naming a
-// state the app cannot restore on reload would be worse than no URL at all.
+// render something else entirely — so all of those are the root. Their specific
+// view is restored from this tab's preference/history, not a misleading note URL.
 //
 // No DOM here on purpose. What the URL should say is a decision and belongs
 // with the other decisions; meeting the History API is main.ts's job, and it is
@@ -53,12 +53,12 @@ export const pathFromUrl = (pathname: string): string | null => {
 // Push or replace. A decision, so it lives here with the others rather than in
 // the ten lines of glue that own the History API.
 //
-// Replace while booting: hydrating settling on a note is not somewhere you
+// Replace while booting: restoring a saved location is not somewhere you
 // navigated to, and an entry for it puts a back button in front of the page you
 // actually arrived on. Replace when arriving by Back, or the push fights the
 // button that got you there and you cannot leave the app. Replace on the way to
-// the root, because the dump, archive and trash are not addressable — an entry
-// for them is one the app cannot honour when you come back to it.
+// the root: non-note views share that URL. main.ts records their particular
+// view in history.state, so Back can restore the correct screen there.
 export const historyMethod = (
   url: string,
   at: { readonly booted: boolean; readonly fromPop: boolean },

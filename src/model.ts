@@ -10,6 +10,7 @@
 
 import { emptyNotePath, folderCompletions, type NotePathDraft } from "./folder-completion.ts";
 import type { Theme } from "./theme.ts";
+import type { ViewLocation } from "./view-location.ts";
 import { emptyAudio, isAudioProposal, presentAudio, type AudioModel, type AudioProposal } from "./audio-model.ts";
 import type { Revision, SyncError } from "./github.ts";
 import { resolveLink, rewriteLinks } from "./links.ts";
@@ -110,6 +111,9 @@ export interface Model {
   // tapping a notification is what starts the app, and hydration is still a
   // round trip away.
   openRequest: string | null;
+  // Startup/history may name a note that has not reached this device yet.
+  // Cleared when resolved or when the user chooses another view.
+  pendingView: ViewLocation | null;
   // Done and Snooze presses from the alarm screen, held for the same reason:
   // the press is often what the next launch finds waiting, before the notes it
   // edits have loaded.
@@ -203,6 +207,7 @@ export const createModel = (): Model => ({
   notes: new Map(),
   openPath: null,
   openRequest: null,
+  pendingView: null,
   alarmAnswers: [],
   mode: "notes",
   preview: false,
@@ -287,6 +292,7 @@ export type Proposal = AudioProposal
   | { readonly kind: "syncFailed"; readonly error: SyncError }
   | { readonly kind: "modeChanged"; readonly mode: Mode }
   | { readonly kind: "themeToggled" }
+  | { readonly kind: "viewRestored"; readonly location: ViewLocation }
   | { readonly kind: "audioStorageTestRequested" }
   | { readonly kind: "audioStorageTestFinished"; readonly error: string | null }
   | { readonly kind: "folderToggled"; readonly path: string }
@@ -505,6 +511,16 @@ const isOpenable = (note: Note): boolean =>
   !isAttachmentPath(note.path) &&
   !isFiledPath(note.path);
 
+const restoreView = (m: Model, syncFinished = false): void => {
+  const view = m.pendingView;
+  if (view === null) return;
+  m.mode = view.mode === "audio" && !m.audio.supported ? "notes" : view.mode;
+  m.preview = view.preview;
+  const note = view.openPath === null ? undefined : m.notes.get(view.openPath);
+  m.openPath = note && isOpenable(note) ? note.path : null;
+  if (m.mode !== "notes" || view.openPath === null || note !== undefined || syncFinished) m.pendingView = null;
+};
+
 // Asking whether a path is usable is a question, so it does not mutate anything.
 // Recording the refusal is a separate step, which is what lets each arm phrase
 // its own rejection instead of fishing the sentence back out of the model.
@@ -587,7 +603,8 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     case "hydrated": {
       m.notes = new Map(p.notes.map((n) => [n.path, withoutBytes(n)]));
       m.hydrated = true;
-      m.openPath = firstVisiblePath(m);
+      m.openPath = null;
+      restoreView(m);
       // Whatever asked for a note before there were any notes gets its answer
       // here, in place of the default landing. Cleared either way: an ask that
       // names nothing openable is spent, not retried forever.
@@ -628,8 +645,8 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       }
       const target = m.notes.get(p.path);
       // A reminder can outlive the note it was set on — ticked, renamed,
-      // deleted on another device. Landing on the default note is a better
-      // answer than an error about a file the tap did not mention.
+      // deleted on another device. Keep the current view rather than jumping
+      // to an unrelated note or showing an error for the stale reminder.
       if (!target || !isOpenable(target)) return null;
       return present(m, { kind: "opened", path: p.path });
     }
@@ -640,6 +657,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return reject(`Cannot open ${p.path}: it is not a dump day.`);
       }
       m.mode = "dump";
+      m.pendingView = null;
       m.error = null;
       m.numberScope = null;
       return null;
@@ -653,6 +671,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
         return reject(`Cannot open ${p.path}: it is not a note.`);
       }
       m.openPath = p.path;
+      m.pendingView = null;
       m.error = null;
       // The numbers go back to the top level: whatever folder they were counting
       // inside, you have left it.
@@ -755,6 +774,7 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       // whole feature exists to keep.
       const created = m.notes.get(path);
       if (created && isOpenable(created)) {
+        m.pendingView = null;
         m.openPath = path;
         // Creating a note from the dump should take you to it. Quick capture
         // creates a dump file, which is not openable, so it stays put.
@@ -875,9 +895,17 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
     }
 
     case "modeChanged": {
+      m.pendingView = null;
       m.error = null;
       m.numberScope = null;
       m.mode = p.mode;
+      return null;
+    }
+
+    case "viewRestored": {
+      m.numberScope = null;
+      m.pendingView = p.location;
+      if (m.hydrated) restoreView(m);
       return null;
     }
 
@@ -1434,9 +1462,8 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       }
       settleSync(m);
       m.pullRemaining = p.remaining;
-      if (m.openPath === null || !m.notes.has(m.openPath)) {
-        m.openPath = firstVisiblePath(m);
-      }
+      if (m.openPath !== null && !m.notes.has(m.openPath)) m.openPath = null;
+      restoreView(m, p.remaining === 0);
       return null;
     }
 
