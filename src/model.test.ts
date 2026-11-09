@@ -35,11 +35,11 @@ const hydrated = (...notes: Note[]): Model => {
 };
 
 describe("present — accepting", () => {
-  it("hydrates and opens the first note", () => {
+  it("hydrates without opening an unrelated first note", () => {
     const m = hydrated(note("a.md", "A"), note("b.md", "B"));
     expect(m.hydrated).toBe(true);
     expect(m.notes.size).toBe(2);
-    expect(m.openPath).toBe("a.md");
+    expect(m.openPath).toBeNull();
   });
 
   it("hydrates empty without opening anything", () => {
@@ -67,6 +67,7 @@ describe("present — accepting", () => {
 
   it("tombstones a synced note rather than dropping it, and moves off it", () => {
     const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "opened", path: "a.md" });
     present(m, { kind: "deleted", path: "a.md" });
 
     // The record survives so the remote delete can still be sent.
@@ -125,6 +126,7 @@ describe("present — accepting", () => {
 
   it("never opens a tombstone", () => {
     const m = hydrated(note("a.md"), note("b.md"));
+    present(m, { kind: "opened", path: "b.md" });
     present(m, { kind: "deleted", path: "a.md" });
     present(m, { kind: "opened", path: "a.md" });
     expect(m.openPath).toBe("b.md");
@@ -153,6 +155,7 @@ describe("present — rejecting", () => {
 
   it("rejects opening a note that does not exist", () => {
     const m = hydrated(note("a.md"));
+    present(m, { kind: "opened", path: "a.md" });
     present(m, { kind: "opened", path: "ghost.md" });
     expect(m.openPath).toBe("a.md");
   });

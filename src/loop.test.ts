@@ -1,9 +1,10 @@
 import { EditorView } from "@codemirror/view";
 import { EditorSelection } from "@codemirror/state";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { getAll, openDb } from "./idb.ts";
+import { getAll, openDb, putMany } from "./idb.ts";
 import { boot, createLoop, type Deps, type Loop } from "./loop.ts";
 import type { Note } from "./model.ts";
+import { emptyLocation, type ViewLocation } from "./view-location.ts";
 
 const record = (path: string, body: string): Note => ({
   path,
@@ -225,6 +226,7 @@ describe("the loop", () => {
         record("b.md", "B"),
       ],
     });
+    loop.propose({ kind: "opened", path: "a.md" });
     await paint();
 
     const rows = root.querySelectorAll(".row");
@@ -252,6 +254,7 @@ const putCaret = (at: number): void => {
       kind: "hydrated",
       notes: [record("a.md", "hello")],
     });
+    loop.propose({ kind: "opened", path: "a.md" });
     await paint();
 
     expect(editorText()).toBe("hello");
@@ -458,6 +461,7 @@ describe("the path box after a refused rename", () => {
       kind: "hydrated",
       notes: [record("a.md", "A"), record("b.md", "B")],
     });
+    loop.propose({ kind: "opened", path: "a.md" });
     await paint();
 
     const field = root.querySelector("input.pathfield") as HTMLInputElement;
@@ -476,6 +480,7 @@ describe("the path box after a refused rename", () => {
   it("leaves the box alone while it is being typed in", async () => {
     const loop = createLoop(localOnly(), root);
     loop.propose({ kind: "hydrated", notes: [record("a.md", "A")] });
+    loop.propose({ kind: "opened", path: "a.md" });
     await paint();
 
     const field = root.querySelector("input.pathfield") as HTMLInputElement;
@@ -486,6 +491,78 @@ describe("the path box after a refused rename", () => {
 
     // Rewriting under the cursor mid-word would be worse than the bug.
     expect(field.value).toBe("half-typed-na");
+  });
+});
+
+describe("restoring a tab", () => {
+  it("restores each saved view without publishing an intermediate first-note location", async () => {
+    await putMany(theDb(), [record("aaa.md", "First"), record("z-last.md", "Last")]);
+    for (const mode of ["notes", "dump", "tasks", "archive", "trash", "settings"] as const) {
+      const initialView: ViewLocation = { mode, openPath: "z-last.md", preview: true };
+      const saved: ViewLocation[] = [];
+      const loop = await boot({ ...localOnly(), initialView, onViewChanged: view => saved.push(view) }, root);
+      await settle(loop);
+      expect(loop.model.mode).toBe(mode);
+      expect(loop.model.openPath).toBe("z-last.md");
+      expect(loop.model.preview).toBe(true);
+      expect(saved).toEqual([initialView]);
+      loop.propose({ kind: "resumed" });
+      await settle(loop);
+      expect(saved).toEqual([initialView]);
+      loop.dispose();
+    }
+  });
+
+  it("keeps preview for a reloaded note URL, but not for a different deep link", async () => {
+    await putMany(theDb(), [record("one.md", "One"), record("two.md", "Two")]);
+    const initialView: ViewLocation = { mode: "notes", openPath: "one.md", preview: true };
+    for (const path of ["one.md", "two.md"]) {
+      const loop = await boot({ ...localOnly(), initialView }, root, path);
+      await settle(loop);
+      expect(loop.model.openPath).toBe(path);
+      expect(loop.model.preview).toBe(path === "one.md");
+      loop.dispose();
+    }
+  });
+
+  it("a fresh root does not choose the first cached note", async () => {
+    await putMany(theDb(), [record("aaa.md", "First")]);
+    const loop = await boot(localOnly(), root);
+    await settle(loop);
+    expect(loop.model.openPath).toBeNull();
+    loop.propose({ kind: "pulled", notes: [record("b.md", "Other")], gone: [], remaining: 0 });
+    await settle(loop);
+    expect(loop.model.openPath).toBeNull();
+    loop.dispose();
+  });
+
+  it("an explicit note link overrides the remembered tab and waits for its actual note", async () => {
+    await putMany(theDb(), [record("aaa.md", "First")]);
+    const navigations: string[] = [];
+    const loop = await boot({ ...localOnly(), initialView: { ...emptyLocation, mode: "dump" },
+      navigate: url => navigations.push(url) }, root, "not-yet-cached.md");
+    await settle(loop);
+    expect(loop.model.openPath).toBeNull();
+    expect(navigations).toEqual(["/not-yet-cached.md"]);
+    loop.propose({ kind: "pulled", notes: [record("not-yet-cached.md", "Arrived")], gone: [], remaining: 0 });
+    await settle(loop);
+    expect(loop.model.openPath).toBe("not-yet-cached.md");
+    expect(loop.model.mode).toBe("notes");
+    expect(navigations).toEqual(["/not-yet-cached.md"]);
+    loop.dispose();
+  });
+
+  it("records root-to-root mode changes even though their URLs are identical", async () => {
+    const saved: ViewLocation[] = [];
+    const loop = await boot({ ...localOnly(), onViewChanged: view => saved.push(view) }, root);
+    await settle(loop);
+    for (const mode of ["dump", "tasks", "archive"] as const) {
+      loop.propose({ kind: "modeChanged", mode });
+      await settle(loop);
+      expect(saved.at(-1)?.mode).toBe(mode);
+    }
+    expect(saved.map(view => view.mode)).toEqual(["notes", "dump", "tasks", "archive"]);
+    loop.dispose();
   });
 });
 

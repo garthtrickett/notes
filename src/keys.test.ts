@@ -18,6 +18,7 @@ const model = (over: Partial<Model> = {}): Model => {
       },
     ],
   });
+  present(m, { kind: "opened", path: "a.md" });
   return Object.assign(m, over);
 };
 
