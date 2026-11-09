@@ -1,5 +1,7 @@
 import "./style.css";
-import { render } from "lit-html";
+import { html, render } from "lit-html";
+import { applyTheme, loadTheme, saveTheme, type Theme } from "./theme.ts";
+import { themeButton } from "./view-theme.ts";
 import { openDb } from "./idb.ts";
 import { boot } from "./loop.ts";
 import { createGithub } from "./github.ts";
@@ -48,16 +50,29 @@ if (!root) throw new Error("#app is missing from index.html");
 // The only place that reaches for ambient state. Everything below is handed what
 // it needs (injected, not reached for).
 const config = loadConfig(localStorage);
+const theme = loadTheme(localStorage);
+applyTheme(theme, document);
+const changeTheme = (next: Theme) => {
+  applyTheme(next, document);
+  saveTheme(localStorage, next);
+};
 
 if (config === null) {
   void nativeWidgetSyncReporter(null)({ state: "unknown", checkedAt: null, pulledAt: null });
-  render(
-    settingsView((next) => {
+  let setupTheme = theme;
+  const paintSetup = () => render(html`
+    <div class="setup-appearance">${themeButton(setupTheme, () => {
+      setupTheme = setupTheme === "dark" ? "light" : "dark";
+      changeTheme(setupTheme);
+      paintSetup();
+    })}</div>
+    ${settingsView((next) => {
       saveConfig(localStorage, next);
       location.reload();
-    }),
+    })}`,
     root,
   );
+  paintSetup();
 } else {
   // Read before the loop starts, because hydrating picks a note of its own and
   // the first paint writes that choice straight into the address bar.
@@ -80,6 +95,8 @@ if (config === null) {
 
   const loop = await boot(
     {
+      theme,
+      onThemeChanged: changeTheme,
       db: await openDb(),
       shrink: canvasShrinker,
       github,

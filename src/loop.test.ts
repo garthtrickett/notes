@@ -52,6 +52,38 @@ const settle = async (loop: Loop) => {
   await paint();
 };
 
+describe("appearance", () => {
+  it("switches without replacing the editor or losing edits and undo history", async () => {
+    const changes: string[] = [];
+    const loop = createLoop({ ...localOnly(), theme: "light", onThemeChanged: t => changes.push(t) }, root);
+    loop.propose({ kind: "hydrated", notes: [record("test.md", "Original")] });
+    loop.propose({ kind: "opened", path: "test.md" });
+    await settle(loop);
+    const editor = root.querySelector<HTMLElement>(".cm-editor");
+    if (!editor) throw new Error("no editor");
+    const cm = EditorView.findFromDOM(editor);
+    if (!cm) throw new Error("no editor view");
+    cm.dispatch({ changes: { from: 8, insert: " and an edit" }, selection: { anchor: 8 } });
+    await settle(loop);
+    root.querySelector<HTMLButtonElement>(".theme-button")!.click();
+    await settle(loop);
+    expect(loop.model.theme).toBe("dark");
+    expect(changes).toEqual(["dark"]);
+    expect(root.querySelector(".cm-editor")).toBe(editor);
+    expect(cm.state.selection.main.head).toBe(8);
+    expect(loop.model.notes.get("test.md")?.body).toBe("Original and an edit");
+    root.querySelector<HTMLButtonElement>("#undo-edit")!.click();
+    await settle(loop);
+    expect(loop.model.notes.get("test.md")?.body).toBe("Original");
+    for (const mode of ["dump", "tasks", "archive", "trash", "settings"] as const) {
+      loop.propose({ kind: "modeChanged", mode });
+      await settle(loop);
+      expect(root.querySelector(".theme-button")?.getAttribute("aria-label")).toBe("Switch to light theme");
+    }
+    loop.dispose();
+  });
+});
+
 describe("audio storage test entry", () => {
   it("opens only on an explicit request and reports failure through the model", async () => {
     let opened = 0;
