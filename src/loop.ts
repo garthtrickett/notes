@@ -13,6 +13,7 @@
 // notes and a client; none of them receives one.
 
 import { render } from "lit-html";
+import type { Theme } from "./theme.ts";
 import {
   createModel,
   dumpDays,
@@ -47,6 +48,8 @@ import { nativeAlarmNotes, type AlarmNoteInbox } from "./alarm-note.ts";
 import { nativeWidgetSyncReporter, widgetSyncSnapshot, type WidgetSyncReporter } from "./widget-sync.ts";
 
 export interface Deps {
+  readonly theme?: Theme;
+  readonly onThemeChanged?: (theme: Theme) => void;
   readonly widgetSync?: WidgetSyncReporter;
   readonly alarmNotes?: AlarmNoteInbox;
   readonly lookupInbox?: LookupInbox;
@@ -99,6 +102,7 @@ const QUIET_MS = 1_500;
 export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   const { db, github, now, schedule, shrink } = deps;
   const model = createModel();
+  model.theme = deps.theme ?? "dark";
   const audioStorageTest = deps.audioStorageTest ?? nativeStorageTest();
   const audioLibrary = deps.audioLibrary ?? nativeAudioLibrary();
   const photoShares = deps.photoShares ?? nativePhotoShares();
@@ -832,6 +836,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     const taskHasDate = p.kind === "taskAdded" && model.modal?.kind === "newTask" && (model.modal.draft.date !== "" || Boolean(model.modal.draft.after));
     const previousHead = model.remoteHead;
     const rejection = present(model, p);
+    if (rejection === null && p.kind === "themeToggled") deps.onThemeChanged?.(model.theme);
     if (rejection === null && p.kind === "pulled" && p.remaining === 0) {
       pulledAt = checkedAt = now();
     } else if (rejection === null && pulledAt !== null &&

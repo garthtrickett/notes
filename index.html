@@ -8,6 +8,12 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#16171a" />
+    <script>
+      // Apply the saved appearance before the first paint, including offline.
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("notes.theme") === "light" ? "light" : "dark";
+      } catch { /* Keep the default dark theme when storage is blocked. */ }
+    </script>
   </head>
   <body>
     <div id="app"></div>

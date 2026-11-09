@@ -37,6 +37,7 @@ import { flipTask, tasksInVault, type TaskCache, type TaskRef } from "./tasks.ts
 import { CHOICES, describe as describeDue } from "./reminders.ts";
 import { renderMarkdown } from "./render-markdown.ts";
 import { settingsView, type VaultConfig } from "./view-settings.ts";
+import { themeButton } from "./view-theme.ts";
 import { emptyTaskDraft } from "./task-draft.ts";
 import { audioView, audioPlayer, audioConfirmation } from "./view-audio.ts";
 import { taskForm } from "./view-task-form.ts";
@@ -953,6 +954,7 @@ const tabs = (model: Model, propose: Propose) => html`
       >
         Vault
       </button>
+      ${themeButton(model.theme, () => propose({ kind: "themeToggled" }))}
     </div>
     <!-- An action, not a sixth mode, so it sits apart from the tabs. This row is
          the only chrome present in every mode, which is what makes it the one

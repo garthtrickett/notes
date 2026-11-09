@@ -9,6 +9,7 @@
 // writer.
 
 import { emptyNotePath, folderCompletions, type NotePathDraft } from "./folder-completion.ts";
+import type { Theme } from "./theme.ts";
 import { emptyAudio, isAudioProposal, presentAudio, type AudioModel, type AudioProposal } from "./audio-model.ts";
 import type { Revision, SyncError } from "./github.ts";
 import { resolveLink, rewriteLinks } from "./links.ts";
@@ -98,6 +99,7 @@ export type Modal =
 export type Encoding = "utf8" | "base64";
 
 export interface Model {
+  theme: Theme;
   photosBusy: number;
   photoShareFailure: { readonly id: string; readonly message: string } | null;
   audio: AudioModel;
@@ -194,6 +196,7 @@ export const idleUpdate: UpdateInfo = {
 };
 
 export const createModel = (): Model => ({
+  theme: "dark",
   photosBusy: 0,
   photoShareFailure: null,
   audio: emptyAudio(),
@@ -283,6 +286,7 @@ export type Proposal = AudioProposal
   | { readonly kind: "conflicted"; readonly path: string; readonly copyPath: string; readonly body: string }
   | { readonly kind: "syncFailed"; readonly error: SyncError }
   | { readonly kind: "modeChanged"; readonly mode: Mode }
+  | { readonly kind: "themeToggled" }
   | { readonly kind: "audioStorageTestRequested" }
   | { readonly kind: "audioStorageTestFinished"; readonly error: string | null }
   | { readonly kind: "folderToggled"; readonly path: string }
@@ -874,6 +878,11 @@ export const present = (m: Model, p: Proposal): Rejection | null => {
       m.error = null;
       m.numberScope = null;
       m.mode = p.mode;
+      return null;
+    }
+
+    case "themeToggled": {
+      m.theme = m.theme === "dark" ? "light" : "dark";
       return null;
     }
 
