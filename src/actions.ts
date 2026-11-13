@@ -282,49 +282,55 @@ export const conflictPath = (
   return candidateFor(now());
 };
 
-// One attempt at resolving a lost compare-and-swap without a person. Returns
-// null for "could not", never for "failed" — every way this gives up leaves the
-// caller to make the copy it always made.
-//
-// Attachments are excluded outright: their bodies are base64 bytes, and lines
-// mean nothing there.
+// A lost compare-and-swap can mean the other device already wrote these exact
+// bytes. Adopt that revision instead of making a duplicate conflict note. For
+// distinct text edits, use the original base for a bounded three-way retry.
+// Anything we cannot establish safely still falls back to a conflict copy.
 const mergeAndRetry = async (
   github: Github,
   note: Note,
   body: string,
 ): Promise<Proposal | null> => {
-  if (note.encoding === "base64") return null;
-  // No base means the file was created on both sides independently. There is
-  // no common ancestor, so there is no way to tell an insertion from an edit.
-  if (note.baseSha === null) return null;
+  let ancestor: string | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const remote = await github.current(note.path, note.encoding);
+    if (!remote.ok) return null;
+    if (remote.value.body === body) {
+      return { kind: "pushed", path: note.path, body, sha: remote.value.sha };
+    }
 
-  const ancestor = await github.blob(note.baseSha, note.encoding);
-  if (!ancestor.ok) return null;
-  const remote = await github.current(note.path, note.encoding);
-  if (!remote.ok) return null;
+    // Independently created files have no ancestor. Binary attachments cannot
+    // be line-merged, but the exact-byte check above still applies to them.
+    if (note.baseSha === null || note.encoding === "base64") return null;
+    if (ancestor === null) {
+      const original = await github.blob(note.baseSha, note.encoding);
+      if (!original.ok) return null;
+      ancestor = original.value;
+    }
 
-  const merged = mergeLines(ancestor.value, body, remote.value.body);
-  if (merged === null) return null;
+    const merged = mergeLines(ancestor, body, remote.value.body);
+    if (merged === null) return null;
+    if (merged === remote.value.body) {
+      return {
+        kind: "merged", path: note.path, from: body,
+        body: merged, sha: remote.value.sha,
+      };
+    }
 
-  // Swapped against what the remote is at *now*, not the stale base — that is
-  // the whole reason `current` returns the sha alongside the body.
-  const rewritten = await github.write(
-    note.path,
-    merged,
-    remote.value.sha,
-    note.encoding,
-  );
-  // A second conflict means a third device, or the same one again. Do not loop:
-  // fall back to the copy and let the next push try afresh.
-  if (!rewritten.ok) return null;
-
-  return {
-    kind: "merged",
-    path: note.path,
-    from: body,
-    body: merged,
-    sha: rewritten.value,
-  };
+    // Another note can move the branch between current() and write(). Retry
+    // against its fresh revision; never replace a divergent same-line edit.
+    const rewritten = await github.write(
+      note.path, merged, remote.value.sha, note.encoding,
+    );
+    if (rewritten.ok) {
+      return {
+        kind: "merged", path: note.path, from: body,
+        body: merged, sha: rewritten.value,
+      };
+    }
+    if (rewritten.error.kind !== "conflict") return null;
+  }
+  return null;
 };
 
 export const push = async (

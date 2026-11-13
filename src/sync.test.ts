@@ -468,6 +468,60 @@ describe("push", () => {
 });
 
 describe("conflict", () => {
+  const pending = (body: string, baseSha: string | null): Note => ({
+    path: "a.md", body, baseSha, pending: true,
+    deleted: false, dirty: false, encoding: "utf8",
+  });
+
+  it("adopts an identical remote create without making a conflict copy", async () => {
+    remote.put("a.md", "same\n");
+    const sha = remote.files.get("a.md")!.sha;
+    const proposal = await actions.push(remote.github, pending("same\n", null), () => clock);
+    expect(proposal).toEqual({ kind: "pushed", path: "a.md", body: "same\n", sha });
+    expect(remote.calls.filter(c => c === "write a.md")).toHaveLength(1);
+  });
+
+  it("adopts identical remote edits without rewriting them", async () => {
+    remote.put("a.md", "old\n");
+    const baseSha = remote.files.get("a.md")?.sha as string;
+    remote.put("a.md", "same\n");
+    const sha = remote.files.get("a.md")!.sha;
+    const proposal = await actions.push(remote.github, pending("same\n", baseSha), () => clock);
+    expect(proposal).toEqual({ kind: "pushed", path: "a.md", body: "same\n", sha });
+    expect(remote.calls.filter(c => c === "write a.md")).toHaveLength(1);
+  });
+
+  it("adopts a newer remote append when the local text was unchanged", async () => {
+    remote.put("a.md", "old\n");
+    const baseSha = remote.files.get("a.md")?.sha as string;
+    remote.put("a.md", "old\nnew\n");
+    const sha = remote.files.get("a.md")!.sha;
+    const proposal = await actions.push(remote.github, pending("old\n", baseSha), () => clock);
+    expect(proposal).toEqual({
+      kind: "merged", path: "a.md", from: "old\n", body: "old\nnew\n", sha,
+    });
+    expect(remote.calls.filter(c => c === "write a.md")).toHaveLength(1);
+  });
+
+  it("retries a merge when another write moves the remote again", async () => {
+    remote.put("a.md", "first\n");
+    const baseSha = remote.files.get("a.md")?.sha as string;
+    remote.put("a.md", "first\nremote\n");
+    let writes = 0;
+    const github: Github = {
+      ...remote.github,
+      write: async (path, body, sha, encoding) => {
+        writes += 1;
+        if (writes === 2) remote.put(path, "first\nremote\nthird\n");
+        return remote.github.write(path, body, sha, encoding);
+      },
+    };
+    const proposal = await actions.push(github, pending("FIRST\n", baseSha), () => clock);
+    expect(proposal.kind).toBe("merged");
+    expect(remote.files.get("a.md")?.body).toBe("FIRST\nremote\nthird\n");
+    expect(writes).toBe(3);
+  });
+
   it("keeps both versions when the note moved on GitHub — the gate", async () => {
     remote.put("a.md", "original");
     const loop = await boot(deps(), root);
@@ -569,7 +623,7 @@ describe("conflict", () => {
     const held = loop.model.notes.get("attachments/x.webp") as Note;
     loop.propose({ kind: "created", path: "host.md" });
     await settle(loop);
-    remote.put("attachments/x.webp", other);
+    remote.put("attachments/x.webp", png);
 
     const before = remote.files.get("attachments/x.webp")?.body;
     const proposal = await actions.push(
@@ -583,6 +637,26 @@ describe("conflict", () => {
     expect(remote.files.get("attachments/x.webp")?.body).toBe(before);
     // And it did not even go looking: no ancestor fetch for bytes.
     expect(remote.calls.filter((c) => c.startsWith("blob "))).toEqual([]);
+  });
+
+  it("settles an attachment when the remote already has the same bytes", async () => {
+    const body = "aGVsbG8=";
+    remote.put("attachments/x.webp", body);
+    const sha = remote.files.get("attachments/x.webp")!.sha;
+    const proposal = await actions.push(
+      remote.github,
+      {
+        path: "attachments/x.webp", body: "", baseSha: null,
+        pending: true, deleted: false, dirty: false, encoding: "base64",
+      },
+      () => clock,
+      new Map(),
+      body,
+    );
+    expect(proposal).toEqual({
+      kind: "pushed", path: "attachments/x.webp", body, sha,
+    });
+    expect(remote.calls.filter(c => c === "write attachments/x.webp")).toHaveLength(1);
   });
 
   it("does not fetch an ancestor it knows is not there", async () => {

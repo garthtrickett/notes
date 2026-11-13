@@ -197,13 +197,21 @@ export const createGithub = (config: Config): Github => {
       );
       if (!res.ok) return res;
       if (!res.value.ok) return err(responseToError(res.value));
-      const body = await json<{ content?: string; sha?: string }>(res.value);
+      const body = await json<{ content?: string; sha?: string; size?: number }>(res.value);
       if (!body.ok) return body;
       const sha = body.value.sha;
       if (typeof sha !== "string" || sha === "") {
         return err({ kind: "github", status: res.value.status });
       }
       const content = (body.value.content ?? "").replace(/\n/g, "");
+      // The Contents API leaves content empty for files over 1 MB. Comparing
+      // that placeholder with an empty local body would falsely settle a
+      // conflict; merging against it could even erase the remote attachment.
+      if (content === "" && (body.value.size ?? 0) > 0) {
+        const full = await createGithub(config).blob(sha, encoding);
+        if (!full.ok) return full;
+        return ok({ body: full.value, sha });
+      }
       return ok({
         body: encoding === "base64" ? content : decode(content),
         sha,
