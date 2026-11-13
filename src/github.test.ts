@@ -132,6 +132,23 @@ describe("manifest", () => {
   });
 });
 
+describe("current", () => {
+  it("fetches the blob when Contents omits a nonempty file body", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      const body = url.includes("/git/blobs/")
+        ? { content: "aGVsbG8=" }
+        : { sha: "large-sha", size: 1_100_000, content: "", encoding: "none" };
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+    const result = await createGithub(config).current("attachments/a.webp", "base64");
+    expect(result).toEqual({ ok: true, value: { sha: "large-sha", body: "aGVsbG8=" } });
+    expect(calls).toHaveLength(2);
+  });
+});
+
 describe("read and write", () => {
   it("round-trips text outside Latin-1", async () => {
     // btoa alone throws or mangles here, which for a notes app is the first
