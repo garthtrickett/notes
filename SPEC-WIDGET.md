@@ -6,6 +6,23 @@ count, eating state and capture destinations remain unchanged.
 
 ## Note sync status
 
+### Automatic full sync
+
+The existing persisted 15-minute vault job now runs the same full sync session
+as Sync all, including queued captures/photos/alarm answers, pending uploads,
+remote notes and attachments, and native alert reminders. Android chooses the
+actual execution time and may delay it in Doze or battery-saving conditions.
+No foreground service or UI is started by this scheduled path. Media retains
+its own existing schedule, push hints and saved connection settings.
+
+Scheduled and manual requests share one session and one Web Lock. Stopping a
+scheduled job detaches only that owner; a simultaneous widget request can finish.
+The last owner's cancellation tears down the hidden writer after native calls
+settle. Native alarm-only checking remains a fallback after full-sync failure,
+with preserved credentials/cursors and no concurrent alarm-set writers. Restore
+and upgrade keep the same job ID and cadence, without resetting the schedule on
+every app sync. A failed or interrupted import retains its pending records.
+
 ### Sync all
 
 The separate **Sync all** button requests a finite background vault refresh and

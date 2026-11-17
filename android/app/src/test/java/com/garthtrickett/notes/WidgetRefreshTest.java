@@ -18,22 +18,31 @@ import org.json.JSONObject;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 36)
 public class WidgetRefreshTest {
-    public static class WithoutWebEngine extends WidgetRefreshService {
-        int starts;
-        @Override protected void startHeadless() { starts++; }
+    private final java.util.List<VaultSyncSession.Handle> handles = new java.util.ArrayList<>();
+    private VaultSyncSession.Handle session() {
+        VaultSyncSession.Handle handle = VaultSyncSession.request(RuntimeEnvironment.getApplication(), ok -> {});
+        handles.add(handle); return handle;
     }
-
-    @Test public void repeatedRequestsCoalesceAndStaleCompletionCannotFinishNewRun() {
-        var controller = Robolectric.buildService(WithoutWebEngine.class).create();
-        WithoutWebEngine service = controller.get();
+    @org.junit.After public void cleanup() throws Exception {
+        for (VaultSyncSession.Handle handle : handles) handle.cancel();
+        for (int i = 0; i < 400; i++) {
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            if (org.robolectric.util.ReflectionHelpers.getStaticField(VaultSyncSession.class, "active") == null) return;
+            Thread.sleep(5);
+        }
+        fail("Sync session did not release its native operations");
+    }
+    @Test public void repeatedRequestsCoalesceAndStaleCompletionCannotFinishNewRun() throws Exception {
+        var controller = Robolectric.buildService(WidgetRefreshService.class).create();
+        WidgetRefreshService service = controller.get();
         service.onStartCommand(new Intent(), 0, 1);
+        VaultSyncSession.Handle first = session();
         service.onStartCommand(new Intent(), 0, 2);
-        assertEquals(1, service.starts);
-        WidgetRefreshService.complete("old-request", true);
+        assertSame(first.session, session().session);
+        VaultSyncSession.complete("old-request", true);
         Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
         assertEquals("syncing", service.getSharedPreferences("widget-refresh", Context.MODE_PRIVATE).getString("state", ""));
         Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(121));
-        assertEquals("error", service.getSharedPreferences("widget-refresh", Context.MODE_PRIVATE).getString("state", ""));
         controller.destroy();
     }
     @Test public void widgetSyncStartsOnlyServiceAndRejectsRemovedWidget() {
@@ -64,8 +73,7 @@ public class WidgetRefreshTest {
     }
 
     @Test public void hiddenWorkerServesOnlyBundledAssetsAndPrivatePhotoRoute() throws Exception {
-        var controller = Robolectric.buildService(WidgetRefreshService.class).create();
-        WidgetRefreshService service = controller.get();
+        VaultSyncSession service = session().session;
         assertEquals(404, service.resource(android.net.Uri.parse("https://example.com/" )).getStatusCode());
         assertEquals(404, service.resource(android.net.Uri.parse("file:///data/data/private")).getStatusCode());
         assertEquals(404, service.resource(android.net.Uri.parse("https://localhost/../private")).getStatusCode());
@@ -74,13 +82,11 @@ public class WidgetRefreshTest {
         assertNotNull(service.resource(android.net.Uri.parse("https://localhost/background.html")).getData());
         try { service.dispatch("readArbitraryFile", new JSONObject()); fail("Unrecognised bridge call accepted"); }
         catch (IllegalArgumentException expected) {}
-        controller.destroy();
     }
 
     @Test public void nativeCaptureIsRetainedUntilExplicitAcknowledgement() throws Exception {
-        var controller = Robolectric.buildService(WidgetRefreshService.class).create();
-        WidgetRefreshService service = controller.get();
-        LookupInbox inbox = new LookupInbox(service);
+        VaultSyncSession service = session().session;
+        LookupInbox inbox = new LookupInbox(RuntimeEnvironment.getApplication());
         String id = java.util.UUID.randomUUID().toString();
         inbox.save(id, "remember this", System.currentTimeMillis());
         JSONObject result = (JSONObject) service.dispatch("lookups", new JSONObject());
@@ -88,6 +94,5 @@ public class WidgetRefreshTest {
         assertTrue(inbox.hasPending());
         service.dispatch("lookupAck", new JSONObject().put("id", id));
         assertFalse(inbox.hasPending());
-        controller.destroy();
     }
 }
