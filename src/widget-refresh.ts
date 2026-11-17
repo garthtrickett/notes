@@ -11,7 +11,9 @@ const widget = registerPlugin<{
 export const listenForWidgetRefresh = async (loop: Loop): Promise<void> => {
   if (Capacitor.getPlatform() !== "android") return;
   let busy = false;
+  let latestRequest = "";
   await widget.addListener("syncRequested", ({ request }) => {
+    latestRequest = request;
     if (busy) return;
     busy = true;
     void (async () => {
@@ -24,7 +26,7 @@ export const listenForWidgetRefresh = async (loop: Loop): Promise<void> => {
       } catch { /* Native inbox copies survive for the next explicit retry. */ }
       finally {
         busy = false;
-        await widget.syncFinished({ request, ok });
+        await widget.syncFinished({ request: latestRequest, ok });
       }
     })();
   });
