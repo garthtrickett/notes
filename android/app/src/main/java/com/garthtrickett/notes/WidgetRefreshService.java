@@ -24,7 +24,7 @@ import org.json.JSONObject;
 /** A finite user-started sync, without an Activity or a second vault. */
 public class WidgetRefreshService extends Service {
     private static final int NOTICE = 4911;
-    private static WidgetRefreshService active;
+    private static volatile WidgetRefreshService active;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService calls = Executors.newSingleThreadExecutor();
     private WebView web;
