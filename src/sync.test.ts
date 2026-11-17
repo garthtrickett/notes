@@ -177,6 +177,39 @@ afterEach(() => {
 });
 
 describe("pull", () => {
+  it("widget completion waits for a full pull, native reminder work and persisted notes", async () => {
+    remote.put("reminders.md", "- [ ] surf @2026-12-01 16:00!\n");
+    let finishAlarms!: () => void;
+    let calls = 0;
+    const held = new Promise<void>(resolve => { finishAlarms = resolve; });
+    const loop = await boot({ ...deps(), backgroundReminders: async () => { calls++; await held; } }, root);
+    let completed = false;
+    const done = loop.whenSynced().then(ok => { completed = ok; return ok; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(completed).toBe(false);
+    finishAlarms();
+    expect(await done).toBe(true);
+    expect(calls).toBeGreaterThan(0);
+    expect((await getAll(db!)).find(n => n.path === "reminders.md")?.body).toContain("surf");
+    loop.dispose();
+  });
+
+  it("widget completion reports network failure without consuming local pending edits", async () => {
+    remote.fail({ kind: "offline" });
+    const loop = await boot(deps(), root);
+    expect(await loop.whenSynced()).toBe(false);
+    expect(loop.model.syncError?.kind).toBe("offline");
+    loop.dispose();
+  });
+
+  it("widget completion cannot report success after a native capture read fails", async () => {
+    const loop = await boot({ ...deps(), lookupInbox: { supported: true,
+      pending: async () => { throw new Error("storage unavailable"); },
+      acknowledge: async () => {}, listen: async () => () => {},
+    } }, root);
+    expect(await loop.whenSynced()).toBe(false);
+    loop.dispose();
+  });
   it("a stalled widget bridge cannot hold the note durability barrier or uploads", async () => {
     remote.put("a.md", "Original");
     const loop = await boot({ ...deps(), widgetSync: () => new Promise<void>(() => {}) }, root);

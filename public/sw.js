@@ -81,6 +81,7 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
+  if (url.pathname === "/background.html" || url.pathname.startsWith("/_sync_photo/")) return;
   if (url.origin !== self.location.origin) return; // never the GitHub API
 
   // Navigations are network-first, so a deploy is picked up whenever there is a

@@ -49,7 +49,7 @@ public class WidgetBackgroundInflationTest {
 
     private void assertNoButtonAnimators(View root) {
         for (int id : new int[] {R.id.urge_eating, R.id.urge_lookup, R.id.urge_jot,
-                R.id.urge_resist, R.id.urge_undo}) {
+                R.id.urge_resist, R.id.urge_undo, R.id.urge_refresh}) {
             View button = root.findViewById(id);
             assertNotNull(button);
             assertNull("Widget buttons must be safe to inflate off the UI thread",

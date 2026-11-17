@@ -49,6 +49,7 @@ import { nativeAlarmNotes, type AlarmNoteInbox } from "./alarm-note.ts";
 import { nativeWidgetSyncReporter, widgetSyncSnapshot, type WidgetSyncReporter } from "./widget-sync.ts";
 
 export interface Deps {
+  readonly backgroundReminders?: (refs: readonly TaskRef[], shas: Record<string, string>) => Promise<void>;
   readonly initialView?: ViewLocation;
   readonly onViewChanged?: (location: ViewLocation) => void;
   readonly theme?: Theme;
@@ -84,6 +85,7 @@ export interface Loop {
   readonly propose: (p: Proposal) => void;
   readonly flush: () => Promise<void>;
   readonly whenSaved: () => Promise<boolean>;
+  readonly whenSynced: () => Promise<boolean>;
   // Focus is not model state, so it is not a proposal. The loop holds the
   // editor, so it is the only thing that can offer this.
   readonly enterEditor: () => void;
@@ -632,6 +634,16 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   let lastReminderKey: string | null = null;
   let lastAlarmKey: string | null = null;
   const napReminders = () => {
+    if (deps.backgroundReminders) {
+      if (!model.hydrated) return;
+      const refs = guardedTasks(tasksInVault(model.notes, tasks).flatMap(group => group.refs));
+      const key = reminderSetKey(refs);
+      if (key !== lastAlarmKey) {
+        lastAlarmKey = key;
+        track(deps.backgroundReminders(refs, knownShas(model.notes.values())));
+      }
+      return;
+    }
     if (!model.hydrated || !remindersDeliverable()) return;
     const refs = guardedTasks(tasksInVault(model.notes, tasks).flatMap(group => group.refs));
     const key = reminderSetKey(refs);
@@ -817,6 +829,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
   };
 
   function propose(p: Proposal): void {
+    if (disposed) return;
     // Backoff is bookkeeping about the loop rather than about notes, so it lives
     // here instead of leaking a clock into present().
     // Typing is what the quiet period measures, so it is recorded where the
@@ -960,6 +973,20 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     return false;
   };
 
+  const whenSynced = async (): Promise<boolean> => {
+    const deadline = Date.now() + 110_000;
+    while (!disposed && Date.now() < deadline) {
+      const observed = idle;
+      await observed;
+      if (model.persistBlocked || model.syncError !== null || model.photoShareFailure !== null || model.error !== null) return false;
+      if (observed === idle && model.hydrated && !model.persisting && !model.syncing &&
+          !receivingPhotos && !receivingLookups && model.lastSyncedAt !== null && model.pullRemaining === 0 &&
+          model.forgotten.size === 0 && ![...model.notes.values()].some(n => n.dirty || n.pending)) return true;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return false;
+  };
+
   // The caret at the top, because the shortcut exists to start writing — not to
   // resume wherever the last visit left off.
   const enterEditor = () => cm.focusAt(0);
@@ -1006,7 +1033,7 @@ export const createLoop = (deps: Deps, root: HTMLElement): Loop => {
     root.querySelectorAll("[data-photo-picker]").forEach(input => input.remove());
     void audioConnection?.disconnect();
   };
-  return { model, propose, flush, whenSaved, enterEditor, find, dispose };
+  return { model, propose, flush, whenSaved, whenSynced, enterEditor, find, dispose };
 };
 
 export const boot = async (
