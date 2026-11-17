@@ -134,6 +134,7 @@ public class WidgetRefreshService extends Service {
                 boolean ok = true;
                 try { result = dispatch(method, new JSONObject(payload)); }
                 catch (Exception failure) { ok = false; }
+                if ("ready".equals(method) || "finished".equals(method)) return;
                 String value = result == null ? "null" : JSONObject.wrap(result).toString();
                 final String reply = "window.notesSyncReply(" + id + "," + ok + "," + value + ")";
                 main.post(() -> { if (!ended && web != null) web.evaluateJavascript(reply, null); });
