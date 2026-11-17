@@ -120,11 +120,15 @@ public class UrgeWidget extends AppWidgetProvider {
         boolean syncing = "syncing".equals(refreshState) && System.currentTimeMillis() - refresh.getLong("startedAt", 0) < 125_000;
         views.setTextViewText(R.id.urge_refresh, syncing ? "Syncing…" : "Sync all");
         views.setOnClickPendingIntent(R.id.urge_refresh, click(context, id, SYNC));
-        views.setTextViewText(R.id.urge_refresh_status, syncing ? "Notes + media requested"
-            : "error".equals(refreshState) || "syncing".equals(refreshState) ? "Sync incomplete · tap to retry"
-            : "done".equals(refreshState) ? "Notes checked · media has its own progress" : "Refresh notes, reminders and media");
         views.setTextViewText(R.id.urge_sync, sync.text);
         views.setTextColor(R.id.urge_sync, sync.color);
+        if (syncing) {
+            views.setTextViewText(R.id.urge_sync, "Syncing notes + checking media…");
+            views.setTextColor(R.id.urge_sync, 0xFF805800);
+        } else if ("error".equals(refreshState) || "syncing".equals(refreshState)) {
+            views.setTextViewText(R.id.urge_sync, "Sync incomplete · tap Sync all");
+            views.setTextColor(R.id.urge_sync, 0xFF9A2929);
+        }
         views.setContentDescription(R.id.urge_header, context.getString(R.string.urge_widget_name) + ". " + context.getString(R.string.urge_widget_inbox) + ". " + sync.text + ". Open Notes to check sync.");
         Intent openNotes = new Intent(context, MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);

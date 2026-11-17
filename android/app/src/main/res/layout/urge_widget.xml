@@ -67,15 +67,6 @@
         android:textColor="#193B32"
         android:contentDescription="Sync notes and reminders and request media downloads without opening Notes" />
     </LinearLayout>
-    <TextView
-        android:id="@+id/urge_refresh_status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:text="Refresh notes, reminders and media"
-        android:textSize="10sp"
-        android:textColor="#496359" />
 
     <!-- Launchers inflate this layout off the UI thread. Disable the default
          state animator before Button construction, including disabled Undo. -->

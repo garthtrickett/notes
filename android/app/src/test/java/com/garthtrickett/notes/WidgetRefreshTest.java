@@ -60,7 +60,7 @@ public class WidgetRefreshTest {
         View root = UrgeWidget.views(context, 9).apply(context, new FrameLayout(context));
         assertTrue(root.findViewById(R.id.urge_refresh).hasOnClickListeners());
         assertTrue(root.findViewById(R.id.urge_refresh).isEnabled());
-        assertTrue(((android.widget.TextView)root.findViewById(R.id.urge_refresh_status)).getText().toString().contains("incomplete"));
+        assertTrue(((android.widget.TextView)root.findViewById(R.id.urge_sync)).getText().toString().contains("incomplete"));
     }
 
     @Test public void hiddenWorkerServesOnlyBundledAssetsAndPrivatePhotoRoute() throws Exception {
