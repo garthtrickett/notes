@@ -16,7 +16,7 @@ public class WidgetPlugin extends Plugin {
         return true;
     }
     @PluginMethod public void syncFinished(PluginCall call) {
-        WidgetRefreshService.complete(call.getString("request"), Boolean.TRUE.equals(call.getBoolean("ok")));
+        VaultSyncSession.complete(call.getString("request"), Boolean.TRUE.equals(call.getBoolean("ok")));
         call.resolve();
     }
     @PluginMethod public void syncStatus(PluginCall call) {

@@ -25,18 +25,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-// Keeps alarms current while the app is closed. Without it, a `!` reminder
-// written on the laptop — or straight into the vault — only became an alarm
-// the next time the phone opened the app, which is exactly the evening you
-// forget to.
-//
-// A periodic job, roughly every 15 minutes when the phone allows; overnight
-// Android stretches that out. It asks GitHub for the branch head (one small
-// request) and stops there if nothing moved. If it did, it lists the tree,
-// fetches only the notes whose blob changed since it last looked, reads their
-// alarm lines (AlarmLines), and replaces those notes' alarms. The app seeds
-// what it already knows on every sync, so the first run does not fetch the
-// whole vault, and the app's own sync stays the last word whenever it runs.
+// The existing persisted job runs full vault sync roughly every 15 minutes,
+// when Android permits it. Scheduled work uses the shared bounded session
+// directly, without starting a foreground service or Activity. An explicit
+// widget request joins that same writer. If full sync fails, the native
+// alarm-only reader below still keeps reminders current using its saved head
+// and per-note blob hashes; it never claims the local note cache is synced.
 public class VaultWatch extends JobService {
     private static final int JOB_ID = 4711;
     // Android clamps periodic jobs to at least 15 minutes.
@@ -47,7 +41,14 @@ public class VaultWatch extends JobService {
     private static final int BUDGET = 60;
     private static final String PREFS = "notes.vault";
 
-    private volatile Thread worker;
+    private Run running;
+    private static final class Run {
+        final JobParameters params;
+        VaultSyncSession.Handle sync;
+        Thread worker;
+        volatile boolean stopped;
+        Run(JobParameters params) { this.params = params; }
+    }
 
     // Called by the app with its vault settings. The token is kept in the
     // app's private storage, the same sandbox the WebView keeps it in.
@@ -100,28 +101,50 @@ public class VaultWatch extends JobService {
         prefs(context).edit().putString("shas", shas.toString()).remove("head").apply();
     }
 
-    @Override
-    public boolean onStartJob(JobParameters params) {
+    @Override public boolean onStartJob(JobParameters params) {
+        if (running != null) return false;
         Context app = getApplicationContext();
-        worker = new Thread(() -> {
-            try {
-                check(app, System.currentTimeMillis());
-            } catch (IOException | JSONException | RuntimeException failed) {
-                // Offline, rate limited, or GitHub said no: the next period
-                // tries again, and the app's own sync covers it either way.
-            } finally {
-                jobFinished(params, false);
-            }
-        }, "vault-watch");
-        worker.start();
+        Run run = new Run(params);
+        running = run;
+        run.sync = requestFullSync(app, ok -> {
+            if (run.stopped || running != run) return;
+            if (ok) { finish(run); return; }
+            // A failed full import must not remove the existing alarm-only
+            // fallback. Run it after the shared writer has stopped, not beside it.
+            run.worker = new Thread(() -> {
+                try { readAlarms(app, System.currentTimeMillis()); }
+                catch (IOException | JSONException | RuntimeException failed) { /* Next period retries. */ }
+                finally { new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> finish(run)); }
+            }, "vault-watch-fallback");
+            run.worker.start();
+        });
         return true;
     }
 
-    @Override
-    public boolean onStopJob(JobParameters params) {
-        Thread t = worker;
-        if (t != null) t.interrupt();
+    protected VaultSyncSession.Handle requestFullSync(Context context, VaultSyncSession.Listener listener) {
+        return VaultSyncSession.request(context, listener);
+    }
+    protected void readAlarms(Context context, long now) throws IOException, JSONException { check(context, now); }
+    protected void completed(JobParameters params) { jobFinished(params, false); }
+    private void finish(Run run) {
+        if (run.stopped || running != run) return;
+        running = null;
+        completed(run.params);
+    }
+
+    @Override public boolean onStopJob(JobParameters params) {
+        Run run = running;
+        if (run != null) {
+            run.stopped = true;
+            running = null;
+            if (run.sync != null) run.sync.cancel();
+            if (run.worker != null) run.worker.interrupt();
+        }
         return true;
+    }
+    @Override public void onDestroy() {
+        onStopJob(null);
+        super.onDestroy();
     }
 
     private static void check(Context context, long now) throws IOException, JSONException {
