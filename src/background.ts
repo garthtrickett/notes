@@ -45,6 +45,7 @@ const report = serialWidgetSyncReporter(snapshot => {
   return call<void>("status", { vault, ...snapshot });
 });
 try {
+  if (typeof window.NotesSync?.call !== "function") throw new Error("Native sync bridge required.");
   release = await acquireVaultSession();
   const config = loadConfig(localStorage);
   if (!config) throw new Error("Open Notes once to configure the vault.");
@@ -89,5 +90,5 @@ finally {
   // On failure, retain the writer lock until Android destroys this WebView:
   // a timed-out fetch may still have a continuation queued in this page.
   if (ok) release?.();
-  await call("finished", { ok });
+  if (typeof window.NotesSync?.call === "function") await call("finished", { ok });
 }
