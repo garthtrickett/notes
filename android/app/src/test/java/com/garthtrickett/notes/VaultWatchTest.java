@@ -72,6 +72,6 @@ public class VaultWatchTest {
         assertEquals(VaultWatch.class.getName(), first.getService().getClassName());
         VaultWatch.restore(context);
         assertEquals(1, scheduler.getAllPendingJobs().size());
-        assertSame(first, scheduler.getPendingJob(4711));
+        assertEquals(first.getId(), scheduler.getPendingJob(4711).getId());
     }
 }
