@@ -28,7 +28,13 @@ const POLL_MS = 30_000;
 // runs before anything else. Putting it inside the configured branch left anyone
 // on the settings screen stuck with a stale worker and no way out.
 if ("serviceWorker" in navigator) {
-  if (import.meta.env.PROD) {
+  if (Capacitor.getPlatform() === "android") {
+    // APK assets already work offline. An old shell worker must not substitute
+    // a cached UI page for a cold widget worker sharing this origin.
+    await navigator.serviceWorker.getRegistrations()
+      .then(registrations => Promise.all(registrations.map(r => r.unregister())))
+      .catch(() => {});
+  } else if (import.meta.env.PROD) {
     void navigator.serviceWorker.register("/sw.js");
   } else {
     // Never in dev. The worker is cache-first for assets, which is correct when

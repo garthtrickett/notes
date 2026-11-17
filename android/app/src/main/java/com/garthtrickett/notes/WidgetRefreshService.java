@@ -88,8 +88,19 @@ public class WidgetRefreshService extends Service {
                 }
             });
             // Matches Capacitor's default origin and WebView data profile.
-            web.loadUrl("https://localhost/background.html");
+            // A data document is not an old service worker's navigation. Retire
+            // shell registrations before navigating, without clearing storage.
+            web.loadDataWithBaseURL("https://localhost/", bootstrap(), "text/html", "UTF-8", null);
         } catch (RuntimeException unavailable) { finish(false); }
+    }
+
+    static String bootstrap() {
+        return "<!doctype html><script>" +
+            "Promise.resolve().then(()=>('serviceWorker' in navigator)?navigator.serviceWorker.getRegistrations():[])" +
+            ".then(rs=>Promise.all(rs.map(r=>r.unregister())))" +
+            ".then(()=>NotesSync.call(0,'ready','{}'))" +
+            ".catch(()=>NotesSync.call(0,'finished','{\"ok\":false}'))" +
+            "</script>";
     }
 
     WebResourceResponse resource(Uri uri) {
@@ -132,6 +143,7 @@ public class WidgetRefreshService extends Service {
 
     Object dispatch(String method, JSONObject p) throws Exception {
         switch (method) {
+            case "ready": main.post(() -> { if (!ended && web != null) web.loadUrl("https://localhost/background.html"); }); break;
             case "lookups": return new JSONObject().put("captures", new LookupInbox(this).pending());
             case "lookupAck": new LookupInbox(this).acknowledge(p.getString("id")); break;
             case "photos": return new JSONObject().put("batches", new PhotoInbox(this).pending());
