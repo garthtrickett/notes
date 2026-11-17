@@ -6,6 +6,29 @@ count, eating state and capture destinations remain unchanged.
 
 ## Note sync status
 
+### Sync all
+
+The separate **Sync all** button requests a finite background vault refresh and
+media fetch without launching an Activity. Android shows a quiet temporary
+sync notification. Repeated taps join the current run rather than starting
+another writer. The run times out after two minutes; media transfers have their
+existing independent progress and lifetime. Saved unmetered-only media settings
+still apply. A clean note status does not prove all media has downloaded.
+
+When an app WebView is alive, the request uses its existing sync loop. A cold
+request creates a hidden WebView with bundled assets at the same local origin,
+uses the same IndexedDB and TypeScript loop, imports queued captures/shared
+photos/alarm answers, uploads pending edits, pulls notes/attachments, and
+rebuilds native alarms. It does not consume pending Open note navigation.
+Both sessions hold the same Web Lock for their entire writer lifetime, so
+opening Notes during a cold refresh waits until that writer finishes. Failure
+retains pending records and native inbox receipts until durable import.
+
+The hidden bridge serves only bundled code and validated queued photos; it
+cannot navigate to external documents or open arbitrary files. Credentials stay
+in the existing WebView storage. No extra permission or periodic job is added.
+Physical cold-start, concurrent-open and media qualification remains required.
+
 A compact status beneath the widget heading reports the note vault's last-known
 sync state. Tapping the header opens Notes, whose normal resume/sync path runs.
 This does not start a separate sync service or add a notification.

@@ -15,6 +15,9 @@ import { checkForUpdate, updateCheckDue } from "./update.ts";
 import { historyMethod, pathFromUrl } from "./url.ts";
 import { emptyLocation, loadLocation, parseLocation, saveLocation, type ViewLocation } from "./view-location.ts";
 import { nativeWidgetSyncReporter } from "./widget-sync.ts";
+import { Capacitor } from "@capacitor/core";
+import { acquireVaultSession } from "./vault-session.ts";
+import { listenForWidgetRefresh } from "./widget-refresh.ts";
 
 // Half a minute: fast enough that the other screen feels live, slow enough that
 // 120 requests an hour is nothing against GitHub's 5000 and nothing against a
@@ -92,6 +95,11 @@ if (config === null) {
 
   const github = createGithub(config);
 
+  if (Capacitor.getPlatform() === "android" && navigator.locks) {
+    render(html`<p role="status" style="padding:24px">Preparing note sync…</p>`, root);
+    await acquireVaultSession();
+  }
+
   const loop = await boot(
     {
       theme,
@@ -119,6 +127,7 @@ if (config === null) {
   window.addEventListener("pagehide", event => { if (!event.persisted) loop.dispose(); });
 
   booted = true;
+  void listenForWidgetRefresh(loop);
 
   // Registered before anything else that can await: a tap on a closed app is
   // what launched it, and the event is on its way already.

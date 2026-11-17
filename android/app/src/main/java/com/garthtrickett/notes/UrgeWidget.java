@@ -22,12 +22,13 @@ import android.widget.Toast;
 public class UrgeWidget extends AppWidgetProvider {
     static final String RESIST = "com.garthtrickett.notes.urge.RESIST";
     static final String UNDO = "com.garthtrickett.notes.urge.UNDO";
+    static final String SYNC = "com.garthtrickett.notes.urge.SYNC";
 
     static final String TOGGLE_EATING = "com.garthtrickett.notes.urge.TOGGLE_EATING";
 
     @Override public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        if (RESIST.equals(action) || UNDO.equals(action) || TOGGLE_EATING.equals(action)) {
+        if (RESIST.equals(action) || UNDO.equals(action) || TOGGLE_EATING.equals(action) || SYNC.equals(action)) {
             AppWidgetManager manager = AppWidgetManager.getInstance(context);
             // Ignore PendingIntents left over from a removed widget.
             int source = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,
@@ -37,6 +38,16 @@ public class UrgeWidget extends AppWidgetProvider {
                 if (source == id) exists = true;
             }
             if (!exists) return;
+            if (SYNC.equals(action)) {
+                try {
+                    androidx.core.content.ContextCompat.startForegroundService(context, new Intent(context, WidgetRefreshService.class));
+                } catch (RuntimeException refused) {
+                    context.getSharedPreferences("widget-refresh", Context.MODE_PRIVATE).edit().putString("state", "error").apply();
+                    Toast.makeText(context, "Sync could not start. Open Notes to retry.", Toast.LENGTH_LONG).show();
+                }
+                refresh(context);
+                return;
+            }
             if (TOGGLE_EATING.equals(action)) {
                 UrgeCounter.toggleEating(context);
             } else {
@@ -104,6 +115,14 @@ public class UrgeWidget extends AppWidgetProvider {
             views = new RemoteViews(context.getPackageName(), R.layout.urge_widget);
         }
         WidgetSyncStatus.Display sync = WidgetSyncStatus.display(context, System.currentTimeMillis());
+        android.content.SharedPreferences refresh = context.getSharedPreferences("widget-refresh", Context.MODE_PRIVATE);
+        String refreshState = refresh.getString("state", "");
+        boolean syncing = "syncing".equals(refreshState) && System.currentTimeMillis() - refresh.getLong("startedAt", 0) < 125_000;
+        views.setTextViewText(R.id.urge_refresh, syncing ? "Syncing…" : "Sync all");
+        views.setOnClickPendingIntent(R.id.urge_refresh, click(context, id, SYNC));
+        views.setTextViewText(R.id.urge_refresh_status, syncing ? "Notes + media requested"
+            : "error".equals(refreshState) || "syncing".equals(refreshState) ? "Sync incomplete · tap to retry"
+            : "done".equals(refreshState) ? "Notes checked · media has its own progress" : "Refresh notes, reminders and media");
         views.setTextViewText(R.id.urge_sync, sync.text);
         views.setTextColor(R.id.urge_sync, sync.color);
         views.setContentDescription(R.id.urge_header, context.getString(R.string.urge_widget_name) + ". " + context.getString(R.string.urge_widget_inbox) + ". " + sync.text + ". Open Notes to check sync.");
